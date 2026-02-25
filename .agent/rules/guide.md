@@ -1,0 +1,1 @@
+Always read README.md before writing or updating any documentation. Use it as the source of truth for project details

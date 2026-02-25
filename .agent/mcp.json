@@ -1,0 +1,15 @@
+{
+    "servers": {
+        "supabase": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "-y",
+                "@supabase/mcp-server-supabase@latest",
+                "--access-token",
+                "${env:SUPABASE_ACCESS_TOKEN}"
+            ],
+            "envFile": "${workspaceFolder}/.env"
+        }
+    }
+}
