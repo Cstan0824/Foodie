@@ -1,121 +1,213 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'screens/home_screen.dart';
+import 'screens/collection_screen.dart';
+import 'screens/blind_box_screen.dart';
+import 'screens/profile_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const FoodiApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class FoodiApp extends StatelessWidget {
+  const FoodiApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+    return const CupertinoApp(
+      title: 'Foodi',
+      debugShowCheckedModeBanner: false,
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: [
+        Locale('en', 'US'),
+      ],
+      theme: CupertinoThemeData(
+        brightness: Brightness.light,
+        primaryColor: AppColors.primary,
+        scaffoldBackgroundColor: AppColors.background,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: MainShell(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+// ─────────────────────────────────────────────
+// Main shell — custom bottom tab bar + screens
+// ─────────────────────────────────────────────
+class MainShell extends StatefulWidget {
+  const MainShell({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<MainShell> createState() => _MainShellState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _MainShellState extends State<MainShell> {
+  // Active tab: 0=Home, 1=Collection, 3=BlindBox, 4=Profile (2=Add, never stored)
+  int _selectedTab = 0;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  // Maps nav tab index to IndexedStack screen index
+  int get _screenIndex {
+    switch (_selectedTab) {
+      case 1:
+        return 1;
+      case 3:
+        return 2;
+      case 4:
+        return 3;
+      default:
+        return 0;
+    }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+  void _showAddPost() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (_) => Container(
+        height: 220,
+        decoration: const BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(
+                color: AppColors.textLight,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Text('📸', style: TextStyle(fontSize: 44)),
+            const SizedBox(height: 12),
+            const Text(
+              'Add Post — Coming Soon',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // ── Screen content ──
+        Expanded(
+          child: IndexedStack(
+            index: _screenIndex,
+            children: const [
+              HomeScreen(),
+              CollectionScreen(),
+              BlindBoxScreen(),
+              ProfileScreen(),
+            ],
+          ),
+        ),
+        // ── Custom bottom tab bar ──
+        _buildTabBar(),
+      ],
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: CupertinoColors.white,
+        border: Border(
+          top: BorderSide(color: AppColors.tabBarBorder, width: 0.5),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 49,
+          child: Row(
+            children: [
+              _navItem(0, CupertinoIcons.house, CupertinoIcons.house_fill, 'Home'),
+              _navItem(1, CupertinoIcons.bookmark, CupertinoIcons.bookmark_fill, 'Collection'),
+              _addButton(),
+              _navItem(3, CupertinoIcons.gift, CupertinoIcons.gift_fill, 'Blind Box'),
+              _navItem(4, CupertinoIcons.person, CupertinoIcons.person_fill, 'Profile'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _navItem(int tab, IconData icon, IconData activeIcon, String label) {
+    final isActive = _selectedTab == tab;
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _selectedTab = tab),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isActive ? activeIcon : icon,
+              size: 24,
+              color: isActive ? AppColors.primary : AppColors.textLight,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: isActive ? AppColors.primary : AppColors.textLight,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _addButton() {
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _showAddPost,
+        child: Center(
+          child: Container(
+            width: 46,
+            height: 32,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.primary, AppColors.accent],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.38),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Icon(
+              CupertinoIcons.add,
+              color: CupertinoColors.white,
+              size: 22,
+            ),
+          ),
+        ),
       ),
     );
   }
