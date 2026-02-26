@@ -94,7 +94,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   CupertinoButton(
                     padding: const EdgeInsets.all(10),
-                    minSize: 0,
+                    minimumSize: Size.zero,
                     onPressed: () => _showSettings(context),
                     child: const Icon(
                       CupertinoIcons.settings,
@@ -206,7 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           width: 86,
           height: 86,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
+          errorBuilder: (_, _, _) => Container(
             width: 86,
             height: 86,
             color: AppColors.surface,
@@ -257,7 +257,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Image.network(
                 post.imageUrl,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+                errorBuilder: (_, _, _) => Container(
                   color: AppColors.surface,
                   child: const Icon(
                     CupertinoIcons.photo,

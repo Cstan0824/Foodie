@@ -16,7 +16,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isLiked = false;
   bool _isSaved = false;
   bool _isFollowing = false;
-  bool _showFullCaption = false;
   int _currentImageIndex = 0;
   final _commentController = TextEditingController();
   final _scrollController = ScrollController();
