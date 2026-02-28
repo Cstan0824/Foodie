@@ -20,12 +20,11 @@ class RestaurantDetailScreen extends StatelessWidget {
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoColors.white.withValues(alpha: 0.8),
-        border: null,
+        backgroundColor: CupertinoColors.white,
+        border: const Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
         middle: Text(restaurant['name']),
       ),
       child: SafeArea(
-        top: false,
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Column(

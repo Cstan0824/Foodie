@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import '../models/post_model.dart';
 import '../theme/app_theme.dart';
 import 'post_detail_screen.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -199,7 +200,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: _PillButton(
                     label: 'Edit Profile',
                     filled: false,
-                    onTap: () => _showEditProfile(context),
+                    onTap: () => Navigator.of(context).push(
+                      CupertinoPageRoute(
+                        builder: (_) => const EditProfileScreen(),
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -326,65 +331,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
-        ),
-      ),
-    );
-  }
-
-  void _showEditProfile(BuildContext context) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (_) => Container(
-        height: 380,
-        decoration: const BoxDecoration(
-          color: CupertinoColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.textLight,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Edit Profile',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  _EditField(label: 'Name', value: _userName),
-                  const SizedBox(height: 12),
-                  _EditField(label: 'Bio', value: _userBio),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: CupertinoButton(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(24),
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Save Changes'),
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -682,42 +628,6 @@ class _PillIconButton extends StatelessWidget {
         alignment: Alignment.center,
         child: Icon(icon, size: 16, color: AppColors.textPrimary),
       ),
-    );
-  }
-}
-
-class _EditField extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _EditField({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 6),
-        CupertinoTextField(
-          placeholder: label,
-          controller: TextEditingController(text: value),
-          padding: const EdgeInsets.all(12),
-          style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.tabBarBorder, width: 0.5),
-          ),
-        ),
-      ],
     );
   }
 }
