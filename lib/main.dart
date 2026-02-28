@@ -4,6 +4,7 @@ import 'screens/home_screen.dart';
 import 'screens/collection_screen.dart';
 import 'screens/blind_box_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/add_post_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -65,38 +66,10 @@ class _MainShellState extends State<MainShell> {
   }
 
   void _showAddPost() {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (_) => Container(
-        height: 220,
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 24),
-              decoration: BoxDecoration(
-                color: AppColors.textLight,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const Text('📸', style: TextStyle(fontSize: 44)),
-            const SizedBox(height: 12),
-            const Text(
-              'Add Post — Coming Soon',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => const AddPostScreen(),
       ),
     );
   }

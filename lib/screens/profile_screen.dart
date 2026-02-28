@@ -14,15 +14,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
 
   static const _userName = 'Walton G.';
-  static const _userHandle = '@waltonfoodieKL';
+  static const _userHandle = 'ID: waltonfoodieKL';
   static const _userBio =
-      'Food explorer | Bouldering enthusiast\nKL based - Discovering hidden gems';
+      'Food explorer | Bouldering enthusiast\nKL based · Discovering hidden gems 🍜';
   static const _avatarUrl = 'https://i.pravatar.cc/200?img=12';
   static const _postsCount = 24;
   static const _followersCount = 1243;
   static const _followingCount = 318;
 
+  static const _tabs = ['Notes', 'Liked', 'Saved'];
+
   String _formatCount(int count) {
+    if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}w';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
     return count.toString();
   }
@@ -50,9 +53,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SliverToBoxAdapter(child: _buildProfileSection(context)),
           SliverPersistentHeader(
             pinned: true,
-            delegate: _IconTabBarDelegate(
+            delegate: _TextTabBarDelegate(
               selectedTab: _selectedTab,
               onTabChanged: (i) => setState(() => _selectedTab = i),
+              tabs: _tabs,
             ),
           ),
           _buildSliverGrid(context),
@@ -63,33 +67,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ===================================================
-  // PROFILE SECTION
+  // PROFILE SECTION — XHS centered style
   // ===================================================
   Widget _buildProfileSection(BuildContext context) {
     final statusH = MediaQuery.of(context).padding.top;
     return Container(
       color: CupertinoColors.white,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(height: statusH),
 
-          // Top bar: handle left + settings right
+          // Top bar: back left, share + more right
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             child: SizedBox(
               height: 44,
               child: Row(
                 children: [
-                  const Expanded(
-                    child: Text(
-                      _userHandle,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                        letterSpacing: -0.3,
-                      ),
+                  CupertinoButton(
+                    padding: const EdgeInsets.all(10),
+                    minimumSize: Size.zero,
+                    onPressed: () {},
+                    child: const Icon(
+                      CupertinoIcons.chevron_back,
+                      size: 20,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const Spacer(),
+                  CupertinoButton(
+                    padding: const EdgeInsets.all(10),
+                    minimumSize: Size.zero,
+                    onPressed: () {},
+                    child: const Icon(
+                      CupertinoIcons.share,
+                      size: 20,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   CupertinoButton(
@@ -97,8 +111,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     minimumSize: Size.zero,
                     onPressed: () => _showSettings(context),
                     child: const Icon(
-                      CupertinoIcons.settings,
-                      size: 22,
+                      CupertinoIcons.ellipsis_vertical,
+                      size: 20,
                       color: AppColors.textPrimary,
                     ),
                   ),
@@ -107,88 +121,96 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
 
-          // Avatar + stats row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                _buildAvatar(),
-                const SizedBox(width: 28),
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _StatCol(
-                        value: _formatCount(_postsCount),
-                        label: 'Posts',
-                        onTap: () {},
-                      ),
-                      _StatCol(
-                        value: _formatCount(_followersCount),
-                        label: 'Followers',
-                        onTap: () {},
-                      ),
-                      _StatCol(
-                        value: _formatCount(_followingCount),
-                        label: 'Following',
-                        onTap: () {},
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Avatar — centered with gradient ring
+          _buildAvatar(),
+          const SizedBox(height: 12),
 
-          // Name + bio
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _userName,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  _userBio,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                    height: 1.45,
-                  ),
-                ),
-              ],
+          // Display name
+          const Text(
+            _userName,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+              letterSpacing: -0.3,
             ),
           ),
+          const SizedBox(height: 4),
+
+          // XHS-style ID line
+          const Text(
+            _userHandle,
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // Stats row: Following | Fans | Notes
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _StatItem(
+                  value: _formatCount(_followingCount), label: 'Following'),
+              const _StatDivider(),
+              _StatItem(value: _formatCount(_followersCount), label: 'Fans'),
+              const _StatDivider(),
+              _StatItem(value: _formatCount(_postsCount), label: 'Notes'),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Bio — centered
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              _userBio,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                height: 1.55,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Interest tags
+          const Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            alignment: WrapAlignment.center,
+            children: [
+              _TagChip(label: '🍜 Ramen'),
+              _TagChip(label: '☕ Cafes'),
+              _TagChip(label: '🧗 Bouldering'),
+              _TagChip(label: '📍 KL'),
+            ],
+          ),
+          const SizedBox(height: 18),
 
           // Action buttons
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Row(
               children: [
                 Expanded(
-                  child: _OutlinedButton(
+                  child: _PillButton(
                     label: 'Edit Profile',
+                    filled: false,
                     onTap: () => _showEditProfile(context),
                   ),
                 ),
-                const SizedBox(width: 8),
-                _OutlinedIconButton(
+                const SizedBox(width: 10),
+                _PillIconButton(
                   icon: CupertinoIcons.person_badge_plus,
                   onTap: () {},
                 ),
               ],
             ),
           ),
-
-          Container(height: 0.5, color: AppColors.divider),
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -196,19 +218,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildAvatar() {
     return Container(
-      decoration: BoxDecoration(
+      width: 90,
+      height: 90,
+      decoration: const BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: AppColors.divider, width: 0.5),
+        gradient: LinearGradient(
+          colors: [AppColors.primary, AppColors.accent],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
       ),
+      padding: const EdgeInsets.all(2.5),
       child: ClipOval(
         child: Image.network(
           _avatarUrl,
-          width: 86,
-          height: 86,
+          width: 85,
+          height: 85,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Container(
-            width: 86,
-            height: 86,
+          errorBuilder: (_, __, ___) => Container(
             color: AppColors.surface,
             child: const Icon(
               CupertinoIcons.person_fill,
@@ -222,7 +249,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   // ===================================================
-  // 3-COLUMN GRID
+  // 2-COLUMN CARD GRID — XHS style
   // ===================================================
   Widget _buildSliverGrid(BuildContext context) {
     final posts = _currentPosts;
@@ -231,7 +258,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return const SliverFillRemaining(
         child: Center(
           child: Text(
-            'No posts yet',
+            'No notes yet',
             style: TextStyle(
               fontSize: 15,
               color: AppColors.textSecondary,
@@ -242,38 +269,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    return SliverGrid(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          final post = posts[index];
-          return GestureDetector(
-            onTap: () => Navigator.of(context).push(
-              CupertinoPageRoute(
-                builder: (_) => PostDetailScreen(post: post),
-              ),
-            ),
-            child: Container(
-              color: AppColors.surface,
-              child: Image.network(
-                post.imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
-                  color: AppColors.surface,
-                  child: const Icon(
-                    CupertinoIcons.photo,
-                    color: AppColors.textLight,
-                  ),
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+      sliver: SliverGrid(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final post = posts[index];
+            return GestureDetector(
+              onTap: () => Navigator.of(context).push(
+                CupertinoPageRoute(
+                  builder: (_) => PostDetailScreen(post: post),
                 ),
               ),
-            ),
-          );
-        },
-        childCount: posts.length,
-      ),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 1.5,
-        crossAxisSpacing: 1.5,
+              child: _XhsCard(post: post),
+            );
+          },
+          childCount: posts.length,
+        ),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          childAspectRatio: 0.72,
+        ),
       ),
     );
   }
@@ -360,7 +378,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 width: double.infinity,
                 child: CupertinoButton(
                   color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(24),
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Save Changes'),
                 ),
@@ -374,21 +392,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 // ===================================================
-// ICON TAB BAR — Instagram style, red underline
+// TEXT TAB BAR — XHS style with animated underline dot
 // ===================================================
-class _IconTabBarDelegate extends SliverPersistentHeaderDelegate {
+class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
   final int selectedTab;
   final ValueChanged<int> onTabChanged;
+  final List<String> tabs;
 
-  static const _icons = [
-    CupertinoIcons.square_grid_2x2_fill,
-    CupertinoIcons.bookmark_fill,
-    CupertinoIcons.heart_fill,
-  ];
-
-  const _IconTabBarDelegate({
+  const _TextTabBarDelegate({
     required this.selectedTab,
     required this.onTabChanged,
+    required this.tabs,
   });
 
   @override
@@ -398,39 +412,45 @@ class _IconTabBarDelegate extends SliverPersistentHeaderDelegate {
       color: CupertinoColors.white,
       child: Column(
         children: [
+          Container(height: 0.5, color: AppColors.divider),
           Expanded(
             child: Row(
-              children: List.generate(_icons.length, (i) {
+              children: List.generate(tabs.length, (i) {
                 final active = i == selectedTab;
                 return Expanded(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => onTabChanged(i),
-                    child: Center(
-                      child: Icon(
-                        _icons[i],
-                        size: 22,
-                        color: active
-                            ? AppColors.textPrimary
-                            : AppColors.textLight,
-                      ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          tabs[i],
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight:
+                                active ? FontWeight.w700 : FontWeight.w400,
+                            color: active
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: active ? 20 : 0,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
               }),
             ),
-          ),
-          Row(
-            children: List.generate(_icons.length, (i) {
-              return Expanded(
-                child: Container(
-                  height: 1.5,
-                  color: i == selectedTab
-                      ? AppColors.primary
-                      : const Color(0xFFEEEEEE),
-                ),
-              );
-            }),
           ),
         ],
       ),
@@ -438,35 +458,113 @@ class _IconTabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  double get maxExtent => 44;
+  double get maxExtent => 46;
 
   @override
-  double get minExtent => 44;
+  double get minExtent => 46;
 
   @override
-  bool shouldRebuild(covariant _IconTabBarDelegate old) =>
-      old.selectedTab != selectedTab;
+  bool shouldRebuild(covariant _TextTabBarDelegate old) =>
+      old.selectedTab != selectedTab || old.tabs != tabs;
+}
+
+// ===================================================
+// XHS CARD — image + title + like count
+// ===================================================
+class _XhsCard extends StatelessWidget {
+  final PostModel post;
+  const _XhsCard({required this.post});
+
+  String _fmt(int n) {
+    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}w';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
+    return n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: CupertinoColors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Image.network(
+              post.imageUrl,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: AppColors.surface,
+                child: const Center(
+                  child: Icon(
+                    CupertinoIcons.photo,
+                    color: AppColors.textLight,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  post.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textPrimary,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      CupertinoIcons.heart_fill,
+                      size: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      _fmt(post.likes),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ===================================================
 // HELPER WIDGETS
 // ===================================================
 
-class _StatCol extends StatelessWidget {
+class _StatItem extends StatelessWidget {
   final String value;
   final String label;
-  final VoidCallback onTap;
 
-  const _StatCol({
-    required this.value,
-    required this.label,
-    required this.onTap,
-  });
+  const _StatItem({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -483,7 +581,7 @@ class _StatCol extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: AppColors.textSecondary,
             ),
           ),
@@ -493,30 +591,69 @@ class _StatCol extends StatelessWidget {
   }
 }
 
-class _OutlinedButton extends StatelessWidget {
+class _StatDivider extends StatelessWidget {
+  const _StatDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 0.5, height: 28, color: AppColors.divider);
+  }
+}
+
+class _TagChip extends StatelessWidget {
   final String label;
+  const _TagChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          color: AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+class _PillButton extends StatelessWidget {
+  final String label;
+  final bool filled;
   final VoidCallback onTap;
 
-  const _OutlinedButton({required this.label, required this.onTap});
+  const _PillButton({
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 34,
+        height: 36,
         decoration: BoxDecoration(
-          color: CupertinoColors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.tabBarBorder, width: 1),
+          color: filled ? AppColors.primary : CupertinoColors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: filled
+              ? null
+              : Border.all(color: AppColors.tabBarBorder, width: 1),
         ),
         alignment: Alignment.center,
         child: Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+            color: filled ? CupertinoColors.white : AppColors.textPrimary,
           ),
         ),
       ),
@@ -524,26 +661,26 @@ class _OutlinedButton extends StatelessWidget {
   }
 }
 
-class _OutlinedIconButton extends StatelessWidget {
+class _PillIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const _OutlinedIconButton({required this.icon, required this.onTap});
+  const _PillIconButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 34,
-        width: 34,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           color: CupertinoColors.white,
-          borderRadius: BorderRadius.circular(8),
+          shape: BoxShape.circle,
           border: Border.all(color: AppColors.tabBarBorder, width: 1),
         ),
         alignment: Alignment.center,
-        child: Icon(icon, size: 17, color: AppColors.textPrimary),
+        child: Icon(icon, size: 16, color: AppColors.textPrimary),
       ),
     );
   }
