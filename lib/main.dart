@@ -1,11 +1,11 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'screens/home_screen.dart';
-import 'screens/collection_screen.dart';
-import 'screens/blind_box_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/add_post_screen.dart';
-import 'theme/app_theme.dart';
+import 'views/screens/home_screen.dart';
+import 'views/screens/collection_screen.dart';
+import 'views/screens/blind_box_screen.dart';
+import 'views/screens/profile_screen.dart';
+import 'views/screens/add_post_screen.dart';
+import 'core/theme/app_theme.dart';
 
 void main() {
   runApp(const FoodiApp());

@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
-import '../models/post_model.dart';
-import '../theme/app_theme.dart';
-import '../widgets/post_card.dart';
+import '../../data/models/post_model.dart';
+import '../../core/theme/app_theme.dart';
+import '../shared/post_card.dart';
 import 'post_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {

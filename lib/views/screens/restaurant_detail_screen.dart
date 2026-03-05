@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../../core/theme/app_theme.dart';
 
 class RestaurantDetailScreen extends StatelessWidget {
   final Map<String, dynamic> restaurant;

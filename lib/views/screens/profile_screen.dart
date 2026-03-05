@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
-import '../models/post_model.dart';
-import '../theme/app_theme.dart';
+import '../../data/models/post_model.dart';
+import '../../core/theme/app_theme.dart';
 import 'post_detail_screen.dart';
 import 'edit_profile_screen.dart';
 

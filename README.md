@@ -26,18 +26,31 @@ Taste Spot brings food and beverage enthusiasts together in one place. Discover 
 
 ## Project Structure
 
+This project uses a feature-based layout to keep code organized by responsibility.
+
 ```
 lib/
-├── Application/       # App entry point (main.dart)
-├── assets/            # Icons & images
-│   ├── icons/
-│   └── images/
-├── Controller/        # Business logic controllers
-├── DataAccess/        # Data layer / repository
-├── Helpers/           # Utilities (auth helpers, etc.)
-└── View/              # UI layer
-    ├── Components/    # Reusable widgets (header, nav)
-    └── User/          # User-related screens (login, etc.)
+├── main.dart               # App entry point (minimal)
+├── app.dart                # CupertinoApp configuration
+├── assets/                 # Icons & images
+├── core/                   # App-wide utilities and theme
+│   └── theme/              # Color and theme definitions (app_colors.dart)
+├── data/                   # Data layer
+│   ├── models/             # Data models (post_model.dart)
+│   ├── mock/               # Mock data used for development
+│   └── repositories/       # Data access / repositories
+├── controllers/            # Business logic controllers
+├── helpers/                # Small utilities (auth helpers, etc.)
+├── views/                  # UI layer (feature folders)
+│   ├── screens/            # Screen implementations (grouped under views/screens)
+│   └── shared/             # Reusable widgets (post_card.dart)
+└── pubspec.yaml
+
+Purpose:
+- `core/`: shared theme and utility functions used across the app.
+- `data/`: models and repositories abstracting backend or mock data.
+- `controllers/`: application logic and state management entry points.
+- `views/`: feature UI code; `shared/` contains reusable widgets.
 ```
 
 ## Prerequisites

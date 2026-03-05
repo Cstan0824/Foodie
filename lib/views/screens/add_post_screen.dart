@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import '../theme/app_theme.dart';
+import '../../core/theme/app_theme.dart';
 
 class AddPostScreen extends StatefulWidget {
   const AddPostScreen({super.key});
