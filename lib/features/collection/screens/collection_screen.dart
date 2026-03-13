@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors; // For slight shadows
-import '../theme/app_theme.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
 
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({super.key});
@@ -65,16 +65,34 @@ class _CollectionScreenState extends State<CollectionScreen> {
                 width: double.infinity,
                 child: CupertinoSlidingSegmentedControl<int>(
                   backgroundColor: AppColors.surface,
-                  thumbColor: CupertinoColors.white,
+                  thumbColor: AppColors.primary,
                   groupValue: _selectedSegment,
-                  children: const {
+                  children: {
                     0: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20),
-                      child: Text('All Saved', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        'Albums',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: _selectedSegment == 0
+                              ? CupertinoColors.white
+                              : AppColors.textPrimary,
+                        ),
+                      ),
                     ),
                     1: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20),
-                      child: Text('Albums', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        'All Saved',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: _selectedSegment == 1
+                              ? CupertinoColors.white
+                              : AppColors.textPrimary,
+                        ),
+                      ),
                     ),
                   },
                   onValueChanged: (value) {
@@ -87,8 +105,8 @@ class _CollectionScreenState extends State<CollectionScreen> {
             // Content
             Expanded(
               child: _selectedSegment == 0
-                  ? _buildAllSavedGrid()
-                  : _buildAlbumsGrid(),
+                  ? _buildAlbumsGrid()
+                  : _buildAllSavedGrid(),
             ),
           ],
         ),

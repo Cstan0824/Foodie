@@ -1,8 +1,11 @@
 import 'package:flutter/cupertino.dart';
-import '../models/post_model.dart';
-import '../theme/app_theme.dart';
-import 'post_detail_screen.dart';
-import 'edit_profile_screen.dart';
+import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
+import 'package:taste_spot/features/profile/screens/edit_profile_screen.dart';
+import 'package:taste_spot/features/auth/screens/login_screen.dart';
+
+import 'package:taste_spot/features/profile/screens/connections_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,7 +26,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const _followersCount = 1243;
   static const _followingCount = 318;
 
-  static const _tabs = ['Notes', 'Liked', 'Saved'];
+  static const _tabs = ['Notes', 'Liked'];
 
   String _formatCount(int count) {
     if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}w';
@@ -35,8 +38,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     switch (_selectedTab) {
       case 1:
         return mockPosts.reversed.toList();
-      case 2:
-        return mockPosts.sublist(0, 4);
       default:
         return mockPosts;
     }
@@ -86,16 +87,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               height: 44,
               child: Row(
                 children: [
-                  CupertinoButton(
-                    padding: const EdgeInsets.all(10),
-                    minimumSize: Size.zero,
-                    onPressed: () {},
-                    child: const Icon(
-                      CupertinoIcons.chevron_back,
-                      size: 20,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
                   const Spacer(),
                   CupertinoButton(
                     padding: const EdgeInsets.all(10),
@@ -110,11 +101,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   CupertinoButton(
                     padding: const EdgeInsets.all(10),
                     minimumSize: Size.zero,
-                    onPressed: () => _showSettings(context),
+                    onPressed: () {
+                      _showLogoutDialog(context);
+                    },
                     child: const Icon(
-                      CupertinoIcons.ellipsis_vertical,
+                      CupertinoIcons.square_arrow_right,
                       size: 20,
-                      color: AppColors.textPrimary,
+                      color: AppColors.primary,
                     ),
                   ),
                 ],
@@ -153,9 +146,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _StatItem(
-                  value: _formatCount(_followingCount), label: 'Following'),
+                  value: _formatCount(_followingCount), 
+                  label: 'Following',
+                  onTap: () => Navigator.of(context).push(
+                    CupertinoPageRoute(builder: (_) => const ConnectionsScreen(initialTabIndex: 0)),
+                  ),
+              ),
               const _StatDivider(),
-              _StatItem(value: _formatCount(_followersCount), label: 'Fans'),
+              _StatItem(
+                  value: _formatCount(_followersCount), 
+                  label: 'Fans',
+                  onTap: () => Navigator.of(context).push(
+                    CupertinoPageRoute(builder: (_) => const ConnectionsScreen(initialTabIndex: 1)),
+                  ),
+              ),
               const _StatDivider(),
               _StatItem(value: _formatCount(_postsCount), label: 'Notes'),
             ],
@@ -304,32 +308,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ===================================================
   // SHEETS
   // ===================================================
-  void _showSettings(BuildContext context) {
+
+  void _showLogoutDialog(BuildContext context) {
     showCupertinoModalPopup(
       context: context,
-      builder: (_) => CupertinoActionSheet(
-        title: const Text('Settings'),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Account Settings'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Privacy'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Notifications'),
-          ),
+      builder: (BuildContext context) => CupertinoActionSheet(
+        title: const Text('Log Out'),
+        message: const Text('Are you sure you want to log out?'),
+        actions: <CupertinoActionSheetAction>[
           CupertinoActionSheetAction(
             isDestructiveAction: true,
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              // TODO: Implement actual Supabase logout
+              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                CupertinoPageRoute(builder: (context) => const LoginScreen()),
+                (route) => false,
+              );
+            },
             child: const Text('Log Out'),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(context),
+          isDefaultAction: true,
+          onPressed: () {
+            Navigator.pop(context);
+          },
           child: const Text('Cancel'),
         ),
       ),
@@ -504,34 +507,39 @@ class _XhsCard extends StatelessWidget {
 class _StatItem extends StatelessWidget {
   final String value;
   final String label;
+  final VoidCallback? onTap;
 
-  const _StatItem({required this.value, required this.label});
+  const _StatItem({required this.value, required this.label, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              letterSpacing: -0.4,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.4,
+              ),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: AppColors.textSecondary,
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

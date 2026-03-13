@@ -1,11 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'screens/home_screen.dart';
-import 'screens/collection_screen.dart';
-import 'screens/blind_box_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/add_post_screen.dart';
-import 'theme/app_theme.dart';
+import 'package:taste_spot/features/auth/screens/login_screen.dart';
+import 'package:taste_spot/features/feed/screens/home_screen.dart';
+import 'package:taste_spot/features/collection/screens/collection_screen.dart';
+import 'package:taste_spot/features/restaurant/screens/blind_box_screen.dart';
+import 'package:taste_spot/features/profile/screens/profile_screen.dart';
+import 'package:taste_spot/features/post/screens/add_post_screen.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
 
 void main() {
   runApp(const FoodiApp());
@@ -32,7 +33,7 @@ class FoodiApp extends StatelessWidget {
         primaryColor: AppColors.primary,
         scaffoldBackgroundColor: AppColors.background,
       ),
-      home: MainShell(),
+      home: LoginScreen(),
     );
   }
 }

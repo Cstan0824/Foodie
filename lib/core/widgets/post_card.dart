@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
-import '../models/post_model.dart';
-import '../theme/app_theme.dart';
+import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
 
 class PostCard extends StatefulWidget {
   final PostModel post;

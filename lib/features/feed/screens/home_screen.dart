@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
-import '../models/post_model.dart';
-import '../theme/app_theme.dart';
-import '../widgets/post_card.dart';
-import 'post_detail_screen.dart';
+import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/widgets/post_card.dart';
+import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
+import 'package:taste_spot/features/notification/screens/notification_screen.dart';
+import 'package:taste_spot/features/search/screens/explore_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -100,7 +102,13 @@ class _TopNavBar extends StatelessWidget {
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               minimumSize: Size.zero,
-              onPressed: () {},
+              onPressed: () {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => const NotificationScreen(),
+                  ),
+                );
+              },
               child: const Icon(
                 CupertinoIcons.bell,
                 color: AppColors.textPrimary,
@@ -158,7 +166,11 @@ class _TopNavBar extends StatelessWidget {
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               minimumSize: Size.zero,
-              onPressed: () {},
+              onPressed: () {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(builder: (_) => const ExploreScreen()),
+                );
+              },
               child: const Icon(
                 CupertinoIcons.search,
                 color: AppColors.textPrimary,
