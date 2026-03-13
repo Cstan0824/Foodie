@@ -5,8 +5,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:appinio_swiper/appinio_swiper.dart';
-import 'package:taste_spot/core/theme/app_theme.dart';
-import 'package:taste_spot/features/restaurant/screens/restaurant_detail_screen.dart';
+import '../../core/theme/app_theme.dart';
+import 'restaurant_detail_screen.dart';
 
 class BlindBoxScreen extends StatefulWidget {
   const BlindBoxScreen({super.key});

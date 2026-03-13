@@ -1,11 +1,8 @@
 import 'package:flutter/cupertino.dart';
-import 'package:taste_spot/data/models/post_model.dart';
-import 'package:taste_spot/core/theme/app_theme.dart';
-import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
-import 'package:taste_spot/features/profile/screens/edit_profile_screen.dart';
-import 'package:taste_spot/features/auth/screens/login_screen.dart';
-
-import 'package:taste_spot/features/profile/screens/connections_screen.dart';
+import '../../data/models/post_model.dart';
+import '../../core/theme/app_theme.dart';
+import 'post_detail_screen.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});

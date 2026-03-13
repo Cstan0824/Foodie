@@ -1,10 +1,8 @@
 import 'package:flutter/cupertino.dart';
-import 'package:taste_spot/data/models/post_model.dart';
-import 'package:taste_spot/core/theme/app_theme.dart';
-import 'package:taste_spot/core/widgets/post_card.dart';
-import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
-import 'package:taste_spot/features/notification/screens/notification_screen.dart';
-import 'package:taste_spot/features/search/screens/explore_screen.dart';
+import '../../data/models/post_model.dart';
+import '../../core/theme/app_theme.dart';
+import '../shared/post_card.dart';
+import 'post_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
