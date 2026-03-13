@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors; // For slight shadows
-import '../../core/theme/app_theme.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
 
 class CollectionScreen extends StatefulWidget {
   const CollectionScreen({super.key});

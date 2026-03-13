@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
-import '../../data/models/post_model.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/models/post_model.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final PostModel post;

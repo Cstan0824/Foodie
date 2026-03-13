@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import '../../core/theme/app_theme.dart';
+import 'package:taste_spot/core/theme/app_theme.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
