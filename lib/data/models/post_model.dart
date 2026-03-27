@@ -1,17 +1,23 @@
 class PostModel {
   final String id;
+  final String userId;
+  final String? restaurantId;
   final String imageUrl;
-  final double aspectRatio; // height / width  → tall image > 1.0
-  final String title;
+  final double aspectRatio;
+  final String title; // caption
   final String authorName;
   final String authorAvatar;
   final int likes;
   final int saveCount;
   final String? location;
   final String restaurantName;
+  final String restaurantCuisine;
+  final DateTime? createdAt;
 
   const PostModel({
     required this.id,
+    required this.userId,
+    this.restaurantId,
     required this.imageUrl,
     required this.aspectRatio,
     required this.title,
@@ -21,13 +27,49 @@ class PostModel {
     this.saveCount = 0,
     this.location,
     this.restaurantName = '',
+    this.restaurantCuisine = '',
+    this.createdAt,
   });
+
+  /// Maps a Supabase `Post` row with joined `User` + `Restaurant`.
+  factory PostModel.fromJson(Map<String, dynamic> json) {
+    // Supabase returns the joined User under the FK name when disambiguated
+    final user = (json['User!Post_user_Id_fkey'] ?? json['User'])
+        as Map<String, dynamic>?;
+    final authorName = (user?['name'] as String?) ?? 'Unknown';
+
+    final restaurant = json['Restaurant'] as Map<String, dynamic>?;
+    final restaurantName = (restaurant?['restaurant_name'] as String?) ?? '';
+    final restaurantCuisine = (restaurant?['categoryCuisine'] as String?) ?? '';
+    final restaurantId = restaurant?['restaurant_Id'] as String?;
+
+    final createdAtRaw = json['created_At'] as String?;
+
+    return PostModel(
+      id: json['post_Id'] as String,
+      userId: (user?['user_Id'] as String?) ?? '',
+      restaurantId: restaurantId,
+      // Images stored as bytes in Post_Image — PostCard handles empty gracefully.
+      imageUrl: '',
+      aspectRatio: 1.3,
+      title: (json['caption'] as String?) ?? '',
+      authorName: authorName,
+      authorAvatar: '',
+      likes: (json['likeCount'] as num?)?.toInt() ?? 0,
+      saveCount: (json['saveCount'] as num?)?.toInt() ?? 0,
+      restaurantName: restaurantName,
+      restaurantCuisine: restaurantCuisine,
+      createdAt:
+          createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
+    );
+  }
 }
 
-// ─── Mock data ───────────────────────────────
+// ─── Mock data (UI previews only) ────────────────────────────────────────────
 const List<PostModel> mockPosts = [
   PostModel(
     id: '1',
+    userId: 'mock-user-1',
     imageUrl: 'https://picsum.photos/seed/ramen1/400/520',
     aspectRatio: 1.3,
     title: 'Hidden gem ramen spot you must try 🍜',
@@ -40,6 +82,7 @@ const List<PostModel> mockPosts = [
   ),
   PostModel(
     id: '2',
+    userId: 'mock-user-2',
     imageUrl: 'https://picsum.photos/seed/cafe2/400/440',
     aspectRatio: 1.1,
     title: 'Aesthetic matcha latte art ☕️',
@@ -52,6 +95,7 @@ const List<PostModel> mockPosts = [
   ),
   PostModel(
     id: '3',
+    userId: 'mock-user-3',
     imageUrl: 'https://picsum.photos/seed/travel3/400/560',
     aspectRatio: 1.4,
     title: 'Golden hour at the rooftop bar 🌅',
@@ -64,6 +108,7 @@ const List<PostModel> mockPosts = [
   ),
   PostModel(
     id: '4',
+    userId: 'mock-user-4',
     imageUrl: 'https://picsum.photos/seed/food4/400/480',
     aspectRatio: 1.2,
     title: 'Best truffle pasta in town 🍝',
@@ -76,6 +121,7 @@ const List<PostModel> mockPosts = [
   ),
   PostModel(
     id: '5',
+    userId: 'mock-user-5',
     imageUrl: 'https://picsum.photos/seed/dessert5/400/540',
     aspectRatio: 1.35,
     title: 'Strawberry mochi ice cream 🍓',
@@ -87,6 +133,7 @@ const List<PostModel> mockPosts = [
   ),
   PostModel(
     id: '6',
+    userId: 'mock-user-6',
     imageUrl: 'https://picsum.photos/seed/brunch6/400/460',
     aspectRatio: 1.15,
     title: 'Sunday brunch vibes 🥞🥂',
@@ -95,10 +142,11 @@ const List<PostModel> mockPosts = [
     likes: 421,
     saveCount: 99,
     location: 'New York, USA',
-    restaurantName: 'Bubby\'s Tribeca',
+    restaurantName: "Bubby's Tribeca",
   ),
   PostModel(
     id: '7',
+    userId: 'mock-user-7',
     imageUrl: 'https://picsum.photos/seed/sushi7/400/580',
     aspectRatio: 1.45,
     title: 'Omakase course — worth every penny 🍣',
@@ -111,6 +159,7 @@ const List<PostModel> mockPosts = [
   ),
   PostModel(
     id: '8',
+    userId: 'mock-user-8',
     imageUrl: 'https://picsum.photos/seed/coffee8/400/450',
     aspectRatio: 1.12,
     title: 'Pour-over perfection ☕',
@@ -123,6 +172,7 @@ const List<PostModel> mockPosts = [
   ),
   PostModel(
     id: '9',
+    userId: 'mock-user-9',
     imageUrl: 'https://picsum.photos/seed/pizza9/400/500',
     aspectRatio: 1.25,
     title: 'Wood-fired margherita pizza 🍕🔥',
@@ -131,10 +181,11 @@ const List<PostModel> mockPosts = [
     likes: 1783,
     saveCount: 511,
     location: 'Naples, Italy',
-    restaurantName: 'L\'Antica Pizzeria da Michele',
+    restaurantName: "L'Antica Pizzeria da Michele",
   ),
   PostModel(
     id: '10',
+    userId: 'mock-user-10',
     imageUrl: 'https://picsum.photos/seed/dimsum10/400/520',
     aspectRatio: 1.3,
     title: 'Dim sum Sunday with the fam 🥟❤️',
