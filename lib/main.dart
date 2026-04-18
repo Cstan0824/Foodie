@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/features/auth/screens/login_screen.dart';
 import 'package:taste_spot/features/collection/screens/collection_screen.dart';
@@ -8,7 +10,18 @@ import 'package:taste_spot/features/post/screens/add_post_screen.dart';
 import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 import 'package:taste_spot/features/restaurant/screens/blind_box_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Load .env file
+  await dotenv.load(fileName: '.env');
+
+  // Initialise Supabase
+  await Supabase.initialize(
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+  );
+
   runApp(const FoodiApp());
 }
 
