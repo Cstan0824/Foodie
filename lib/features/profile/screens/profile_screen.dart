@@ -17,7 +17,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
 
   static const _userName = 'Walton G.';
-  static const _userHandle = 'ID: waltonfoodieKL';
+  static const _userHandle = 'waltonfoodieKL';
   static const _userBio =
       'Food explorer | Bouldering enthusiast\nKL based · Discovering hidden gems 🍜';
   static const _avatarUrl = 'https://i.pravatar.cc/200?img=12';
@@ -46,179 +46,207 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppColors.background,
-      child: CustomScrollView(
-        physics: const BouncingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        slivers: [
-          SliverToBoxAdapter(child: _buildProfileSection(context)),
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _TextTabBarDelegate(
-              selectedTab: _selectedTab,
-              onTabChanged: (i) => setState(() => _selectedTab = i),
-              tabs: _tabs,
-            ),
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: AppColors.background,
+        border: null, // Removes bottom border to flow smoothly into header
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => _showAccountsSheet(context),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _userHandle,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.4,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              SizedBox(width: 4),
+              Icon(
+                CupertinoIcons.chevron_down,
+                size: 14,
+                color: AppColors.textPrimary,
+              ),
+            ],
           ),
-          _buildSliverGrid(context),
-          const SliverToBoxAdapter(child: SizedBox(height: 90)),
-        ],
+        ),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => _showSettingsSheet(context),
+          child: const Icon(
+            CupertinoIcons.gear,
+            color: AppColors.textPrimary,
+            size: 24,
+          ),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          slivers: [
+            SliverToBoxAdapter(child: _buildProfileSection(context)),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TextTabBarDelegate(
+                selectedTab: _selectedTab,
+                onTabChanged: (i) => setState(() => _selectedTab = i),
+                tabs: _tabs,
+              ),
+            ),
+            _buildSliverGrid(context),
+            const SliverToBoxAdapter(child: SizedBox(height: 90)),
+          ],
+        ),
       ),
     );
   }
 
   // ===================================================
-  // PROFILE SECTION — XHS centered style
+  // PROFILE SECTION — Clean Row-based Header
   // ===================================================
   Widget _buildProfileSection(BuildContext context) {
-    final statusH = MediaQuery.of(context).padding.top;
     return Container(
-      color: CupertinoColors.white,
+      color: AppColors.background,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(height: statusH),
-
-          // Top bar: back left, share + more right
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: SizedBox(
-              height: 44,
-              child: Row(
-                children: [
-                  const Spacer(),
-                  CupertinoButton(
-                    padding: const EdgeInsets.all(10),
-                    minimumSize: Size.zero,
-                    onPressed: () {},
-                    child: const Icon(
-                      CupertinoIcons.share,
-                      size: 20,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  CupertinoButton(
-                    padding: const EdgeInsets.all(10),
-                    minimumSize: Size.zero,
-                    onPressed: () {
-                      _showLogoutDialog(context);
-                    },
-                    child: const Icon(
-                      CupertinoIcons.square_arrow_right,
-                      size: 20,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Avatar — centered with gradient ring
-          _buildAvatar(),
-          const SizedBox(height: 12),
-
-          // Display name
-          const Text(
-            _userName,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: 4),
-
-          // XHS-style ID line
-          const Text(
-            _userHandle,
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 18),
-
-          // Stats row: Following | Fans | Notes
+          // Avatar + Stats Row
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _StatItem(
-                  value: _formatCount(_followingCount), 
-                  label: 'Following',
-                  onTap: () => Navigator.of(context).push(
-                    CupertinoPageRoute(builder: (_) => const ConnectionsScreen(initialTabIndex: 0)),
-                  ),
+              _buildAvatar(),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _StatItem(
+                      value: _formatCount(_postsCount),
+                      label: 'Notes',
+                    ),
+                    _StatItem(
+                      value: _formatCount(_followersCount),
+                      label: 'Fans',
+                      onTap: () => Navigator.of(context).push(
+                        CupertinoPageRoute(
+                            builder: (_) =>
+                                const ConnectionsScreen(initialTabIndex: 1)),
+                      ),
+                    ),
+                    _StatItem(
+                      value: _formatCount(_followingCount),
+                      label: 'Following',
+                      onTap: () => Navigator.of(context).push(
+                        CupertinoPageRoute(
+                            builder: (_) =>
+                                const ConnectionsScreen(initialTabIndex: 0)),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const _StatDivider(),
-              _StatItem(
-                  value: _formatCount(_followersCount), 
-                  label: 'Fans',
-                  onTap: () => Navigator.of(context).push(
-                    CupertinoPageRoute(builder: (_) => const ConnectionsScreen(initialTabIndex: 1)),
-                  ),
-              ),
-              const _StatDivider(),
-              _StatItem(value: _formatCount(_postsCount), label: 'Notes'),
             ],
           ),
           const SizedBox(height: 16),
 
-          // Bio — centered
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              _userBio,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-                height: 1.55,
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Interest tags
-          const Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            alignment: WrapAlignment.center,
+          // User Name
+          Row(
             children: [
-              _TagChip(label: '🍜 Ramen'),
-              _TagChip(label: '☕ Cafes'),
-              _TagChip(label: '🧗 Bouldering'),
-              _TagChip(label: '📍 KL'),
-            ],
-          ),
-          const SizedBox(height: 18),
-
-          // Action buttons
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _PillButton(
-                    label: 'Edit Profile',
-                    filled: false,
-                    onTap: () => Navigator.of(context).push(
-                      CupertinoPageRoute(
-                        builder: (_) => const EditProfileScreen(),
-                      ),
-                    ),
+              const Text(
+                _userName,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'he/him',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textSecondary,
                   ),
                 ),
-                const SizedBox(width: 10),
-                _PillIconButton(
-                  icon: CupertinoIcons.person_badge_plus,
-                  onTap: () {},
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+
+          // Bio
+          const Text(
+            _userBio,
+            style: TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Links
+          GestureDetector(
+            onTap: () {},
+            child: const Row(
+              children: [
+                Icon(CupertinoIcons.link, size: 14, color: AppColors.primary),
+                SizedBox(width: 4),
+                Text(
+                  'beacons.ai/walton',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.primary,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+
+          // Action buttons
+          Row(
+            children: [
+              Expanded(
+                child: _PillButton(
+                  label: 'Edit Profile',
+                  filled: false,
+                  onTap: () => Navigator.of(context).push(
+                    CupertinoPageRoute(
+                      builder: (_) => const EditProfileScreen(),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _PillButton(
+                  label: 'Share Profile',
+                  filled: false,
+                  onTap: () {},
+                ),
+              ),
+              const SizedBox(width: 8),
+              _PillIconButton(
+                icon: CupertinoIcons.person_badge_plus,
+                onTap: () {},
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -308,13 +336,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // SHEETS
   // ===================================================
 
-  void _showLogoutDialog(BuildContext context) {
+  void _showAccountsSheet(BuildContext context) {
     showCupertinoModalPopup(
       context: context,
       builder: (BuildContext context) => CupertinoActionSheet(
-        title: const Text('Log Out'),
-        message: const Text('Are you sure you want to log out?'),
+        title: const Text('Switch Account'),
         actions: <CupertinoActionSheetAction>[
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('$_userHandle (Current)'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('Add Account...'),
+          ),
           CupertinoActionSheetAction(
             isDestructiveAction: true,
             onPressed: () {
@@ -325,6 +364,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
             },
             child: const Text('Log Out'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () {
+            Navigator.pop(context);
+          },
+          child: const Text('Cancel'),
+        ),
+      ),
+    );
+  }
+
+  void _showSettingsSheet(BuildContext context) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (BuildContext context) => CupertinoActionSheet(
+        actions: <CupertinoActionSheetAction>[
+          CupertinoActionSheetAction(
+            onPressed: () {
+              // TODO: Open full settings page
+              Navigator.pop(context);
+            },
+            child: const Text('Settings'),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () {
+              Navigator.pop(context);
+            },
+            child: const Text('Help & Support'),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
@@ -544,38 +613,6 @@ class _StatItem extends StatelessWidget {
   }
 }
 
-class _StatDivider extends StatelessWidget {
-  const _StatDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: 0.5, height: 28, color: AppColors.divider);
-  }
-}
-
-class _TagChip extends StatelessWidget {
-  final String label;
-  const _TagChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          color: AppColors.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
 class _PillButton extends StatelessWidget {
   final String label;
   final bool filled;
@@ -595,7 +632,7 @@ class _PillButton extends StatelessWidget {
         height: 36,
         decoration: BoxDecoration(
           color: filled ? AppColors.primary : CupertinoColors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(8),
           border: filled
               ? null
               : Border.all(color: AppColors.tabBarBorder, width: 1),
@@ -629,7 +666,7 @@ class _PillIconButton extends StatelessWidget {
         height: 36,
         decoration: BoxDecoration(
           color: CupertinoColors.white,
-          shape: BoxShape.circle,
+          borderRadius: BorderRadius.circular(8),
           border: Border.all(color: AppColors.tabBarBorder, width: 1),
         ),
         alignment: Alignment.center,
