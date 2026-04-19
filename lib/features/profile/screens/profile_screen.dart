@@ -1,19 +1,21 @@
 import 'package:flutter/cupertino.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/features/auth/screens/login_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/profile/screens/connections_screen.dart';
 import 'edit_profile_screen.dart';
+import 'package:taste_spot/core/widgets/post_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
+  State<ProfileScreen> createState() => ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
 
   static const _userName = 'Walton G.';
@@ -33,12 +35,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return count.toString();
   }
 
+  static const _userId = '00000000-0000-0000-0000-000000000001';
+
+  List<PostModel> _myPosts = [];
+  List<PostModel> _likedPosts = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadUserPosts();
+  }
+
+  Future<void> loadUserPosts({bool silent = false}) async {
+    if (!silent && mounted) setState(() => _isLoading = true);
+    try {
+      final futures = await Future.wait([
+        PostRepository.instance.fetchUserPosts(userId: _userId, limit: 100),
+        PostRepository.instance.fetchLikedPosts(userId: _userId, limit: 100),
+      ]);
+      if (mounted) {
+        setState(() {
+          _myPosts = futures[0];
+          _likedPosts = futures[1];
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   List<PostModel> get _currentPosts {
     switch (_selectedTab) {
       case 1:
-        return mockPosts.reversed.toList();
+        return _likedPosts;
       default:
-        return mockPosts;
+        return _myPosts;
     }
   }
 
@@ -56,7 +89,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             pinned: true,
             delegate: _TextTabBarDelegate(
               selectedTab: _selectedTab,
-              onTabChanged: (i) => setState(() => _selectedTab = i),
+              onTabChanged: (i) {
+                if (i != _selectedTab) {
+                  loadUserPosts(silent: true);
+                }
+                setState(() => _selectedTab = i);
+              },
               tabs: _tabs,
             ),
           ),
@@ -260,6 +298,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 2-COLUMN CARD GRID — XHS style
   // ===================================================
   Widget _buildSliverGrid(BuildContext context) {
+    if (_isLoading) {
+      return const SliverFillRemaining(
+        child: Center(
+          child: CupertinoActivityIndicator(),
+        ),
+      );
+    }
+
     final posts = _currentPosts;
 
     if (posts.isEmpty) {
@@ -279,26 +325,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-      sliver: SliverGrid(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final post = posts[index];
-            return GestureDetector(
-              onTap: () => Navigator.of(context).push(
-                CupertinoPageRoute(
-                  builder: (_) => PostDetailScreen(post: post),
-                ),
+      sliver: SliverToBoxAdapter(
+        child: _ProfileMasonryGrid(
+          posts: posts,
+          onPostTap: (post) async {
+            final result = await Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => PostDetailScreen(post: post),
               ),
-              child: _XhsCard(post: post),
             );
+            if (result == true) {
+              loadUserPosts();
+            }
           },
-          childCount: posts.length,
-        ),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 0.72,
         ),
       ),
     );
@@ -335,6 +374,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: const Text('Cancel'),
         ),
       ),
+    );
+  }
+}
+
+// ===================================================
+// NATIVE MASONRY GRID (Mirrors home feed logic)
+// ===================================================
+class _ProfileMasonryGrid extends StatelessWidget {
+  final List<PostModel> posts;
+  final void Function(PostModel post) onPostTap;
+
+  const _ProfileMasonryGrid({required this.posts, required this.onPostTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final leftCol = <PostModel>[];
+    final rightCol = <PostModel>[];
+
+    for (int i = 0; i < posts.length; i++) {
+        (i.isEven ? leftCol : rightCol).add(posts[i]);
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            children: leftCol
+                .map((p) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: PostCard(post: p, onTap: () => onPostTap(p)),
+                    ))
+                .toList(),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            children: rightCol
+                .map((p) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: PostCard(post: p, onTap: () => onPostTap(p)),
+                    ))
+                .toList(),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -416,88 +502,6 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
       old.selectedTab != selectedTab || old.tabs != tabs;
 }
 
-// ===================================================
-// XHS CARD — image + title + like count
-// ===================================================
-class _XhsCard extends StatelessWidget {
-  final PostModel post;
-  const _XhsCard({required this.post});
-
-  String _fmt(int n) {
-    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}w';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
-    return n.toString();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: CupertinoColors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      clipBehavior: Clip.hardEdge,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Image.network(
-              post.imageUrl,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: AppColors.surface,
-                child: const Center(
-                  child: Icon(
-                    CupertinoIcons.photo,
-                    color: AppColors.textLight,
-                    size: 28,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  post.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textPrimary,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(
-                      CupertinoIcons.heart_fill,
-                      size: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      _fmt(post.likes),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ===================================================
 // HELPER WIDGETS

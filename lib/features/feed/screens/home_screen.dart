@@ -11,10 +11,10 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   int _topNavIndex = 1; // default: Discover
   final _scrollController = ScrollController();
 
@@ -32,7 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadPosts();
+    loadPosts();
   }
 
   @override
@@ -56,9 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ── Initial load (or pull-to-refresh) ────────────────────────────────────
-  Future<void> _loadPosts() async {
+  Future<void> loadPosts({bool silent = false}) async {
+    if (!silent && mounted) setState(() => _isLoading = true);
     setState(() {
-      _isLoading = true;
       _error = null;
       _offset = 0;
       _hasMore = true;
@@ -167,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 16),
               CupertinoButton(
-                onPressed: _loadPosts,
+                onPressed: loadPosts,
                 child: const Text('Try again'),
               ),
             ],
@@ -201,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         slivers: [
           // Pull-to-refresh
-          CupertinoSliverRefreshControl(onRefresh: _loadPosts),
+          CupertinoSliverRefreshControl(onRefresh: loadPosts),
 
           // Posts grid
           SliverPadding(
@@ -209,14 +209,19 @@ class _HomeScreenState extends State<HomeScreen> {
             sliver: SliverToBoxAdapter(
               child: _MasonryGrid(
                 posts: _posts,
-                onPostTap: (post) => Navigator.of(context).push(
-                  CupertinoPageRoute(
-                    builder: (_) => HeroMode(
-                      enabled: false,
-                      child: PostDetailScreen(post: post),
+                onPostTap: (post) async {
+                  final result = await Navigator.of(context).push(
+                    CupertinoPageRoute(
+                      builder: (_) => HeroMode(
+                        enabled: false,
+                        child: PostDetailScreen(post: post),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                  if (result == true && mounted) {
+                    loadPosts();
+                  }
+                },
               ),
             ),
           ),

@@ -1,3 +1,5 @@
+import 'dart:math'; // TODO: will be removed once UUID generation is delegated to Supabase
+
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
 
@@ -33,13 +35,18 @@ class CommentRepository {
     required String userId,
     required String content,
   }) async {
-    final response = await SupabaseService.client
+    final commentId = _generateUUID(); // TODO: will be removed — delegate UUID to Supabase later
+    await SupabaseService.client
         .from('Comment')
         .insert({
+          'comment_Id': commentId,
           'post_Id': postId,
           'user_Id': userId,
           'content': content,
-        })
+        });
+
+    final response = await SupabaseService.client
+        .from('Comment')
         .select('''
           comment_Id,
           post_Id,
@@ -48,8 +55,23 @@ class CommentRepository {
           created_At,
           User!Comment_user_Id_fkey(user_Id, name)
         ''')
+        .eq('comment_Id', commentId)
         .single();
 
     return CommentModel.fromJson(response);
+  }
+
+  // TODO: will be removed — delegate UUID generation to Supabase
+  static final _secureRand = Random.secure();
+
+  String _generateUUID() {
+    final bytes = List<int>.generate(16, (_) => _secureRand.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex =
+        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}'
+        '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
+        '-${hex.substring(20)}';
   }
 }

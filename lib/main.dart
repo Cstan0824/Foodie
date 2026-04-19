@@ -62,6 +62,9 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  final GlobalKey<HomeScreenState> homeKey = GlobalKey();
+  final GlobalKey<ProfileScreenState> profileKey = GlobalKey();
+
   // Active tab: 0=Home, 1=Collection, 3=BlindBox, 4=Profile (2=Add, never stored)
   int _selectedTab = 0;
 
@@ -79,13 +82,18 @@ class _MainShellState extends State<MainShell> {
     }
   }
 
-  void _showAddPost() {
-    Navigator.of(context).push(
+  void _showAddPost() async {
+    final result = await Navigator.of(context).push(
       CupertinoPageRoute(
         fullscreenDialog: true,
         builder: (context) => const AddPostScreen(),
       ),
     );
+    if (result == true && mounted) {
+      setState(() => _selectedTab = 0);
+      homeKey.currentState?.loadPosts();
+      profileKey.currentState?.loadUserPosts();
+    }
   }
 
   @override
@@ -96,11 +104,11 @@ class _MainShellState extends State<MainShell> {
         Expanded(
           child: IndexedStack(
             index: _screenIndex,
-            children: const [
-              HomeScreen(),
-              CollectionScreen(),
-              BlindBoxScreen(),
-              ProfileScreen(),
+            children: [
+              HomeScreen(key: homeKey),
+              const CollectionScreen(),
+              const BlindBoxScreen(),
+              ProfileScreen(key: profileKey),
             ],
           ),
         ),
@@ -141,7 +149,11 @@ class _MainShellState extends State<MainShell> {
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _selectedTab = tab),
+        onTap: () {
+          setState(() => _selectedTab = tab);
+          if (tab == 0) homeKey.currentState?.loadPosts(silent: true);
+          if (tab == 4) profileKey.currentState?.loadUserPosts(silent: true);
+        },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

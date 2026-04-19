@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/repositories/post_repository.dart';
 
 class PostCard extends StatefulWidget {
   final PostModel post;
@@ -13,7 +14,82 @@ class PostCard extends StatefulWidget {
 }
 
 class _PostCardState extends State<PostCard> {
+  late PostModel _currentPost;
   bool _isLiked = false;
+  bool _isLiking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentPost = widget.post;
+    _checkLikeStatus();
+  }
+
+  @override
+  void didUpdateWidget(PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.post.id != widget.post.id) {
+      setState(() {
+        _currentPost = widget.post;
+        _isLiked = false; // Reset visually until DB check finishes
+      });
+      _checkLikeStatus();
+    } else if (oldWidget.post != widget.post) {
+      // If the post is the same ID but updated (like count changed externally)
+      setState(() {
+        _currentPost = widget.post;
+      });
+    }
+  }
+
+  Future<void> _checkLikeStatus() async {
+    try {
+      final isLiked = await PostRepository.instance.checkIsLiked(
+        _currentPost.id, 
+        '00000000-0000-0000-0000-000000000001',
+      );
+      if (mounted) {
+        setState(() {
+          _isLiked = isLiked;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleLike() async {
+    if (_isLiking) return;
+    setState(() => _isLiking = true);
+
+    final newIsLiked = !_isLiked;
+    // ensure likes never drop below 0 just as a pure safety guard
+    final rawNewCount = _currentPost.likes + (newIsLiked ? 1 : -1);
+    final newCount = rawNewCount < 0 ? 0 : rawNewCount;
+
+    setState(() {
+      _isLiked = newIsLiked;
+      _currentPost = _currentPost.copyWith(likes: newCount);
+    });
+
+    try {
+      await PostRepository.instance.toggleLike(
+        _currentPost.id, 
+        '00000000-0000-0000-0000-000000000001', 
+        newIsLiked, 
+        newCount,
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLiked = !_isLiked;
+          _currentPost = _currentPost.copyWith(
+            likes: newCount + (newIsLiked ? -1 : 1),
+          );
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLiking = false);
+    }
+  }
 
   String _formatCount(int count) {
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
@@ -37,9 +113,9 @@ class _PostCardState extends State<PostCard> {
               borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
               child: AspectRatio(
                 // PostModel.aspectRatio is h/w (>1 = tall); AspectRatio needs w/h
-                aspectRatio: 1 / widget.post.aspectRatio,
+                aspectRatio: 1 / _currentPost.aspectRatio,
                 child: Image.network(
-                  widget.post.imageUrl,
+                  _currentPost.imageUrl,
                   fit: BoxFit.cover,
                   errorBuilder: (_, _, _) => Container(
                     color: AppColors.surface,
@@ -63,7 +139,7 @@ class _PostCardState extends State<PostCard> {
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
               child: Text(
-                widget.post.title,
+                _currentPost.title,
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -84,7 +160,7 @@ class _PostCardState extends State<PostCard> {
                   // Avatar
                   ClipOval(
                     child: Image.network(
-                      widget.post.authorAvatar,
+                      _currentPost.authorAvatar,
                       width: 16,
                       height: 16,
                       fit: BoxFit.cover,
@@ -101,7 +177,7 @@ class _PostCardState extends State<PostCard> {
                   // Username
                   Expanded(
                     child: Text(
-                      widget.post.authorName,
+                      _currentPost.authorName,
                       style: const TextStyle(
                         fontSize: 10,
                         color: AppColors.textPrimary,
@@ -112,7 +188,7 @@ class _PostCardState extends State<PostCard> {
                   ),
                   // Like button
                   GestureDetector(
-                    onTap: () => setState(() => _isLiked = !_isLiked),
+                    onTap: _toggleLike,
                     child: Row(
                       children: [
                         Icon(
@@ -126,8 +202,7 @@ class _PostCardState extends State<PostCard> {
                         ),
                         const SizedBox(width: 3),
                         Text(
-                          _formatCount(
-                              widget.post.likes + (_isLiked ? 1 : 0)),
+                          _formatCount(_currentPost.likes),
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textPrimary,
