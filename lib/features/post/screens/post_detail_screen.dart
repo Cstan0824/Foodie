@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/models/comment_model.dart';
 import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/data/repositories/comment_repository.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final PostModel post;
@@ -20,44 +22,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final _commentController = TextEditingController();
   final _scrollController = ScrollController();
 
-  // Mock comments
-  final _comments = [
-    _CommentData(
-      avatar: 'https://i.pravatar.cc/100?img=10',
-      username: 'foodlover_kl',
-      text: 'This place is amazing!! I went last week 😍',
-      time: '2h ago',
-      likes: 24,
-    ),
-    _CommentData(
-      avatar: 'https://i.pravatar.cc/100?img=11',
-      username: 'eateverywhere',
-      text: 'The sambal is so good omg 🌶️ must try!!',
-      time: '3h ago',
-      likes: 18,
-    ),
-    _CommentData(
-      avatar: 'https://i.pravatar.cc/100?img=12',
-      username: 'penangfoodie',
-      text: 'Been here 3 times already, never disappoints 👌',
-      time: '5h ago',
-      likes: 42,
-    ),
-    _CommentData(
-      avatar: 'https://i.pravatar.cc/100?img=13',
-      username: 'klhawker',
-      text: 'How much is it per person?',
-      time: '6h ago',
-      likes: 3,
-    ),
-    _CommentData(
-      avatar: 'https://i.pravatar.cc/100?img=14',
-      username: 'foodhunter99',
-      text: 'Just went today and it was fully packed! Queue for 30 mins but worth it 🔥',
-      time: '8h ago',
-      likes: 67,
-    ),
-  ];
+  // Comments state
+  List<CommentModel> _comments = [];
+  bool _isLoadingComments = true;
+  bool _isPostingComment = false;
 
   // Mock multiple images for the post
   List<String> get _images => [
@@ -72,10 +40,54 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadComments();
+  }
+
+  @override
   void dispose() {
     _commentController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadComments() async {
+    setState(() => _isLoadingComments = true);
+    try {
+      final comments = await CommentRepository.instance
+          .fetchComments(widget.post.id);
+      if (mounted) setState(() => _comments = comments);
+    } catch (_) {
+      // silently keep empty list on error
+    } finally {
+      if (mounted) setState(() => _isLoadingComments = false);
+    }
+  }
+
+  Future<void> _submitComment() async {
+    final text = _commentController.text.trim();
+    if (text.isEmpty || _isPostingComment) return;
+
+    setState(() => _isPostingComment = true);
+    try {
+      // TODO: replace with real auth userId when auth is implemented
+      const tempUserId = '00000000-0000-0000-0000-000000000001';
+      final newComment = await CommentRepository.instance.postComment(
+        postId: widget.post.id,
+        userId: tempUserId,
+        content: text,
+      );
+      if (mounted) {
+        setState(() => _comments.insert(0, newComment));
+        _commentController.clear();
+        Navigator.pop(context);
+      }
+    } catch (_) {
+      // TODO: show error toast
+    } finally {
+      if (mounted) setState(() => _isPostingComment = false);
+    }
   }
 
   @override
@@ -400,13 +412,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget _buildCommentsHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
-      child: Text(
-        '${_comments.length} Comments',
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textPrimary,
-        ),
+      child: Row(
+        children: [
+          Text(
+            _isLoadingComments
+                ? 'Loading comments…'
+                : '${_comments.length} Comments',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          if (_isLoadingComments) ...
+            const [
+              SizedBox(width: 8),
+              CupertinoActivityIndicator(radius: 8),
+            ],
+        ],
       ),
     );
   }
@@ -414,20 +437,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // ══════════════════════════════════════════
   // COMMENT TILE
   // ══════════════════════════════════════════
-  Widget _buildCommentTile(_CommentData comment) {
+  Widget _buildCommentTile(CommentModel comment) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipOval(
-            child: Image.network(
-              comment.avatar,
-              width: 32,
-              height: 32,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  Container(width: 32, height: 32, color: AppColors.surface),
+          // Initials avatar (no image URL available from DB)
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primary.withValues(alpha: 0.12),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              comment.initials,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -436,7 +467,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  comment.username,
+                  comment.authorName,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -445,7 +476,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  comment.text,
+                  comment.content,
                   style: const TextStyle(
                     fontSize: 14,
                     color: AppColors.textPrimary,
@@ -453,37 +484,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 5),
-                Row(
-                  children: [
-                    Text(comment.time,
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.textLight)),
-                    const SizedBox(width: 16),
-                    const Text('Reply',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textLight,
-                            fontWeight: FontWeight.w500)),
-                  ],
+                Text(
+                  comment.timeAgo,
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textLight),
                 ),
               ],
             ),
-          ),
-          Column(
-            children: [
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                onPressed: () {},
-                child: const Icon(CupertinoIcons.heart,
-                    size: 16, color: AppColors.textLight),
-              ),
-              Text(
-                '${comment.likes}',
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textLight),
-              ),
-            ],
           ),
         ],
       ),
@@ -629,11 +636,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: CupertinoButton(
                   color: AppColors.primary,
                   borderRadius: BorderRadius.circular(12),
-                  onPressed: () {
-                    _commentController.clear();
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Post Comment'),
+                  onPressed: _isPostingComment ? null : _submitComment,
+                  child: _isPostingComment
+                      ? const CupertinoActivityIndicator()
+                      : const Text('Post Comment'),
+
                 ),
               ),
             ),
@@ -708,18 +715,3 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-class _CommentData {
-  final String avatar;
-  final String username;
-  final String text;
-  final String time;
-  final int likes;
-
-  const _CommentData({
-    required this.avatar,
-    required this.username,
-    required this.text,
-    required this.time,
-    required this.likes,
-  });
-}
