@@ -12,7 +12,7 @@ class RestaurantRepository {
 
     final response = await SupabaseService.client
         .from('Restaurant')
-        .select('restaurant_Id, restaurant_name, categoryCuisine, address, maps_url')
+        .select('restaurant_Id, restaurant_name, main_cuisine_id, address, maps_url, created_At, latitude, longitude, source, info_url, isDisabled')
         .ilike('restaurant_name', '%$query%')
         .order('restaurant_name')
         .limit(limit);
@@ -26,7 +26,7 @@ class RestaurantRepository {
   Future<List<RestaurantModel>> fetchRecent({int limit = 10}) async {
     final response = await SupabaseService.client
         .from('Restaurant')
-        .select('restaurant_Id, restaurant_name, categoryCuisine, address')
+        .select('restaurant_Id, restaurant_name, main_cuisine_id, address, maps_url, created_At, latitude, longitude, source, info_url, isDisabled')
         .order('created_At', ascending: false)
         .limit(limit);
 

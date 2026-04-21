@@ -261,9 +261,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
                                 fontSize: 15,
                               ),
                             ),
-                            if (_selectedRestaurant?.cuisine != null)
+                            if (_selectedRestaurant?.mainCuisineId != null)
                               Text(
-                                _selectedRestaurant!.cuisine!,
+                                _selectedRestaurant!.mainCuisineId!,
                                 style: const TextStyle(
                                     fontSize: 12,
                                     color: AppColors.textLight),
@@ -523,8 +523,8 @@ class _RestaurantPickerSheetState
                                                 fontWeight: FontWeight.w600,
                                                 color:
                                                     AppColors.textPrimary)),
-                                        if (r.cuisine != null)
-                                          Text(r.cuisine!,
+                                        if (r.mainCuisineId != null)
+                                          Text(r.mainCuisineId!,
                                               style: const TextStyle(
                                                   fontSize: 12,
                                                   color:

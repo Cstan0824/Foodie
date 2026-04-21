@@ -44,7 +44,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
       _selectedRestaurant = RestaurantModel(
         restaurantId: widget.post.restaurantId ?? '',
         name: widget.post.restaurantName,
-        cuisine: widget.post.restaurantCuisine.isNotEmpty ? widget.post.restaurantCuisine : null,
+        mainCuisineId: widget.post.restaurantCuisine.isNotEmpty ? widget.post.restaurantCuisine : null,
       );
     }
   }
@@ -291,9 +291,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                                 fontSize: 15,
                               ),
                             ),
-                            if (_selectedRestaurant?.cuisine != null)
+                            if (_selectedRestaurant?.mainCuisineId != null)
                               Text(
-                                _selectedRestaurant!.cuisine!,
+                                _selectedRestaurant!.mainCuisineId!,
                                 style: const TextStyle(
                                     fontSize: 12,
                                     color: AppColors.textLight),
@@ -589,8 +589,8 @@ class _RestaurantPickerSheetState extends State<_RestaurantPickerSheet> {
                                                 fontWeight: FontWeight.w600,
                                                 color:
                                                     AppColors.textPrimary)),
-                                        if (r.cuisine != null)
-                                          Text(r.cuisine!,
+                                        if (r.mainCuisineId != null)
+                                          Text(r.mainCuisineId!,
                                               style: const TextStyle(
                                                   fontSize: 12,
                                                   color:
