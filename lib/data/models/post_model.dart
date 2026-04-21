@@ -64,13 +64,22 @@ class PostModel {
   /// Maps a Supabase `Post` row with joined `User` + `Restaurant`.
   factory PostModel.fromJson(Map<String, dynamic> json) {
     // Supabase returns the joined User under the FK name when disambiguated
-    final user = (json['User!Post_user_Id_fkey'] ?? json['User'])
-        as Map<String, dynamic>?;
+    final user =
+        (json['User!Post_user_Id_fkey'] ?? json['User'])
+            as Map<String, dynamic>?;
     final authorName = (user?['name'] as String?) ?? 'Unknown';
 
     final restaurant = json['Restaurant'] as Map<String, dynamic>?;
     final restaurantName = (restaurant?['restaurant_name'] as String?) ?? '';
-    final restaurantCuisine = (restaurant?['categoryCuisine'] as String?) ?? '';
+    final mainCuisine = restaurant?['mainCuisine'];
+    final restaurantCuisine = switch (mainCuisine) {
+      final Map<String, dynamic> cuisine =>
+        (cuisine['description'] as String?) ?? '',
+      final List<dynamic> cuisines when cuisines.isNotEmpty =>
+        ((cuisines.first as Map<String, dynamic>)['description'] as String?) ??
+            '',
+      _ => '',
+    };
     final restaurantId = restaurant?['restaurant_Id'] as String?;
 
     final createdAtRaw = json['created_At'] as String?;
@@ -100,10 +109,7 @@ class PostModel {
       saveCount: (json['saveCount'] as num?)?.toInt() ?? 0,
       restaurantName: restaurantName,
       restaurantCuisine: restaurantCuisine,
-      createdAt:
-          createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
+      createdAt: createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
     );
   }
 }
-
-
