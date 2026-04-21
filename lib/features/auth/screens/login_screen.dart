@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/features/auth/screens/signup_screen.dart';
 import 'package:taste_spot/features/auth/screens/forgot_password_screen.dart';
+import 'package:taste_spot/features/admin/screens/admin_screen.dart';
 import 'package:taste_spot/main.dart'; // To navigate to home for testing
 
 class LoginScreen extends StatefulWidget {
@@ -290,6 +291,36 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // ── [TEMP] Admin Entry ── remove when auth module is integrated
+              GestureDetector(
+                onTap: () {
+                  Navigator.of(context).push(
+                    CupertinoPageRoute(
+                      builder: (_) => const AdminScreen(),
+                    ),
+                  );
+                },
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F7F9),
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: AppColors.divider, width: 0.5),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      '⚙️  Admin Panel',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ),
                 ),
