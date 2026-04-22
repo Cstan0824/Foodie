@@ -59,4 +59,44 @@ class ProfileRepository {
     // Assuming binary data returned as List<int>
     return Uint8List.fromList(List<int>.from(response['profile_image']));
   }
+
+  Future<int> getFollowersCount(String userId) async {
+    final response = await _supabase
+        .from('Follower')
+        .select('follower_Id')
+        .eq('following_Id', userId);
+    return (response as List).length;
+  }
+
+  Future<int> getFollowingCount(String userId) async {
+    final response = await _supabase
+        .from('Follower')
+        .select('following_Id')
+        .eq('follower_Id', userId);
+    return (response as List).length;
+  }
+
+  Future<List<Profile>> getFollowers(String userId) async {
+    final response = await _supabase
+        .from('Follower')
+        .select('follower_Id, User!Follower_follower_Id_fkey(user_Id, name, username, bio, created_At)')
+        .eq('following_Id', userId);
+
+    return (response as List).map((row) {
+      final userJson = row['User'] as Map<String, dynamic>;
+      return Profile.fromJson(userJson);
+    }).toList();
+  }
+
+  Future<List<Profile>> getFollowing(String userId) async {
+    final response = await _supabase
+        .from('Follower')
+        .select('following_Id, User!Follower_following_Id_fkey(user_Id, name, username, bio, created_At)')
+        .eq('follower_Id', userId);
+
+    return (response as List).map((row) {
+      final userJson = row['User'] as Map<String, dynamic>;
+      return Profile.fromJson(userJson);
+    }).toList();
+  }
 }
