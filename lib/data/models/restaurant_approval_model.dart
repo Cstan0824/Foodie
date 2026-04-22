@@ -10,6 +10,9 @@ class RestaurantApprovalModel {
   final int status; // 0 = not reviewed, 1 = accepted, 2 = rejected
   final DateTime? detectedAt;
   final String? mainCuisineId;
+  final double? rating;
+  /// this is in the restaurant approval table, not the main restaurant table, so it can be null
+  final String? imageUrl;
 
   const RestaurantApprovalModel({
     required this.approvalId,
@@ -23,6 +26,8 @@ class RestaurantApprovalModel {
     required this.status,
     this.detectedAt,
     this.mainCuisineId,
+    this.rating,
+    this.imageUrl,
   });
 
   factory RestaurantApprovalModel.fromJson(Map<String, dynamic> json) {
@@ -40,6 +45,8 @@ class RestaurantApprovalModel {
           ? DateTime.tryParse(json['detectedAt'] as String) 
           : null,
       mainCuisineId: json['main_cuisine_id'] as String?,
+      rating: (json['rating'] as num?)?.toDouble(),
+      imageUrl: json['image_url'] as String?,
     );
   }
 
@@ -56,6 +63,8 @@ class RestaurantApprovalModel {
       'status': status,
       'detectedAt': detectedAt?.toIso8601String(),
       'main_cuisine_id': mainCuisineId,
+      'rating': rating,
+      'image_url': imageUrl,
     };
   }
 }
