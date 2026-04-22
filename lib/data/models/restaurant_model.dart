@@ -14,10 +14,14 @@ class RestaurantModel {
   });
 
   factory RestaurantModel.fromJson(Map<String, dynamic> json) {
+    final mainCuisine =
+        json['mainCuisine'] as Map<String, dynamic>? ?? json['Cuisine'] as Map<String, dynamic>?;
+
     return RestaurantModel(
       restaurantId: json['restaurant_Id'] as String,
       name: (json['restaurant_name'] as String?) ?? 'Unknown',
-      cuisine: json['categoryCuisine'] as String?,
+      cuisine:
+          (mainCuisine?['desc'] as String?) ?? json['categoryCuisine'] as String?,
       address: json['address'] as String?,
       mapsUrl: json['maps_url'] as String?,
     );

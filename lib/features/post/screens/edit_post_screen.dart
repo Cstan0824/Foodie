@@ -44,7 +44,6 @@ class _EditPostScreenState extends State<EditPostScreen> {
       _selectedRestaurant = RestaurantModel(
         restaurantId: widget.post.restaurantId ?? '',
         name: widget.post.restaurantName,
-        cuisine: widget.post.restaurantCuisine.isNotEmpty ? widget.post.restaurantCuisine : null,
       );
     }
   }
@@ -98,6 +97,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
       return;
     }
 
+    if (_selectedRestaurant == null ||
+        _selectedRestaurant!.restaurantId.trim().isEmpty) {
+      _showError('Please tag a restaurant before saving.');
+      return;
+    }
+
     if (_existingImages.isEmpty && _selectedImages.isEmpty) {
        _showError('Please add at least one photo.');
        return;
@@ -112,7 +117,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
 
       await PostRepository.instance.updatePost(
         postId: widget.post.id,
-        restaurantId: _selectedRestaurant?.restaurantId,
+        restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
         deletedImageUrls: _deletedImageUrls,
@@ -304,7 +309,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       if (_selectedRestaurant != null)
                         CupertinoButton(
                           padding: EdgeInsets.zero,
-                          minSize: 0,
+                          minimumSize: Size.zero,
                           onPressed: () =>
                               setState(() => _selectedRestaurant = null),
                           child: const Icon(
@@ -549,7 +554,7 @@ class _RestaurantPickerSheetState extends State<_RestaurantPickerSheet> {
                             style: TextStyle(color: AppColors.textLight)))
                     : ListView.separated(
                         itemCount: _results.length,
-                        separatorBuilder: (_, __) => Container(
+                        separatorBuilder: (_, _) => Container(
                             height: 0.5,
                             color: AppColors.divider,
                             margin: const EdgeInsets.only(left: 58)),
