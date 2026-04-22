@@ -5,14 +5,12 @@ import 'package:taste_spot/features/admin/screens/admin_models.dart';
 
 class AdminPostReviewScreen extends StatefulWidget {
   final List<ReportedPost> posts;
-  final VoidCallback? onDismiss;
-  final VoidCallback? onBlock;
+  final bool showModerationActions;
 
   const AdminPostReviewScreen({
     super.key,
     required this.posts,
-    this.onDismiss,
-    this.onBlock,
+    this.showModerationActions = true,
   });
 
   @override
@@ -64,18 +62,18 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   void _handleDismiss() {
     showCupertinoDialog(
       context: context,
-      builder: (_) => CupertinoAlertDialog(
+      builder: (dialogContext) => CupertinoAlertDialog(
         title: const Text('Dismiss Reports'),
         content: const Text(
             'All reports against this post will be dismissed and removed from the queue.'),
         actions: [
           CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           CupertinoDialogAction(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               Navigator.pop(context, ReviewResult.dismiss);
             },
             child: const Text(
@@ -91,19 +89,19 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   void _handleBlock() {
     showCupertinoDialog(
       context: context,
-      builder: (_) => CupertinoAlertDialog(
+      builder: (dialogContext) => CupertinoAlertDialog(
         title: const Text('Block Post'),
         content: const Text(
             'This post will be blocked, hidden from users, and all its pending reports marked as removed.'),
         actions: [
           CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               Navigator.pop(context, ReviewResult.block);
             },
             child: const Text('Block Post'),
@@ -136,17 +134,22 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
                   childCount: widget.posts.length,
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: widget.showModerationActions ? 100 : 24,
+                ),
+              ),
             ],
           ),
 
           // ── Fixed bottom admin bar ──
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _buildAdminBottomBar(),
-          ),
+          if (widget.showModerationActions)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildAdminBottomBar(),
+            ),
         ],
       ),
     );
