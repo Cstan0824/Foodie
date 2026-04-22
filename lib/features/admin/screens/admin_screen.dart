@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:taste_spot/core/theme/app_theme.dart';
-import 'package:taste_spot/features/admin/screens/post_management_screen.dart';
+import 'package:taste_spot/features/admin/post_management/screens/post_management_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});

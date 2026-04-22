@@ -304,4 +304,31 @@ class PostRepository {
         .maybeSingle();
     return response != null;
   }
+
+  /// Submits a report for a post. Enforces anti-spam uniquely per user/post via database.
+  Future<void> reportPost({
+    required String postId,
+    required String userId,
+    required String reason,
+    String? details,
+  }) async {
+    try {
+      await SupabaseService.client.from('Report').insert({
+        'post_Id': postId,
+        'user_Id': userId,
+        'reason': reason,
+        'details': details,
+        'status': 0,
+      });
+    } catch (e) {
+      if (e.toString().contains('23505') || e.toString().contains('duplicate key')) {
+        throw Exception('You have already reported this post.');
+      }
+      if (e.toString().contains('Users cannot report their own posts')) {
+        throw Exception('You cannot report your own post.');
+      }
+      rethrow;
+    }
+  }
 }
+

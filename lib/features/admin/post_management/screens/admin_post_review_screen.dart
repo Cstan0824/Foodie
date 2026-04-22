@@ -4,13 +4,13 @@ import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/features/admin/screens/admin_models.dart';
 
 class AdminPostReviewScreen extends StatefulWidget {
-  final ReportedPost post;
+  final List<ReportedPost> posts;
   final VoidCallback? onDismiss;
   final VoidCallback? onBlock;
 
   const AdminPostReviewScreen({
     super.key,
-    required this.post,
+    required this.posts,
     this.onDismiss,
     this.onBlock,
   });
@@ -65,9 +65,9 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
     showCupertinoDialog(
       context: context,
       builder: (_) => CupertinoAlertDialog(
-        title: const Text('Dismiss Report'),
+        title: const Text('Dismiss Reports'),
         content: const Text(
-            'This report will be marked as resolved and removed from the queue.'),
+            'All reports against this post will be dismissed and removed from the queue.'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
@@ -94,7 +94,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
       builder: (_) => CupertinoAlertDialog(
         title: const Text('Block Post'),
         content: const Text(
-            'This post will be hidden from all users. This cannot be undone.'),
+            'This post will be deleted and all its associated reports removed.'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
@@ -130,7 +130,12 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
               SliverToBoxAdapter(child: _buildCaption()),
               SliverToBoxAdapter(child: _buildRestaurantTag()),
               SliverToBoxAdapter(child: _buildTimestamp()),
-              SliverToBoxAdapter(child: _buildReportBanner()),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _buildReportBanner(widget.posts[index]),
+                  childCount: widget.posts.length,
+                ),
+              ),
               const SliverToBoxAdapter(child: SizedBox(height: 100)),
             ],
           ),
@@ -151,7 +156,8 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   // AUTHOR HEADER  (mirrors PostDetailScreen)
   // ══════════════════════════════════════════
   Widget _buildAuthorHeader() {
-    final avatarColor = _avatarColor(widget.post.authorInitial);
+    final post = widget.posts.first;
+    final avatarColor = _avatarColor(post.authorInitial);
     return SafeArea(
       bottom: false,
       child: Padding(
@@ -180,7 +186,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
               ),
               child: Center(
                 child: Text(
-                  widget.post.authorInitial.toUpperCase(),
+                  post.authorInitial.toUpperCase(),
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -198,7 +204,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    widget.post.authorHandle,
+                    post.authorHandle,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -206,7 +212,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
                     ),
                   ),
                   Text(
-                    widget.post.restaurantName,
+                    post.restaurantName,
                     style: const TextStyle(
                       fontSize: 11,
                       color: AppColors.textLight,
@@ -244,42 +250,97 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   // IMAGE SECTION  (mirrors PostDetailScreen)
   // ══════════════════════════════════════════
   Widget _buildImageSection() {
-    // Mock: single placeholder image panel
+    final post = widget.posts.first;
+    final images = post.postImages;
+
+    if (images.isEmpty) {
+      return SizedBox(
+        height: 460,
+        child: Container(
+          color: AppColors.surface,
+          child: const Center(
+            child: Icon(
+              CupertinoIcons.photo,
+              size: 52,
+              color: AppColors.textLight,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         SizedBox(
           height: 460,
-          child: Container(
-            color: AppColors.surface,
-            child: const Center(
-              child: Icon(
-                CupertinoIcons.photo,
-                size: 52,
-                color: AppColors.textLight,
+          child: PageView.builder(
+            itemCount: images.length,
+            onPageChanged: (i) => setState(() => _currentImageIndex = i),
+            itemBuilder: (_, i) => Image.network(
+              images[i],
+              fit: BoxFit.cover,
+              width: double.infinity,
+              errorBuilder: (_, __, ___) => Container(
+                color: AppColors.surface,
+                child: const Center(
+                  child: Icon(
+                    CupertinoIcons.photo,
+                    size: 48,
+                    color: AppColors.textLight,
+                  ),
+                ),
               ),
             ),
           ),
         ),
-        // Dot indicator (single dot for mock)
-        Positioned(
-          bottom: 16,
-          left: 0,
-          right: 0,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 16,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(3),
+
+        // Image counter badge
+        if (images.length > 1)
+          Positioned(
+            bottom: 12,
+            right: 14,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_currentImageIndex + 1}/${images.length}',
+                style: const TextStyle(
+                  color: CupertinoColors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+
+        // Page dots
+        if (images.length > 1)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                images.length,
+                (i) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: _currentImageIndex == i ? 16 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    color: _currentImageIndex == i
+                        ? AppColors.primary
+                        : CupertinoColors.white.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -288,13 +349,14 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   // CAPTION  (mirrors PostDetailScreen)
   // ══════════════════════════════════════════
   Widget _buildCaption() {
+    final post = widget.posts.first;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.post.postTitle,
+            post.postTitle,
             style: const TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
@@ -304,7 +366,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            widget.post.postSnippet,
+            post.postSnippet,
             style: const TextStyle(
               fontSize: 15,
               color: AppColors.textPrimary,
@@ -320,7 +382,8 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   // RESTAURANT TAG  (mirrors PostDetailScreen)
   // ══════════════════════════════════════════
   Widget _buildRestaurantTag() {
-    if (widget.post.restaurantName.isEmpty) return const SizedBox.shrink();
+    final post = widget.posts.first;
+    if (post.restaurantName.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
       child: Container(
@@ -337,7 +400,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
                 size: 14, color: AppColors.primary),
             const SizedBox(width: 6),
             Text(
-              widget.post.restaurantName,
+              post.restaurantName,
               style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.primary,
@@ -357,10 +420,11 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   // TIMESTAMP  (mirrors PostDetailScreen)
   // ══════════════════════════════════════════
   Widget _buildTimestamp() {
+    final post = widget.posts.first;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
       child: Text(
-        widget.post.timeAgo,
+        post.timeAgo,
         style: const TextStyle(fontSize: 12, color: AppColors.textLight),
       ),
     );
@@ -369,8 +433,8 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
   // ══════════════════════════════════════════
   // REPORT BANNER  (admin-only addition)
   // ══════════════════════════════════════════
-  Widget _buildReportBanner() {
-    final color = _reasonColor(widget.post.reportReason);
+  Widget _buildReportBanner(ReportedPost report) {
+    final color = _reasonColor(report.reportReason);
     return Container(
       margin: const EdgeInsets.fromLTRB(14, 0, 14, 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -389,7 +453,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.post.reportReason,
+                  report.reportReason,
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -398,12 +462,24 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Reported by ${widget.post.reportedBy}  ·  ${widget.post.timeAgo}',
+                  'Reported by ${report.reportedBy}  ·  ${report.timeAgo}',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
                   ),
                 ),
+                if (report.reportDetails != null && report.reportDetails!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      'Details: ${report.reportDetails}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

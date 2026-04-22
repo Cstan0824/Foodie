@@ -35,15 +35,14 @@ class CommentRepository {
     required String userId,
     required String content,
   }) async {
-    final commentId = _generateUUID(); // TODO: will be removed — delegate UUID to Supabase later
-    await SupabaseService.client
-        .from('Comment')
-        .insert({
-          'comment_Id': commentId,
-          'post_Id': postId,
-          'user_Id': userId,
-          'content': content,
-        });
+    final commentId =
+        _generateUUID(); // TODO: will be removed — delegate UUID to Supabase later
+    await SupabaseService.client.from('Comment').insert({
+      'comment_Id': commentId,
+      'post_Id': postId,
+      'user_Id': userId,
+      'content': content,
+    });
 
     final response = await SupabaseService.client
         .from('Comment')
@@ -61,6 +60,41 @@ class CommentRepository {
     return CommentModel.fromJson(response);
   }
 
+  /// Submits a report for a comment.
+  Future<void> reportComment({
+    required String commentId,
+    required String userId,
+    required String reason,
+    String? details,
+  }) async {
+    try {
+      await SupabaseService.client.from('Report').insert({
+        'comment_Id': commentId,
+        'user_Id': userId,
+        'reason': reason,
+        'details': details,
+        'status': 0,
+      });
+    } catch (e) {
+      if (e.toString().contains('23505') ||
+          e.toString().contains('duplicate key')) {
+        throw Exception('You have already reported this comment.');
+      }
+      if (e.toString().contains('Users cannot report their own comments')) {
+        throw Exception('You cannot report your own comment.');
+      }
+      rethrow;
+    }
+  }
+
+  /// Deletes a comment permanently from the database.
+  Future<void> deleteComment(String commentId) async {
+    await SupabaseService.client
+        .from('Comment')
+        .delete()
+        .eq('comment_Id', commentId);
+  }
+
   // TODO: will be removed — delegate UUID generation to Supabase
   static final _secureRand = Random.secure();
 
@@ -68,8 +102,7 @@ class CommentRepository {
     final bytes = List<int>.generate(16, (_) => _secureRand.nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex =
-        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}'
         '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
         '-${hex.substring(20)}';
