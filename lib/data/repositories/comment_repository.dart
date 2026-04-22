@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
+import 'package:taste_spot/data/repositories/repository_support.dart';
 
 class CommentRepository {
   CommentRepository._();
@@ -9,7 +10,7 @@ class CommentRepository {
 
   /// Fetches all visible comments for a given post, newest first.
   Future<List<CommentModel>> fetchComments(String postId) async {
-    await _ensurePostAvailable(
+    await ensurePostAvailable(
       postId,
       errorMessage: 'This post is no longer available.',
     );
@@ -43,7 +44,7 @@ class CommentRepository {
     required String userId,
     required String content,
   }) async {
-    await _ensurePostAvailable(
+    await ensurePostAvailable(
       postId,
       errorMessage: 'This post is no longer available.',
     );
@@ -79,7 +80,7 @@ class CommentRepository {
     String? details,
   }) async {
     final postId = await _fetchActiveCommentPostId(commentId);
-    await _ensurePostAvailable(
+    await ensurePostAvailable(
       postId,
       errorMessage: 'This comment is no longer available.',
     );
@@ -134,24 +135,6 @@ class CommentRepository {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}'
         '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
         '-${hex.substring(20)}';
-  }
-
-  Future<void> _ensurePostAvailable(
-    String postId, {
-    required String errorMessage,
-  }) async {
-    final response = await SupabaseService.client
-        .from('Post')
-        .select('post_Id')
-        .eq('post_Id', postId)
-        .eq('isRemoved', false)
-        .eq('isBlocked', false)
-        .eq('isPending', false)
-        .maybeSingle();
-
-    if (response == null) {
-      throw Exception(errorMessage);
-    }
   }
 
   Future<String> _fetchActiveCommentPostId(String commentId) async {

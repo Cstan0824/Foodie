@@ -3,26 +3,11 @@ import 'dart:typed_data';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/data/repositories/repository_support.dart';
 
 class PostRepository {
   PostRepository._();
   static final PostRepository instance = PostRepository._();
-
-  static const String _postSelect = '''
-          post_Id,
-          title,
-          caption,
-          likeCount,
-          saveCount,
-          created_At,
-          User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(
-            restaurant_Id,
-            restaurant_name,
-            mainCuisine:Cuisine!restaurant_main_cuisine_fk(description:desc)
-          ),
-          Post_Image(image_Id, image_url)
-        ''';
 
   /// Fetches the latest posts for the Discover feed.
   /// Supports offset-based pagination: pass [offset] to load the next page.
@@ -33,17 +18,7 @@ class PostRepository {
   }) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select('''
-          post_Id,
-          title,
-          caption,
-          likeCount,
-          saveCount,
-          created_At,
-          User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name),
-          Post_Image(image_Id, image_url)
-        ''')
+        .select(publicPostSelect)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
         .eq('isPending', false)
@@ -79,17 +54,7 @@ class PostRepository {
 
     final response = await SupabaseService.client
         .from('Post')
-        .select('''
-          post_Id,
-          title,
-          caption,
-          likeCount,
-          saveCount,
-          created_At,
-          User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name),
-          Post_Image(image_Id, image_url)
-        ''')
+        .select(publicPostSelect)
         .inFilter('user_Id', followingIds)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
@@ -110,17 +75,7 @@ class PostRepository {
   }) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select('''
-          post_Id,
-          title,
-          caption,
-          likeCount,
-          saveCount,
-          created_At,
-          User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name),
-          Post_Image(image_Id, image_url)
-        ''')
+        .select(publicPostSelect)
         .eq('user_Id', userId)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
@@ -142,15 +97,7 @@ class PostRepository {
     final response = await SupabaseService.client
         .from('Post')
         .select('''
-          post_Id,
-          title,
-          caption,
-          likeCount,
-          saveCount,
-          created_At,
-          User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name),
-          Post_Image(image_Id, image_url),
+          $publicPostSelect,
           Likes!inner(user_Id)
         ''')
         .eq('Likes.user_Id', userId)
@@ -169,17 +116,7 @@ class PostRepository {
   Future<PostModel?> fetchPostById(String postId) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select('''
-          post_Id,
-          title,
-          caption,
-          likeCount,
-          saveCount,
-          created_At,
-          User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name),
-          Post_Image(image_Id, image_url)
-        ''')
+        .select(publicPostSelect)
         .eq('post_Id', postId)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
@@ -207,6 +144,11 @@ class PostRepository {
     if (restaurantId.trim().isEmpty) {
       throw Exception('A post must be tied to a restaurant.');
     }
+
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
 
     final postImageRecords = <Map<String, dynamic>>[];
     for (final bytes in newImages) {
@@ -360,6 +302,11 @@ class PostRepository {
   }
   /// Toggles the like status of a post. The post likeCount is handled automatically via a backend Postgres Trigger.
   Future<void> toggleLike(String postId, String userId, bool isLiking) async {
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
     if (isLiking) {
       await SupabaseService.client.from('Likes').insert({
         'post_Id': postId,
@@ -376,6 +323,11 @@ class PostRepository {
   }
 
   Future<bool> checkIsLiked(String postId, String userId) async {
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
     final response = await SupabaseService.client
         .from('Likes')
         .select('post_Id')
@@ -391,7 +343,10 @@ class PostRepository {
     required String reason,
     String? details,
   }) async {
-    await _ensurePostAvailable(postId);
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
 
     try {
       await SupabaseService.client.from('Report').insert({
@@ -410,21 +365,6 @@ class PostRepository {
         throw Exception('You cannot report your own post.');
       }
       rethrow;
-    }
-  }
-
-  Future<void> _ensurePostAvailable(String postId) async {
-    final response = await SupabaseService.client
-        .from('Post')
-        .select('post_Id')
-        .eq('post_Id', postId)
-        .eq('isRemoved', false)
-        .eq('isBlocked', false)
-        .eq('isPending', false)
-        .maybeSingle();
-
-    if (response == null) {
-      throw Exception('This post is no longer available.');
     }
   }
 }
