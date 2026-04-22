@@ -12,7 +12,8 @@ import 'edit_profile_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final String? userId;
+  const ProfileScreen({super.key, this.userId});
 
   @override
   State<ProfileScreen> createState() => ProfileScreenState();
@@ -25,6 +26,8 @@ class ProfileScreenState extends State<ProfileScreen> {
   Profile? _userProfile;
   List<PostModel> _myPosts = [];
   List<PostModel> _likedPosts = [];
+  int _followersCount = 0;
+  int _followingCount = 0;
 
   static const _tabs = ['Notes', 'Liked'];
   String get _avatarUrl =>
@@ -36,24 +39,41 @@ class ProfileScreenState extends State<ProfileScreen> {
     _fetchProfileData();
   }
 
+  bool get _isCurrentUser {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (widget.userId == null) return true;
+    return currentUser?.id == widget.userId;
+  }
+
+  Future<void> loadUserPosts({bool silent = false}) async {
+    if (!silent && mounted) {
+      setState(() => _isLoading = true);
+    }
+    await _fetchProfileData();
+  }
+
   Future<void> _fetchProfileData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        final profileRepo = ProfileRepository(Supabase.instance.client);
-        _userProfile = await profileRepo.getProfile(user.id);
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      final targetUserId = widget.userId ?? currentUser?.id;
 
-        _myPosts = await PostRepository.instance.fetchPostsByUser(user.id);
+      if (targetUserId != null) {
+        final profileRepo = ProfileRepository(Supabase.instance.client);
+        _userProfile = await profileRepo.getProfile(targetUserId);
+
+        _myPosts = await PostRepository.instance.fetchUserPosts(userId: targetUserId);
+        _followersCount = await profileRepo.getFollowersCount(targetUserId);
+        _followingCount = await profileRepo.getFollowingCount(targetUserId);
 
         try {
           // Fetch Liked Posts
           final likesResponse = await Supabase.instance.client
               .from('Likes')
               .select('post_Id')
-              .eq('user_Id', user.id);
+              .eq('user_Id', targetUserId);
 
           if (likesResponse.isNotEmpty) {
             final List<dynamic> postIds = likesResponse
@@ -99,36 +119,7 @@ class ProfileScreenState extends State<ProfileScreen> {
     return count.toString();
   }
 
-  static const _userId = '00000000-0000-0000-0000-000000000001';
 
-  List<PostModel> _myPosts = [];
-  List<PostModel> _likedPosts = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    loadUserPosts();
-  }
-
-  Future<void> loadUserPosts({bool silent = false}) async {
-    if (!silent && mounted) setState(() => _isLoading = true);
-    try {
-      final futures = await Future.wait([
-        PostRepository.instance.fetchUserPosts(userId: _userId, limit: 100),
-        PostRepository.instance.fetchLikedPosts(userId: _userId, limit: 100),
-      ]);
-      if (mounted) {
-        setState(() {
-          _myPosts = futures[0];
-          _likedPosts = futures[1];
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
 
   List<PostModel> get _currentPosts {
     switch (_selectedTab) {
@@ -140,8 +131,6 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   int get _notesCount => _myPosts.length;
-  int get _followersCount => 0;
-  int get _followingCount => 0;
 
   @override
   Widget build(BuildContext context) {
@@ -151,39 +140,46 @@ class ProfileScreenState extends State<ProfileScreen> {
         transitionBetweenRoutes: false,
         backgroundColor: AppColors.background,
         border: null, // Removes bottom border to flow smoothly into header
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => _showAccountsSheet(context),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _userProfile?.username ?? 'user',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.4,
-                  color: AppColors.textPrimary,
+        leading: _isCurrentUser
+            ? CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () => _showAccountsSheet(context),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _userProfile?.username ?? 'user',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.4,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      CupertinoIcons.chevron_down,
+                      size: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(
-                CupertinoIcons.chevron_down,
-                size: 14,
+              )
+            : CupertinoNavigationBarBackButton(
                 color: AppColors.textPrimary,
+                onPressed: () => Navigator.of(context).pop(),
               ),
-            ],
-          ),
-        ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => _showSettingsSheet(context),
-          child: const Icon(
-            CupertinoIcons.gear,
-            color: AppColors.textPrimary,
-            size: 24,
-          ),
-        ),
+        trailing: _isCurrentUser
+            ? CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () => _showSettingsSheet(context),
+                child: const Icon(
+                  CupertinoIcons.gear,
+                  color: AppColors.textPrimary,
+                  size: 24,
+                ),
+              )
+            : null,
       ),
       child: SafeArea(
         bottom: false,
@@ -243,24 +239,32 @@ class ProfileScreenState extends State<ProfileScreen> {
                         child: _StatItem(
                           value: _formatCount(_followersCount),
                           label: 'Followers',
-                          onTap: () => Navigator.of(context).push(
-                            CupertinoPageRoute(
-                              builder: (_) =>
-                                  const ConnectionsScreen(initialTabIndex: 1),
-                            ),
-                          ),
+                          onTap: () {
+                            final targetUserId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+                            if (targetUserId == null) return;
+                            Navigator.of(context).push(
+                              CupertinoPageRoute(
+                                builder: (_) =>
+                                    ConnectionsScreen(initialTabIndex: 1, userId: targetUserId),
+                              ),
+                            );
+                          },
                         ),
                       ),
                       Expanded(
                         child: _StatItem(
                           value: _formatCount(_followingCount),
                           label: 'Following',
-                          onTap: () => Navigator.of(context).push(
-                            CupertinoPageRoute(
-                              builder: (_) =>
-                                  const ConnectionsScreen(initialTabIndex: 0),
-                            ),
-                          ),
+                          onTap: () {
+                            final targetUserId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+                            if (targetUserId == null) return;
+                            Navigator.of(context).push(
+                              CupertinoPageRoute(
+                                builder: (_) =>
+                                    ConnectionsScreen(initialTabIndex: 0, userId: targetUserId),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -297,23 +301,36 @@ class ProfileScreenState extends State<ProfileScreen> {
           // Action buttons
           Row(
             children: [
-              Expanded(
-                child: _PillButton(
-                  label: 'Edit Profile',
-                  filled: false,
-                  onTap: () async {
-                    if (_userProfile == null) return;
-                    await Navigator.of(context).push(
-                      CupertinoPageRoute(
-                        builder: (_) =>
-                            EditProfileScreen(profile: _userProfile!),
-                      ),
-                    );
-                    _fetchProfileData();
-                  },
+              if (_isCurrentUser) ...[
+                Expanded(
+                  child: _PillButton(
+                    label: 'Edit Profile',
+                    filled: false,
+                    onTap: () async {
+                      if (_userProfile == null) return;
+                      await Navigator.of(context).push(
+                        CupertinoPageRoute(
+                          builder: (_) =>
+                              EditProfileScreen(profile: _userProfile!),
+                        ),
+                      );
+                      _fetchProfileData();
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
+              ] else ...[
+                Expanded(
+                  child: _PillButton(
+                    label: 'Follow',
+                    filled: true,
+                    onTap: () {
+                      // TODO: Implement follow logic
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: _PillButton(
                   label: 'Share Profile',
@@ -403,11 +420,11 @@ class ProfileScreenState extends State<ProfileScreen> {
       sliver: SliverGrid(
         delegate: SliverChildBuilderDelegate((context, index) {
           final post = posts[index];
-          return GestureDetector(
+          return PostCard(
+            post: post,
             onTap: () => Navigator.of(context).push(
               CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
             ),
-            child: _XhsCard(post: post),
           );
         }, childCount: posts.length),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

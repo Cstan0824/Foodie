@@ -127,6 +127,17 @@ class CollectionRepository {
   // 3. Collection Sharing Management
   // ==========================================
 
+  Future<List<String>> getSharedUserIds(String collectionId) async {
+    final response = await _supabase
+        .from('collections_shares')
+        .select('share_with_id')
+        .eq('collection_Id', collectionId);
+    
+    return (response as List<dynamic>)
+        .map((row) => row['share_with_id'] as String)
+        .toList();
+  }
+
   Future<void> shareCollection(String collectionId, String targetUserId) async {
     await _supabase.from('collections_shares').insert({
       'collection_Id': collectionId,

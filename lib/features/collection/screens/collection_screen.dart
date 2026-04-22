@@ -185,12 +185,15 @@ class _CollectionScreenState extends State<CollectionScreen> {
       itemBuilder: (context, index) {
         final album = collectionsToShow[index];
         return GestureDetector(
-          onTap: () {
-            Navigator.of(context).push(
+          onTap: () async {
+            final result = await Navigator.of(context).push(
               CupertinoPageRoute(
                 builder: (_) => CollectionDetailScreen(collection: album),
               ),
             );
+            if (result == true) {
+              _loadCollections();
+            }
           },
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

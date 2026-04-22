@@ -4,6 +4,9 @@ import 'package:taste_spot/data/models/collection_model.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/data/repositories/collection_repository.dart';
+import 'package:taste_spot/data/models/profile_model.dart';
+import 'package:taste_spot/data/repositories/profile_repository.dart';
 
 class CollectionDetailScreen extends StatefulWidget {
   final Collection collection;
@@ -22,9 +25,12 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
   bool _isLoading = true;
   String? _error;
 
+  late final CollectionRepository _collectionRepository;
+
   @override
   void initState() {
     super.initState();
+    _collectionRepository = CollectionRepository(Supabase.instance.client);
     _searchController.addListener(() {
       setState(() {
         _searchQuery = _searchController.text;
@@ -107,6 +113,62 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
         p.restaurantName.toLowerCase().contains(lowerQuery)).toList();
   }
 
+  void _confirmDelete() {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Delete Collection'),
+        content: const Text('Are you sure you want to delete this collection? This action cannot be undone.'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () async {
+              Navigator.pop(ctx); // Close dialog
+              try {
+                await _collectionRepository.deleteCollection(widget.collection.collectionId);
+                if (mounted) {
+                  Navigator.pop(context, true); // Pop screen and return true to refresh
+                }
+              } catch (e) {
+                if (mounted) {
+                  showCupertinoDialog(
+                    context: context,
+                    builder: (errCtx) => CupertinoAlertDialog(
+                      title: const Text('Error'),
+                      content: Text('Could not delete collection: $e'),
+                      actions: [
+                        CupertinoDialogAction(
+                          child: const Text('OK'),
+                          onPressed: () => Navigator.pop(errCtx),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showShareSheet() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (BuildContext sheetContext) {
+        return _ShareSheet(
+          collectionId: widget.collection.collectionId,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -120,6 +182,32 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         previousPageTitle: 'Back',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _showShareSheet,
+              child: const Icon(
+                CupertinoIcons.person_add,
+                color: AppColors.textPrimary,
+                size: 24,
+              ),
+            ),
+            if (!widget.collection.isDefault) ...[
+              const SizedBox(width: 16),
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: _confirmDelete,
+                child: const Icon(
+                  CupertinoIcons.trash,
+                  color: CupertinoColors.destructiveRed,
+                  size: 22,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
       child: SafeArea(
         child: Column(
@@ -290,3 +378,186 @@ class _XhsCard extends StatelessWidget {
     );
   }
 }
+
+class _ShareSheet extends StatefulWidget {
+  final String collectionId;
+
+  const _ShareSheet({required this.collectionId});
+
+  @override
+  State<_ShareSheet> createState() => _ShareSheetState();
+}
+
+class _ShareSheetState extends State<_ShareSheet> {
+  bool _isLoading = true;
+  List<Profile> _followers = [];
+  Set<String> _sharedUserIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      if (currentUser == null) return;
+
+      final profileRepo = ProfileRepository(Supabase.instance.client);
+      final collectionRepo = CollectionRepository(Supabase.instance.client);
+
+      final followers = await profileRepo.getFollowers(currentUser.id);
+      final sharedIdsList = await collectionRepo.getSharedUserIds(widget.collectionId);
+
+      if (mounted) {
+        setState(() {
+          _followers = followers;
+          _sharedUserIds = sharedIdsList.toSet();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading share sheet data: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _toggleShare(Profile follower) async {
+    final collectionRepo = CollectionRepository(Supabase.instance.client);
+    final isShared = _sharedUserIds.contains(follower.userId);
+
+    // Optimistic UI update
+    setState(() {
+      if (isShared) {
+        _sharedUserIds.remove(follower.userId);
+      } else {
+        _sharedUserIds.add(follower.userId);
+      }
+    });
+
+    try {
+      if (isShared) {
+        await collectionRepo.removeShare(widget.collectionId, follower.userId);
+      } else {
+        await collectionRepo.shareCollection(widget.collectionId, follower.userId);
+      }
+    } catch (e) {
+      // Revert if failed
+      if (mounted) {
+        setState(() {
+          if (isShared) {
+            _sharedUserIds.add(follower.userId);
+          } else {
+            _sharedUserIds.remove(follower.userId);
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.6,
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.divider)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Share Collection',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                  ),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => Navigator.pop(context),
+                    child: const Icon(CupertinoIcons.xmark_circle_fill, color: AppColors.textLight, size: 24),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Content
+            Expanded(
+              child: _isLoading 
+                ? const Center(child: CupertinoActivityIndicator())
+                : _followers.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'You don\'t have any followers yet.',
+                        style: TextStyle(color: AppColors.textSecondary),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _followers.length,
+                      itemBuilder: (context, index) {
+                        final follower = _followers[index];
+                        final isShared = _sharedUserIds.contains(follower.userId);
+                        
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.divider,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: ClipOval(
+                                  child: Image.network(
+                                    'https://i.pravatar.cc/200?u=${follower.userId}',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      CupertinoIcons.person_solid, 
+                                      color: AppColors.textLight, 
+                                      size: 24,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  follower.name,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                              CupertinoSwitch(
+                                value: isShared,
+                                activeColor: AppColors.primary,
+                                onChanged: (val) => _toggleShare(follower),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
