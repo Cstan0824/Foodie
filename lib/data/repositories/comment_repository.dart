@@ -1,4 +1,4 @@
-import 'dart:math'; // TODO: will be removed once UUID generation is delegated to Supabase
+import 'dart:math';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
@@ -7,8 +7,7 @@ class CommentRepository {
   CommentRepository._();
   static final CommentRepository instance = CommentRepository._();
 
-  /// Fetches all comments for a given post, newest first.
-  /// Joins User table to get the author's name.
+  /// Fetches all visible comments for a given post, newest first.
   Future<List<CommentModel>> fetchComments(String postId) async {
     await _ensurePostAvailable(
       postId,
@@ -35,7 +34,6 @@ class CommentRepository {
   }
 
   /// Inserts a new comment for a post.
-  /// Returns the created [CommentModel] on success.
   ///
   /// Temporary testing choice: this still generates the comment UUID client-side
   /// so the created ID is known immediately during tests. Long term this should
@@ -50,8 +48,7 @@ class CommentRepository {
       errorMessage: 'This post is no longer available.',
     );
 
-    final commentId =
-        _generateUUID(); // TODO: will be removed — delegate UUID to Supabase later
+    final commentId = _generateUUID();
     await SupabaseService.client.from('Comment').insert({
       'comment_Id': commentId,
       'post_Id': postId,
@@ -75,7 +72,6 @@ class CommentRepository {
     return CommentModel.fromJson(response);
   }
 
-  /// Submits a report for a comment.
   Future<void> reportComment({
     required String commentId,
     required String userId,
@@ -97,11 +93,11 @@ class CommentRepository {
         'status': 0,
       });
     } catch (e) {
-      if (e.toString().contains('23505') ||
-          e.toString().contains('duplicate key')) {
+      final message = e.toString();
+      if (message.contains('23505') || message.contains('duplicate key')) {
         throw Exception('You have already reported this comment.');
       }
-      if (e.toString().contains('Users cannot report their own comments')) {
+      if (message.contains('Users cannot report their own comments')) {
         throw Exception('You cannot report your own comment.');
       }
       rethrow;
@@ -121,7 +117,6 @@ class CommentRepository {
     }
   }
 
-  /// Deletes a comment permanently from the database.
   Future<void> deleteComment(String commentId) async {
     await SupabaseService.client
         .from('Comment')
@@ -129,7 +124,6 @@ class CommentRepository {
         .eq('comment_Id', commentId);
   }
 
-  // TODO: will be removed — delegate UUID generation to Supabase
   static final _secureRand = Random.secure();
 
   String _generateUUID() {
@@ -152,6 +146,7 @@ class CommentRepository {
         .eq('post_Id', postId)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
+        .eq('isPending', false)
         .maybeSingle();
 
     if (response == null) {
