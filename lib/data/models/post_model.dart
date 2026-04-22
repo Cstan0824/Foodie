@@ -13,7 +13,6 @@ class PostModel {
   final int saveCount;
   final String? location;
   final String restaurantName;
-  final String restaurantCuisine;
   final DateTime? createdAt;
 
   const PostModel({
@@ -31,7 +30,6 @@ class PostModel {
     this.saveCount = 0,
     this.location,
     this.restaurantName = '',
-    this.restaurantCuisine = '',
     this.createdAt,
   });
 
@@ -56,7 +54,6 @@ class PostModel {
       saveCount: saveCount ?? this.saveCount,
       location: location,
       restaurantName: restaurantName,
-      restaurantCuisine: restaurantCuisine,
       createdAt: createdAt,
     );
   }
@@ -71,15 +68,6 @@ class PostModel {
 
     final restaurant = json['Restaurant'] as Map<String, dynamic>?;
     final restaurantName = (restaurant?['restaurant_name'] as String?) ?? '';
-    final mainCuisine = restaurant?['mainCuisine'];
-    final restaurantCuisine = switch (mainCuisine) {
-      final Map<String, dynamic> cuisine =>
-        (cuisine['description'] as String?) ?? '',
-      final List<dynamic> cuisines when cuisines.isNotEmpty =>
-        ((cuisines.first as Map<String, dynamic>)['description'] as String?) ??
-            '',
-      _ => '',
-    };
     final restaurantId = restaurant?['restaurant_Id'] as String?;
 
     final createdAtRaw = json['created_At'] as String?;
@@ -108,8 +96,9 @@ class PostModel {
       likes: (json['likeCount'] as num?)?.toInt() ?? 0,
       saveCount: (json['saveCount'] as num?)?.toInt() ?? 0,
       restaurantName: restaurantName,
-      restaurantCuisine: restaurantCuisine,
-      createdAt: createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
+      createdAt:
+          createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
     );
   }
 }
+

@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors;
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/repositories/report_repository.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
@@ -86,55 +85,57 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     }
   }
 
-  Future<void> _dismissPost(String id) async {
+  Future<void> _dismissPost(String postId) async {
     try {
-      await ReportRepository.instance.dismissReport(id);
-      setState(() => _posts.removeWhere((p) => p.id == id));
+      await ReportRepository.instance.dismissPostReports(postId);
+      setState(() => _posts.removeWhere((p) => p.postId == postId));
     } catch (e) {
       debugPrint('Error dismissing report: $e');
     }
   }
 
-  void _removePost(String postId, List<ReportedPost> reported) {
+  void _blockPost(String postId) {
     _confirm(
-      title: 'Remove Post',
-      message: 'This post will be permanently deleted.',
-      label: 'Remove Post',
+      title: 'Block Post',
+      message: 'This post will be blocked and hidden from users.',
+      label: 'Block Post',
       onConfirm: () async {
         try {
-          await PostRepository.instance.deletePost(postId);
-          for (final p in reported) {
-            await _dismissPost(p.id);
+          await PostRepository.instance.blockPost(postId);
+          await ReportRepository.instance.markPostReportsRemoved(postId);
+          if (mounted) {
+            setState(() => _posts.removeWhere((p) => p.postId == postId));
           }
         } catch (e) {
-          debugPrint('Error removing post: $e');
+          debugPrint('Error blocking post: $e');
         }
       },
     );
   }
 
-  Future<void> _dismissComment(String id) async {
+  Future<void> _dismissComment(String commentId) async {
     try {
-        await ReportRepository.instance.dismissReport(id);
-        setState(() => _comments.removeWhere((c) => c.id == id));
+        await ReportRepository.instance.dismissCommentReports(commentId);
+        setState(() => _comments.removeWhere((c) => c.commentId == commentId));
     } catch (e) {
       debugPrint('Error dismissing report: $e');
     }
   }
 
-  void _removeComment(String commentId, List<ReportedComment> group) {
+  void _blockComment(String commentId) {
     _confirm(
-      title: 'Remove Comment',
-      message: 'This comment will be permanently deleted.',
-      label: 'Remove Comment',
+      title: 'Block Comment',
+      message: 'This comment will be blocked and hidden from users.',
+      label: 'Block Comment',
       onConfirm: () async {
         try {
-          await CommentRepository.instance.deleteComment(commentId);
-          for (final c in group) {
-            await _dismissComment(c.id);
+          await CommentRepository.instance.blockComment(commentId);
+          await ReportRepository.instance.markCommentReportsRemoved(commentId);
+          if (mounted) {
+            setState(() => _comments.removeWhere((c) => c.commentId == commentId));
           }
         } catch (e) {
-          debugPrint('Error removing comment: $e');
+          debugPrint('Error blocking comment: $e');
         }
       },
     );
@@ -238,12 +239,8 @@ class _PostManagementScreenState extends State<PostManagementScreen>
         final group = grouped[keys[i]]!;
         return _ReportedPostRow(
           posts: group,
-          onDismiss: () async {
-            for (final p in group) {
-              await _dismissPost(p.id);
-            }
-          },
-          onRemove: () => _removePost(group.first.postId, group),
+          onDismiss: () => _dismissPost(group.first.postId),
+          onBlock: () => _blockPost(group.first.postId),
         );
       },
     );
@@ -271,12 +268,8 @@ class _PostManagementScreenState extends State<PostManagementScreen>
         final group = grouped[keys[i]]!;
         return _ReportedCommentRow(
           comments: group,
-          onDismiss: () async {
-            for (final c in group) {
-              await _dismissComment(c.id);
-            }
-          },
-          onRemove: () => _removeComment(group.first.commentId, group),
+          onDismiss: () => _dismissComment(group.first.commentId),
+          onBlock: () => _blockComment(group.first.commentId),
         );
       },
     );
@@ -360,12 +353,12 @@ class _SlideTabBar extends StatelessWidget {
 class _ReportedPostRow extends StatelessWidget {
   final List<ReportedPost> posts;
   final VoidCallback onDismiss;
-  final VoidCallback onRemove;
+  final VoidCallback onBlock;
 
   const _ReportedPostRow({
     required this.posts,
     required this.onDismiss,
-    required this.onRemove,
+    required this.onBlock,
   });
 
   @override
@@ -381,12 +374,12 @@ class _ReportedPostRow extends StatelessWidget {
             builder: (_) => AdminPostReviewScreen(
               posts: posts,
               onDismiss: onDismiss,
-              onBlock: onRemove,
+              onBlock: onBlock,
             ),
           ),
         );
         if (result == ReviewResult.dismiss) onDismiss();
-        if (result == ReviewResult.block) onRemove();
+        if (result == ReviewResult.block) onBlock();
       },
       child: Container(
         color: AppColors.cardBackground,
@@ -477,12 +470,12 @@ class _ReportedPostRow extends StatelessWidget {
 class _ReportedCommentRow extends StatelessWidget {
   final List<ReportedComment> comments;
   final VoidCallback onDismiss;
-  final VoidCallback onRemove;
+  final VoidCallback onBlock;
 
   const _ReportedCommentRow({
     required this.comments,
     required this.onDismiss,
-    required this.onRemove,
+    required this.onBlock,
   });
 
   @override
@@ -531,12 +524,12 @@ class _ReportedCommentRow extends StatelessWidget {
                   builder: (_) => AdminCommentReviewScreen(
                     comments: comments,
                     onDismiss: onDismiss,
-                    onBlock: onRemove,
+                    onBlock: onBlock,
                   ),
                 ),
               );
               if (result == ReviewResult.dismiss) onDismiss();
-              if (result == ReviewResult.block) onRemove();
+              if (result == ReviewResult.block) onBlock();
             },
             child: Container(
               padding: const EdgeInsets.all(12),

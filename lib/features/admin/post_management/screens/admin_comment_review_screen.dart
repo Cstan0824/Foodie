@@ -92,9 +92,9 @@ class _AdminCommentReviewScreenState extends State<AdminCommentReviewScreen> {
     showCupertinoDialog(
       context: context,
       builder: (_) => CupertinoAlertDialog(
-        title: const Text('Remove Comment'),
+        title: const Text('Block Comment'),
         content: const Text(
-            'This comment will be permanently deleted and all its associated reports removed.'),
+            'This comment will be blocked, hidden from users, and all its pending reports marked as removed.'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
@@ -106,7 +106,7 @@ class _AdminCommentReviewScreenState extends State<AdminCommentReviewScreen> {
               Navigator.pop(context);
               Navigator.pop(context, ReviewResult.block);
             },
-            child: const Text('Remove Comment'),
+            child: const Text('Block Comment'),
           ),
         ],
       ),
@@ -499,7 +499,7 @@ class _AdminCommentReviewScreenState extends State<AdminCommentReviewScreen> {
                 ),
                 child: const Center(
                   child: Text(
-                    'Remove Comment',
+                    'Block Comment',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,

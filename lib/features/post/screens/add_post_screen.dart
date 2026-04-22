@@ -77,6 +77,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
       return;
     }
 
+    if (_selectedRestaurant == null ||
+        _selectedRestaurant!.restaurantId.trim().isEmpty) {
+      _showError('Please tag a restaurant before publishing.');
+      return;
+    }
+
     if (_selectedImages.isEmpty) {
       _showError('Please add at least one photo before publishing.');
       return;
@@ -92,7 +98,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
       await PostRepository.instance.createPost(
         userId: _tempUserId,
-        restaurantId: _selectedRestaurant?.restaurantId,
+        restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
         images: imageByteslist,
@@ -274,7 +280,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
                       if (_selectedRestaurant != null)
                         CupertinoButton(
                           padding: EdgeInsets.zero,
-                          minSize: 0,
+                          minimumSize: Size.zero,
                           onPressed: () =>
                               setState(() => _selectedRestaurant = null),
                           child: const Icon(
@@ -483,7 +489,7 @@ class _RestaurantPickerSheetState
                     : ListView.separated(
                         padding: EdgeInsets.zero,
                         itemCount: _results.length,
-                        separatorBuilder: (_, __) => Container(
+                        separatorBuilder: (_, _) => Container(
                             height: 0.5,
                             color: AppColors.divider,
                             margin: const EdgeInsets.only(left: 58)),

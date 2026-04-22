@@ -94,7 +94,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
       builder: (_) => CupertinoAlertDialog(
         title: const Text('Block Post'),
         content: const Text(
-            'This post will be deleted and all its associated reports removed.'),
+            'This post will be blocked, hidden from users, and all its pending reports marked as removed.'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),

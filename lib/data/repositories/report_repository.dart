@@ -5,6 +5,10 @@ class ReportRepository {
   ReportRepository._();
   static final instance = ReportRepository._();
 
+  static const int _pendingStatus = 0;
+  static const int _removedStatus = 1;
+  static const int _dismissedStatus = 2;
+
   String _formatTimeAgo(String isoDate) {
     try {
       final date = DateTime.parse(isoDate);
@@ -37,6 +41,7 @@ class ReportRepository {
           )
         ''')
         .isFilter('comment_Id', null)
+        .eq('status', _pendingStatus)
         .order('created_At', ascending: false);
 
     return (response as List<dynamic>).map((r) {
@@ -47,14 +52,6 @@ class ReportRepository {
       
       final authorName = pUser?['name']?.toString() ?? 'Unknown';
       final reporterName = rUser?['name']?.toString() ?? 'Someone';
-
-      final rawImages = post['Post_Image'] as List<dynamic>? ?? [];
-      final List<String> parsedImages = [];
-      for (final img in rawImages) {
-        if (img != null && img is Map && img['image_url'] != null) {
-          parsedImages.add(img['image_url'].toString());
-        }
-      }
 
       return ReportedPost(
         id: r['id']?.toString() ?? '',
@@ -68,7 +65,7 @@ class ReportRepository {
         timeAgo: _formatTimeAgo(r['created_At']?.toString() ?? ''),
         restaurantName: rest?['restaurant_name']?.toString() ?? 'Unknown Restaurant',
         postSnippet: post['caption']?.toString() ?? '',
-        postImages: parsedImages,
+        postImages: _parsePostImages(post),
       );
     }).toList();
   }
@@ -96,6 +93,7 @@ class ReportRepository {
           )
         ''')
         .not('comment_Id', 'is', null)
+        .eq('status', _pendingStatus)
         .order('created_At', ascending: false);
 
     return (response as List<dynamic>).map((r) {
@@ -111,14 +109,6 @@ class ReportRepository {
       
       final rest = post?['Restaurant'] as Map<String, dynamic>?;
       
-      final rawImages = post?['Post_Image'] as List<dynamic>? ?? [];
-      final List<String> parsedImages = [];
-      for (final img in rawImages) {
-        if (img != null && img is Map && img['image_url'] != null) {
-          parsedImages.add(img['image_url'].toString());
-        }
-      }
-
       return ReportedComment(
         id: r['id']?.toString() ?? '',
         commentId: comment['comment_Id']?.toString() ?? '',
@@ -130,7 +120,7 @@ class ReportRepository {
         postAuthorInitial: postAuthor.isNotEmpty ? postAuthor[0].toUpperCase() : '?',
         postSnippet: post?['caption']?.toString() ?? '',
         restaurantName: rest?['restaurant_name']?.toString() ?? '',
-        postImages: parsedImages,
+        postImages: _parsePostImages(post),
         reportReason: r['reason']?.toString() ?? 'Reported',
         reportDetails: r['details']?.toString(),
         reportedBy: reporterName,
@@ -138,11 +128,49 @@ class ReportRepository {
       );
     }).toList();
   }
-  
-  Future<void> dismissReport(String reportId) async {
+
+  Future<void> dismissPostReports(String postId) async {
     await SupabaseService.client
         .from('Report')
-        .update({'status': 1})
-        .eq('report_Id', reportId);
+        .update({'status': _dismissedStatus})
+        .eq('post_Id', postId)
+        .isFilter('comment_Id', null)
+        .eq('status', _pendingStatus);
+  }
+
+  Future<void> dismissCommentReports(String commentId) async {
+    await SupabaseService.client
+        .from('Report')
+        .update({'status': _dismissedStatus})
+        .eq('comment_Id', commentId)
+        .eq('status', _pendingStatus);
+  }
+
+  Future<void> markPostReportsRemoved(String postId) async {
+    await SupabaseService.client
+        .from('Report')
+        .update({'status': _removedStatus})
+        .eq('post_Id', postId)
+        .isFilter('comment_Id', null)
+        .eq('status', _pendingStatus);
+  }
+
+  Future<void> markCommentReportsRemoved(String commentId) async {
+    await SupabaseService.client
+        .from('Report')
+        .update({'status': _removedStatus})
+        .eq('comment_Id', commentId)
+        .eq('status', _pendingStatus);
+  }
+
+  List<String> _parsePostImages(Map<String, dynamic>? post) {
+    final rawImages = post?['Post_Image'] as List<dynamic>? ?? [];
+    final parsedImages = <String>[];
+    for (final img in rawImages) {
+      if (img != null && img is Map && img['image_url'] != null) {
+        parsedImages.add(img['image_url'].toString());
+      }
+    }
+    return parsedImages;
   }
 }

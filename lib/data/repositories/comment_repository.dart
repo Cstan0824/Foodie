@@ -10,6 +10,11 @@ class CommentRepository {
   /// Fetches all comments for a given post, newest first.
   /// Joins User table to get the author's name.
   Future<List<CommentModel>> fetchComments(String postId) async {
+    await _ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
     final response = await SupabaseService.client
         .from('Comment')
         .select('''
@@ -21,6 +26,7 @@ class CommentRepository {
           User!Comment_user_Id_fkey(user_Id, name)
         ''')
         .eq('post_Id', postId)
+        .eq('isBlocked', false)
         .order('created_At', ascending: false);
 
     return (response as List<dynamic>)
@@ -30,11 +36,20 @@ class CommentRepository {
 
   /// Inserts a new comment for a post.
   /// Returns the created [CommentModel] on success.
+  ///
+  /// Temporary testing choice: this still generates the comment UUID client-side
+  /// so the created ID is known immediately during tests. Long term this should
+  /// use a Supabase-generated UUID.
   Future<CommentModel> postComment({
     required String postId,
     required String userId,
     required String content,
   }) async {
+    await _ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
     final commentId =
         _generateUUID(); // TODO: will be removed — delegate UUID to Supabase later
     await SupabaseService.client.from('Comment').insert({
@@ -67,6 +82,12 @@ class CommentRepository {
     required String reason,
     String? details,
   }) async {
+    final postId = await _fetchActiveCommentPostId(commentId);
+    await _ensurePostAvailable(
+      postId,
+      errorMessage: 'This comment is no longer available.',
+    );
+
     try {
       await SupabaseService.client.from('Report').insert({
         'comment_Id': commentId,
@@ -84,6 +105,19 @@ class CommentRepository {
         throw Exception('You cannot report your own comment.');
       }
       rethrow;
+    }
+  }
+
+  Future<void> blockComment(String commentId) async {
+    final response = await SupabaseService.client
+        .from('Comment')
+        .update({'isBlocked': true})
+        .eq('comment_Id', commentId)
+        .select('comment_Id')
+        .maybeSingle();
+
+    if (response == null) {
+      throw Exception('This comment is no longer available.');
     }
   }
 
@@ -106,5 +140,38 @@ class CommentRepository {
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}'
         '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
         '-${hex.substring(20)}';
+  }
+
+  Future<void> _ensurePostAvailable(
+    String postId, {
+    required String errorMessage,
+  }) async {
+    final response = await SupabaseService.client
+        .from('Post')
+        .select('post_Id')
+        .eq('post_Id', postId)
+        .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .maybeSingle();
+
+    if (response == null) {
+      throw Exception(errorMessage);
+    }
+  }
+
+  Future<String> _fetchActiveCommentPostId(String commentId) async {
+    final response = await SupabaseService.client
+        .from('Comment')
+        .select('post_Id')
+        .eq('comment_Id', commentId)
+        .eq('isBlocked', false)
+        .maybeSingle();
+
+    final postId = response?['post_Id']?.toString();
+    if (postId == null || postId.isEmpty) {
+      throw Exception('This comment is no longer available.');
+    }
+
+    return postId;
   }
 }

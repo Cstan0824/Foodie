@@ -7,7 +7,6 @@ import 'package:taste_spot/data/repositories/comment_repository.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
 import 'package:taste_spot/features/post/screens/report_form_screen.dart';
-import 'package:taste_spot/features/post/screens/report_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -97,7 +96,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _currentPost.id,
         '00000000-0000-0000-0000-000000000001',
         newIsLiked,
-        newCount,
       );
     } catch (_) {
       // Revert on failure
@@ -746,7 +744,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(width: 8),
                 CupertinoButton(
                   padding: const EdgeInsets.only(bottom: 8, left: 8, right: 4),
-                  minSize: 0,
+                  minimumSize: Size.zero,
                   onPressed: _submitComment,
                   child: const Text(
                     'Post',
