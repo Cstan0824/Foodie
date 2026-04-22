@@ -13,16 +13,73 @@ import 'package:taste_spot/features/restaurant/screens/blind_box_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load .env file
-  await dotenv.load(fileName: '.env');
+  try {
+    // Load .env file
+    await dotenv.load(fileName: '.env');
 
-  // Initialise Supabase
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-  );
+    final url = dotenv.env['SUPABASE_URL'];
+    final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-  runApp(const FoodiApp());
+    if (url == null || url.isEmpty || anonKey == null || anonKey.isEmpty) {
+      throw Exception('Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env file.');
+    }
+
+    // Initialise Supabase
+    await Supabase.initialize(
+      url: url,
+      anonKey: anonKey,
+    );
+
+    runApp(const FoodiApp());
+  } catch (e) {
+    runApp(ErrorApp(error: e.toString()));
+  }
+}
+
+class ErrorApp extends StatelessWidget {
+  final String error;
+  const ErrorApp({super.key, required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoApp(
+      home: CupertinoPageScaffold(
+        navigationBar: const CupertinoNavigationBar(
+          middle: Text('Configuration Error'),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 64, color: CupertinoColors.systemRed),
+                const SizedBox(height: 24),
+                const Text(
+                  'Failed to initialize app',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  error,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: CupertinoColors.systemGrey),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Please ensure your .env file exists in the project root and contains valid SUPABASE_URL and SUPABASE_ANON_KEY.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class FoodiApp extends StatelessWidget {

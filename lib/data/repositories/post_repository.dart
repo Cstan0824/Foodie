@@ -8,6 +8,22 @@ class PostRepository {
   PostRepository._();
   static final PostRepository instance = PostRepository._();
 
+  static const String _postSelect = '''
+          post_Id,
+          title,
+          caption,
+          likeCount,
+          saveCount,
+          created_At,
+          User!Post_user_Id_fkey(user_Id, name),
+          Restaurant(
+            restaurant_Id,
+            restaurant_name,
+            mainCuisine:Cuisine!restaurant_main_cuisine_fk(description:desc)
+          ),
+          Post_Image(image_Id, image_url)
+        ''';
+
   /// Fetches the latest posts for the Discover feed.
   /// Supports offset-based pagination: pass [offset] to load the next page.
   /// Joins: User (author name), Restaurant (name only)
@@ -219,14 +235,17 @@ class PostRepository {
 
       // Best-effort: clean up Storage blobs (swallow errors — orphaned blobs are
       // not fatal and can be cleaned up by a maintenance job later).
-      final pathsToDelete = deletedImageUrls.map((url) {
-        final segments = Uri.parse(url).pathSegments;
-        final idx = segments.indexOf('post_images');
-        if (idx != -1 && idx + 1 < segments.length) {
-          return segments.sublist(idx + 1).join('/');
-        }
-        return '';
-      }).where((p) => p.isNotEmpty).toList();
+      final pathsToDelete = deletedImageUrls
+          .map((url) {
+            final segments = Uri.parse(url).pathSegments;
+            final idx = segments.indexOf('post_images');
+            if (idx != -1 && idx + 1 < segments.length) {
+              return segments.sublist(idx + 1).join('/');
+            }
+            return '';
+          })
+          .where((p) => p.isNotEmpty)
+          .toList();
 
       if (pathsToDelete.isNotEmpty) {
         try {
@@ -238,11 +257,14 @@ class PostRepository {
     }
 
     // 3. Only now update the Post row — all image work has already succeeded.
-    await SupabaseService.client.from('Post').update({
-      'title': title,
-      'caption': caption,
-      'restaurant_Id': restaurantId,
-    }).eq('post_Id', postId);
+    await SupabaseService.client
+        .from('Post')
+        .update({
+          'title': title,
+          'caption': caption,
+          'restaurant_Id': restaurantId,
+        })
+        .eq('post_Id', postId);
 
     // 4. Insert new Post_Image records linking the freshly-uploaded images.
     if (postImageRecords.isNotEmpty) {
@@ -345,12 +367,12 @@ class PostRepository {
     final bytes = List<int>.generate(16, (_) => _secureRand.nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex =
-        bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}'
         '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
         '-${hex.substring(20)}';
   }
+
   /// Toggles the like status of a post. The post likeCount is handled automatically via a backend Postgres Trigger.
   Future<void> toggleLike(String postId, String userId, bool isLiking) async {
     if (isLiking) {
