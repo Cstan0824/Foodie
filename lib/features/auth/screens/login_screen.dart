@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/gestures.dart';
 import 'dart:async';
+import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
@@ -82,10 +83,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   ? user.email!.split('@').first
                   : 'New Foodie');
 
+          final fallbackUsername = await _buildUniqueUsername(fallbackName);
+
           await Supabase.instance.client.from('User').insert({
             'user_Id': user.id,
             'name': fallbackName,
-            'username': fallbackName,
+            'username': fallbackUsername,
           });
           return true; // Is a new user needing profile completion
         }
@@ -97,19 +100,33 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<String> _buildUniqueUsername(String seed) async {
+    final sanitized = seed.trim().replaceAll(RegExp(r'\s+'), '').toLowerCase();
+    final base = sanitized.isEmpty ? 'foodie' : sanitized;
+    var candidate = base;
+
+    for (var i = 0; i < 20; i++) {
+      final available = await _authRepo.isUsernameAvailable(candidate);
+      if (available) return candidate;
+      candidate = '$base${1000 + Random().nextInt(9000)}';
+    }
+
+    return '$base${DateTime.now().millisecondsSinceEpoch % 100000}';
+  }
+
   Future<void> _login() async {
-    final email = _emailController.text.trim();
+    final identifier = _emailController.text.trim();
     final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      _showErrorAlert('Please enter both email and password.');
+    if (identifier.isEmpty || password.isEmpty) {
+      _showErrorAlert('Please enter your email/phone and password.');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      await _authRepo.signIn(email: email, password: password);
+      await _authRepo.signIn(identifier: identifier, password: password);
       // Navigation is now handled automatically by onAuthStateChange listener
     } on AuthException catch (e) {
       if (!mounted) return;

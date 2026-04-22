@@ -7,13 +7,21 @@ class AuthRepository {
 
   // Sign In
   Future<AuthResponse> signIn({
-    required String email,
+    required String identifier,
     required String password,
   }) async {
-    return await _supabase.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+    final isEmail = identifier.contains('@');
+    if (isEmail) {
+      return await _supabase.auth.signInWithPassword(
+        email: identifier,
+        password: password,
+      );
+    } else {
+      return await _supabase.auth.signInWithPassword(
+        phone: identifier,
+        password: password,
+      );
+    }
   }
 
   // Sign In with Google (OAuth2)
@@ -32,12 +40,37 @@ class AuthRepository {
     );
   }
 
+  Future<bool> isUsernameAvailable(
+    String username, {
+    String? excludingUserId,
+  }) async {
+    final normalized = username.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+
+    var query = _supabase
+        .from('User')
+        .select('user_Id')
+        .ilike('username', normalized);
+
+    if (excludingUserId != null && excludingUserId.isNotEmpty) {
+      query = query.neq('user_Id', excludingUserId);
+    }
+
+    final response = await query.limit(1);
+    return (response as List<dynamic>).isEmpty;
+  }
+
   // Sign Up
   Future<AuthResponse> signUp({
     required String email,
     required String password,
     required String name,
   }) async {
+    final usernameAvailable = await isUsernameAvailable(name);
+    if (!usernameAvailable) {
+      throw Exception('USERNAME_TAKEN');
+    }
+
     final response = await _supabase.auth.signUp(
       email: email,
       password: password,
@@ -51,9 +84,15 @@ class AuthRepository {
           'name': name,
           'username': name,
         });
-      } catch (e) {
-        print('Error creating profile: $e');
-        // Handle profile creation error (maybe via a trigger in prod instead)
+      } on PostgrestException catch (e) {
+        if (e.code == '23505' &&
+            (e.message.contains('User_username_key') ||
+                (e.details?.toString().contains('(username)=') ?? false))) {
+          throw Exception('USERNAME_TAKEN');
+        }
+        throw Exception('PROFILE_CREATE_FAILED');
+      } catch (_) {
+        throw Exception('PROFILE_CREATE_FAILED');
       }
     }
 
@@ -73,5 +112,17 @@ class AuthRepository {
   // Get Current User
   User? getCurrentUser() {
     return _supabase.auth.currentUser;
+  }
+
+  // Verify Email OTP (for Sign Up)
+  Future<AuthResponse> verifySignUpOtp({
+    required String email,
+    required String token,
+  }) async {
+    return await _supabase.auth.verifyOTP(
+      type: OtpType.signup,
+      email: email,
+      token: token,
+    );
   }
 }

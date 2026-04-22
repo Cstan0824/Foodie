@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
+import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/main.dart'; // To navigate to Home on completion
 
 class CompleteProfileScreen extends StatefulWidget {
@@ -13,7 +15,14 @@ class CompleteProfileScreen extends StatefulWidget {
 class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   final _usernameController = TextEditingController();
   final _bioController = TextEditingController();
+  late final AuthRepository _authRepo = AuthRepository(
+    Supabase.instance.client,
+  );
   bool _isLoading = false;
+  bool _isCheckingUsername = false;
+  bool? _isUsernameAvailable;
+  String? _currentUserId;
+  Timer? _usernameDebounce;
 
   @override
   void initState() {
@@ -25,6 +34,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   Future<void> _loadInitialProfileData() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
+      _currentUserId = user.id;
       try {
         final response = await Supabase.instance.client
             .from('User')
@@ -39,10 +49,12 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
             existingUsername != null &&
             existingUsername.isNotEmpty) {
           _usernameController.text = existingUsername;
+          _onUsernameChanged(existingUsername);
         } else if (mounted && existingName != null) {
           // Fall back for older rows created before username existed.
           if (!existingName.contains('New Foodie')) {
             _usernameController.text = existingName;
+            _onUsernameChanged(existingName);
           }
         }
       } catch (e) {
@@ -53,9 +65,73 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
   @override
   void dispose() {
+    _usernameDebounce?.cancel();
     _usernameController.dispose();
     _bioController.dispose();
     super.dispose();
+  }
+
+  void _onUsernameChanged(String value) {
+    _usernameDebounce?.cancel();
+
+    final username = value.trim();
+    if (username.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = null;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isCheckingUsername = true;
+        _isUsernameAvailable = null;
+      });
+    }
+
+    _usernameDebounce = Timer(const Duration(milliseconds: 600), () async {
+      try {
+        final available = await _authRepo.isUsernameAvailable(
+          username,
+          excludingUserId: _currentUserId,
+        );
+        if (!mounted) return;
+        if (_usernameController.text.trim() != username) return;
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = available;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        if (_usernameController.text.trim() != username) return;
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = null;
+        });
+      }
+    });
+  }
+
+  String _mapUserModuleError(Object error) {
+    if (error is PostgrestException) {
+      final detailsText = error.details?.toString() ?? '';
+      if (error.code == '23505' &&
+          (error.message.contains('User_username_key') ||
+              detailsText.contains('(username)='))) {
+        return 'This username is already taken. Please choose another one.';
+      }
+      return 'Could not update your profile right now. Please try again.';
+    }
+
+    final message = error.toString();
+    if (message.contains('USERNAME_TAKEN')) {
+      return 'This username is already taken. Please choose another one.';
+    }
+
+    return 'Could not update your profile right now. Please try again.';
   }
 
   void _showAlert(String title, String message) {
@@ -83,12 +159,41 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       return;
     }
 
+    if (_isCheckingUsername) {
+      _showAlert(
+        'Checking Username',
+        'Please wait while we verify your username.',
+      );
+      return;
+    }
+
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      _showAlert(
+        'Update Failed',
+        'No authenticated user found. Please log in again.',
+      );
+      return;
+    }
+
+    final available = await _authRepo.isUsernameAvailable(
+      username,
+      excludingUserId: user.id,
+    );
+    if (!available) {
+      if (mounted) {
+        setState(() => _isUsernameAvailable = false);
+      }
+      _showAlert(
+        'Username Taken',
+        'This username is already taken. Please choose another one.',
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception('No authenticated user found');
-
       // Update the profile row that was created during the listener
       await Supabase.instance.client
           .from('User')
@@ -100,12 +205,12 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         CupertinoPageRoute(builder: (_) => const MainShell()),
         (route) => false,
       );
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      _showAlert('Update Failed', _mapUserModuleError(e));
     } catch (e) {
       if (!mounted) return;
-      _showAlert(
-        'Update Failed',
-        'Could not save your profile. Please try again.',
-      );
+      _showAlert('Update Failed', _mapUserModuleError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -158,6 +263,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               const SizedBox(height: 8),
               CupertinoTextField(
                 controller: _usernameController,
+                onChanged: _onUsernameChanged,
                 padding: const EdgeInsets.all(16),
                 placeholder: 'e.g. burger_master',
                 placeholderStyle: const TextStyle(color: AppColors.textLight),
@@ -167,6 +273,39 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                   border: Border.all(color: AppColors.divider),
                 ),
               ),
+              if (_isCheckingUsername)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Checking username...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                )
+              else if (_isUsernameAvailable == false)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Username is already taken',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CupertinoColors.systemRed,
+                    ),
+                  ),
+                )
+              else if (_isUsernameAvailable == true)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Username is available',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CupertinoColors.activeGreen,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 24),
 
               // Bio Field

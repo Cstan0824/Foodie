@@ -3,9 +3,11 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/gestures.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
+import 'dart:math';
 import 'package:taste_spot/features/auth/screens/complete_profile_screen.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:taste_spot/main.dart'; // To navigate to home for testing
 
 class SignupScreen extends StatefulWidget {
@@ -21,6 +23,9 @@ class _SignupScreenState extends State<SignupScreen> {
   final _passwordController = TextEditingController();
   bool _agreeToTerms = false;
   bool _isLoading = false;
+  bool _isCheckingUsername = false;
+  bool? _isUsernameAvailable;
+  Timer? _usernameDebounce;
   late final StreamSubscription<AuthState> _authStateSubscription;
 
   late final AuthRepository _authRepo = AuthRepository(
@@ -82,10 +87,12 @@ class _SignupScreenState extends State<SignupScreen> {
                   ? user.email!.split('@').first
                   : 'New Foodie');
 
+          final fallbackUsername = await _buildUniqueUsername(fallbackName);
+
           await Supabase.instance.client.from('User').insert({
             'user_Id': user.id,
             'name': fallbackName,
-            'username': fallbackName,
+            'username': fallbackUsername,
           });
           return true; // Is a new user needing profile completion
         }
@@ -100,10 +107,88 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   void dispose() {
     _authStateSubscription.cancel();
+    _usernameDebounce?.cancel();
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<String> _buildUniqueUsername(String seed) async {
+    final sanitized = seed.trim().replaceAll(RegExp(r'\s+'), '').toLowerCase();
+    final base = sanitized.isEmpty ? 'foodie' : sanitized;
+    var candidate = base;
+
+    for (var i = 0; i < 20; i++) {
+      final available = await _authRepo.isUsernameAvailable(candidate);
+      if (available) return candidate;
+      candidate = '$base${1000 + Random().nextInt(9000)}';
+    }
+
+    return '$base${DateTime.now().millisecondsSinceEpoch % 100000}';
+  }
+
+  void _onUsernameChanged(String value) {
+    _usernameDebounce?.cancel();
+
+    final username = value.trim();
+    if (username.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = null;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isCheckingUsername = true;
+        _isUsernameAvailable = null;
+      });
+    }
+
+    _usernameDebounce = Timer(const Duration(milliseconds: 600), () async {
+      try {
+        final available = await _authRepo.isUsernameAvailable(username);
+        if (!mounted) return;
+        if (_usernameController.text.trim() != username) return;
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = available;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        if (_usernameController.text.trim() != username) return;
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = null;
+        });
+      }
+    });
+  }
+
+  String _mapUserModuleError(Object error) {
+    if (error is PostgrestException) {
+      final detailsText = error.details?.toString() ?? '';
+      if (error.code == '23505' &&
+          (error.message.contains('User_username_key') ||
+              detailsText.contains('(username)='))) {
+        return 'This username is already taken. Please choose another one.';
+      }
+      return 'Could not complete profile setup. Please try again.';
+    }
+
+    final message = error.toString();
+    if (message.contains('USERNAME_TAKEN')) {
+      return 'This username is already taken. Please choose another one.';
+    }
+    if (message.contains('PROFILE_CREATE_FAILED')) {
+      return 'Your account was created, but profile setup failed. Please sign in and try again.';
+    }
+
+    return 'An unexpected error occurred. Please try again.';
   }
 
   Future<void> _signup() async {
@@ -124,20 +209,140 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
+    if (_isCheckingUsername) {
+      _showAlert(
+        'Checking Username',
+        'Please wait while we verify your username.',
+      );
+      return;
+    }
+
+    final isAvailable = await _authRepo.isUsernameAvailable(name);
+    if (!isAvailable) {
+      if (mounted) {
+        setState(() => _isUsernameAvailable = false);
+      }
+      _showAlert(
+        'Username Taken',
+        'This username is already taken. Please choose another one.',
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      await _authRepo.signUp(email: email, password: password, name: name);
-      // Navigation is now handled smoothly by the onAuthStateChange listener
+      final response = await _authRepo.signUp(email: email, password: password, name: name);
+      
+      // Check if we should skip OTP verification.
+      // 1. If response.session != null, Supabase already logged them in (Confirm Email is OFF).
+      // 2. Or if the environment variable overrides it.
+      final bool disableAuth = dotenv.env['disableAuthForSignUp'] == 'true';
+      
+      if (response.session == null && !disableAuth) {
+        if (mounted) {
+          _showOtpDialog(email);
+        }
+      } else if (disableAuth) {
+        // Just quietly finish. The user is created in Supabase.
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            CupertinoPageRoute(builder: (_) => const MainShell()),
+            (route) => false,
+          );
+        }
+      }
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      _showAlert('Signup Failed', _mapUserModuleError(e));
     } on AuthException catch (e) {
       if (!mounted) return;
       _showAlert('Signup Failed', e.message);
     } catch (e) {
       if (!mounted) return;
-      _showAlert('Error', 'An unexpected error occurred. Please try again.');
+      _showAlert('Signup Failed', _mapUserModuleError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showOtpDialog(String email) {
+    final otpController = TextEditingController();
+    bool isVerifying = false;
+
+    showCupertinoDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return CupertinoAlertDialog(
+            title: const Text('Verify Email'),
+            content: Column(
+              children: [
+                const SizedBox(height: 8),
+                Text(
+                  'We sent a 6-digit code to $email. Please enter it below to verify your account.',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                CupertinoTextField(
+                  controller: otpController,
+                  placeholder: '123456',
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    letterSpacing: 8,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('Cancel'),
+                onPressed: () {
+                  if (!isVerifying) Navigator.pop(context);
+                },
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: isVerifying
+                    ? null
+                    : () async {
+                        final token = otpController.text.trim();
+                        if (token.length != 6) return;
+                        
+                        setStateDialog(() => isVerifying = true);
+                        try {
+                          await _authRepo.verifySignUpOtp(
+                            email: email,
+                            token: token,
+                          );
+                          // Success! The auth state listener will trigger and navigate automatically.
+                          if (mounted) {
+                            Navigator.pop(context);
+                          }
+                        } on AuthException catch (e) {
+                          setStateDialog(() => isVerifying = false);
+                          Navigator.pop(context);
+                          _showAlert('Verification Failed', e.message);
+                        } catch (e) {
+                          setStateDialog(() => isVerifying = false);
+                          Navigator.pop(context);
+                          _showAlert('Verification Failed', 'An unexpected error occurred. Please try again.');
+                        }
+                      },
+                child: isVerifying
+                    ? const CupertinoActivityIndicator()
+                    : const Text('Verify'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _signUpWithGoogle() async {
@@ -228,7 +433,41 @@ class _SignupScreenState extends State<SignupScreen> {
                 controller: _usernameController,
                 placeholder: 'Username',
                 icon: CupertinoIcons.person_crop_circle,
+                onChanged: _onUsernameChanged,
               ),
+              if (_isCheckingUsername)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Checking username...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                )
+              else if (_isUsernameAvailable == false)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Username is already taken',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CupertinoColors.systemRed,
+                    ),
+                  ),
+                )
+              else if (_isUsernameAvailable == true)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Username is available',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CupertinoColors.activeGreen,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 16),
               _buildModernTextField(
                 controller: _emailController,
@@ -436,6 +675,7 @@ class _SignupScreenState extends State<SignupScreen> {
     required IconData icon,
     bool obscureText = false,
     TextInputType? keyboardType,
+    ValueChanged<String>? onChanged,
   }) {
     return Container(
       height: 50,
@@ -449,6 +689,7 @@ class _SignupScreenState extends State<SignupScreen> {
         placeholder: placeholder,
         obscureText: obscureText,
         keyboardType: keyboardType,
+        onChanged: onChanged,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
         placeholderStyle: const TextStyle(

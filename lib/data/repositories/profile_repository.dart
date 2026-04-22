@@ -30,14 +30,17 @@ class ProfileRepository {
     });
   }
 
-  Future<String?> uploadProfileImage(String userId, Uint8List imageBytes) async {
-    // 1. Upload to storage bucket (ensure you run this setup locally or fallback to bytes)
-    // 2. Or insert directly into public.user_image if that's preferred in your exact schema.
+  Future<String?> uploadProfileImage(
+    String userId,
+    Uint8List imageBytes,
+  ) async {
+    // Keep one image row per user by reusing userId as image_id.
     try {
-      await _supabase.from('user_image').insert({
-        'user_id': userId,
-        'profile_image': imageBytes, // In Supabase Dart, sending bytea could require hex/base64 encoding or just relying on standard supabase behavior
-      });
+      await _supabase.from('UserImage').upsert({
+        'image_id': userId,
+        'user_Id': userId,
+        'profile_image': imageBytes,
+      }, onConflict: 'image_id');
       return "Success";
     } catch (e) {
       print('Image Upload Error: $e');
@@ -47,11 +50,9 @@ class ProfileRepository {
 
   Future<Uint8List?> getProfileImage(String userId) async {
     final response = await _supabase
-        .from('user_image')
+        .from('UserImage')
         .select('profile_image')
-        .eq('user_id', userId)
-        .order('created_at', ascending: false)
-        .limit(1)
+        .eq('user_Id', userId)
         .maybeSingle();
 
     if (response == null || response['profile_image'] == null) return null;

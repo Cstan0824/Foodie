@@ -21,7 +21,7 @@ class PostRepository {
           saveCount,
           created_At,
           User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name, categoryCuisine)
+          Restaurant(restaurant_Id, restaurant_name)
         ''')
         .eq('isRemoved', false)
         .order('created_At', ascending: false)
@@ -43,7 +43,7 @@ class PostRepository {
           saveCount,
           created_At,
           User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name, categoryCuisine)
+          Restaurant(restaurant_Id, restaurant_name)
         ''')
         .eq('post_Id', postId)
         .maybeSingle();
@@ -53,8 +53,10 @@ class PostRepository {
   }
 
   /// Fetches all posts by a specific user.
-  Future<List<PostModel>> fetchPostsByUser(String userId,
-      {int limit = 50}) async {
+  Future<List<PostModel>> fetchPostsByUser(
+    String userId, {
+    int limit = 50,
+  }) async {
     final response = await SupabaseService.client
         .from('Post')
         .select('''
@@ -64,12 +66,35 @@ class PostRepository {
           saveCount,
           created_At,
           User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(restaurant_Id, restaurant_name, categoryCuisine)
+          Restaurant(restaurant_Id, restaurant_name)
         ''')
         .eq('user_Id', userId)
         .eq('isRemoved', false)
         .order('created_At', ascending: false)
         .limit(limit);
+
+    return (response as List<dynamic>)
+        .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<PostModel>> fetchPostsByIds(List<String> postIds) async {
+    if (postIds.isEmpty) return [];
+
+    final response = await SupabaseService.client
+        .from('Post')
+        .select('''
+          post_Id,
+          caption,
+          likeCount,
+          saveCount,
+          created_At,
+          User!Post_user_Id_fkey(user_Id, name),
+          Restaurant(restaurant_Id, restaurant_name)
+        ''')
+        .inFilter('post_Id', postIds)
+        .eq('isRemoved', false)
+        .order('created_At', ascending: false);
 
     return (response as List<dynamic>)
         .map((row) => PostModel.fromJson(row as Map<String, dynamic>))

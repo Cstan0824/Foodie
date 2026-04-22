@@ -69,7 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 saveCount,
                 created_At,
                 User!Post_user_Id_fkey(user_Id, name),
-                Restaurant(restaurant_Id, restaurant_name, categoryCuisine)
+                Restaurant(restaurant_Id, restaurant_name)
               ''')
                 .inFilter('post_Id', postIds);
 
@@ -339,13 +339,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ===================================================
   Widget _buildSliverGrid(BuildContext context) {
     final posts = _currentPosts;
+    final emptyMessage = _selectedTab == 1
+        ? 'No Liked Post yet'
+        : 'No notes yet';
 
     if (posts.isEmpty) {
-      return const SliverFillRemaining(
+      return SliverFillRemaining(
         child: Center(
           child: Text(
-            'No notes yet',
-            style: TextStyle(
+            emptyMessage,
+            style: const TextStyle(
               fontSize: 15,
               color: AppColors.textSecondary,
               fontWeight: FontWeight.w500,
