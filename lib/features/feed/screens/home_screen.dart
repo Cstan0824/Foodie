@@ -18,7 +18,7 @@ class HomeScreenState extends State<HomeScreen> {
   int _topNavIndex = 1; // default: Discover
   final _scrollController = ScrollController();
 
-  static const _topNavItems = ['Following', 'Discover', 'Nearby'];
+  static const _topNavItems = ['Following', 'Discover'];
   static const _pageSize = 20;
   static const _paginationThreshold = 300.0;
   static const _tempUserId = '00000000-0000-0000-0000-000000000001';
@@ -278,7 +278,7 @@ class HomeScreenState extends State<HomeScreen> {
 
 // ══════════════════════════════════════════════
 //  TOP NAVIGATION BAR
-//  🔔  |  Following · Discover · Nearby  |  🔍
+//  🔔  |  Following · Discover  |  🔍
 // ══════════════════════════════════════════════
 class _TopNavBar extends StatelessWidget {
   final int selectedIndex;
