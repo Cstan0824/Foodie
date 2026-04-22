@@ -1,8 +1,35 @@
 // Shared data models for admin post moderation.
 
+enum ReportActionStatus { pending, removed, dismissed }
+
+extension ReportActionStatusX on ReportActionStatus {
+  int get dbValue {
+    switch (this) {
+      case ReportActionStatus.pending:
+        return 0;
+      case ReportActionStatus.removed:
+        return 1;
+      case ReportActionStatus.dismissed:
+        return 2;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case ReportActionStatus.pending:
+        return 'Pending';
+      case ReportActionStatus.removed:
+        return 'Removed';
+      case ReportActionStatus.dismissed:
+        return 'Dismissed';
+    }
+  }
+}
+
 class ReportedPost {
   final String id;
   final String postId;
+  final ReportActionStatus status;
   final String postTitle;
   final String authorHandle;
   final String authorInitial;
@@ -17,6 +44,7 @@ class ReportedPost {
   const ReportedPost({
     required this.id,
     required this.postId,
+    required this.status,
     required this.postTitle,
     required this.authorHandle,
     required this.authorInitial,
@@ -33,6 +61,7 @@ class ReportedPost {
 class ReportedComment {
   final String id;
   final String commentId;
+  final ReportActionStatus status;
   final String commentText;
   final String commentAuthor;
   final String commentAuthorInitial;
@@ -50,6 +79,7 @@ class ReportedComment {
   const ReportedComment({
     required this.id,
     required this.commentId,
+    required this.status,
     required this.commentText,
     required this.commentAuthor,
     required this.commentAuthorInitial,

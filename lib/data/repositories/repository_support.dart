@@ -9,7 +9,10 @@ const String publicPostSelect = '''
   created_At,
   User!Post_user_Id_fkey(user_Id, name),
   Restaurant(restaurant_Id, restaurant_name),
-  Post_Image(image_Id, image_url)
+  Post_Image(image_Id, image_url),
+  post_hashtag:post_hashtag!post_hashtag_post_fk(
+    hashtag:hashtag!post_hashtag_hashtag_fk(name)
+  )
 ''';
 
 Future<void> ensurePostAvailable(

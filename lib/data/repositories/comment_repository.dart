@@ -4,6 +4,15 @@ import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
 
+const String _commentSelect = '''
+  comment_Id,
+  post_Id,
+  user_Id,
+  content,
+  created_At,
+  User!Comment_user_Id_fkey(user_Id, name)
+''';
+
 class CommentRepository {
   CommentRepository._();
   static final CommentRepository instance = CommentRepository._();
@@ -17,14 +26,7 @@ class CommentRepository {
 
     final response = await SupabaseService.client
         .from('Comment')
-        .select('''
-          comment_Id,
-          post_Id,
-          user_Id,
-          content,
-          created_At,
-          User!Comment_user_Id_fkey(user_Id, name)
-        ''')
+        .select(_commentSelect)
         .eq('post_Id', postId)
         .eq('isBlocked', false)
         .order('created_At', ascending: false);
@@ -59,16 +61,59 @@ class CommentRepository {
 
     final response = await SupabaseService.client
         .from('Comment')
-        .select('''
-          comment_Id,
-          post_Id,
-          user_Id,
-          content,
-          created_At,
-          User!Comment_user_Id_fkey(user_Id, name)
-        ''')
+        .select(_commentSelect)
         .eq('comment_Id', commentId)
         .single();
+
+    return CommentModel.fromJson(response);
+  }
+
+  Future<CommentModel> updateComment({
+    required String commentId,
+    required String userId,
+    required String content,
+  }) async {
+    final trimmedContent = content.trim();
+    if (trimmedContent.isEmpty) {
+      throw Exception('Comment cannot be empty.');
+    }
+
+    final commentRow = await SupabaseService.client
+        .from('Comment')
+        .select('comment_Id, post_Id, user_Id, isBlocked')
+        .eq('comment_Id', commentId)
+        .maybeSingle();
+
+    if (commentRow == null || commentRow['isBlocked'] == true) {
+      throw Exception('This comment is no longer available.');
+    }
+
+    final ownerId = commentRow['user_Id']?.toString();
+    final postId = commentRow['post_Id']?.toString();
+    if (ownerId == null || ownerId != userId) {
+      throw Exception('You can only edit your own comment.');
+    }
+    if (postId == null || postId.isEmpty) {
+      throw Exception('This comment is no longer available.');
+    }
+
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
+    final response = await SupabaseService.client
+        .from('Comment')
+        .update({'content': trimmedContent})
+        .eq('comment_Id', commentId)
+        .eq('user_Id', userId)
+        .eq('isBlocked', false)
+        .select(_commentSelect)
+        .maybeSingle();
+
+    if (response == null) {
+      throw Exception('This comment is no longer available.');
+    }
 
     return CommentModel.fromJson(response);
   }
