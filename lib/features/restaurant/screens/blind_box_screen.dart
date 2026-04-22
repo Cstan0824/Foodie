@@ -178,6 +178,7 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
     return CupertinoPageScaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         middle: const Text('Blind Box', style: TextStyle(fontWeight: FontWeight.w600)),
         backgroundColor: CupertinoColors.white.withAlpha(240), // slightly transparent
         border: null,

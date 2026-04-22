@@ -1,192 +1,215 @@
--- Recommended (usually already enabled on Supabase)
-create extension if not exists "pgcrypto";
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
--- =========================================================
--- 1) PROFILES (your "User" table)
--- =========================================================
-create table if not exists public.profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  name text not null,
-  bio text,
-  created_at timestamp not null default now()
+CREATE TABLE public.Comment (
+  comment_Id uuid NOT NULL,
+  post_Id uuid,
+  user_Id uuid,
+  content text,
+  created_At timestamp without time zone DEFAULT now(),
+  isBlocked boolean NOT NULL DEFAULT false,
+  CONSTRAINT Comment_pkey PRIMARY KEY (comment_Id),
+  CONSTRAINT Comment_post_Id_fkey FOREIGN KEY (post_Id) REFERENCES public.Post(post_Id),
+  CONSTRAINT Comment_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id)
 );
-
--- Optional: profile image (your "UserImage" table)
--- NOTE: For production, better store image in Supabase Storage and keep URL here.
-create table if not exists public.user_image (
-  image_id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  profile_image bytea,
-  created_at timestamp not null default now()
+CREATE TABLE public.Cuisine (
+  type_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  desc text NOT NULL UNIQUE,
+  isPrimaryOption boolean NOT NULL DEFAULT false,
+  CONSTRAINT Cuisine_pkey PRIMARY KEY (type_id)
 );
-
-create index if not exists idx_user_image_user_id on public.user_image(user_id);
-
-
--- =========================================================
--- 2) RESTAURANT + APPROVAL
--- =========================================================
-create table if not exists public.restaurant (
-  restaurant_id uuid primary key default gen_random_uuid(),
-  restaurant_name text not null,
-  address text,
-  latitude double precision,
-  longitude double precision,
-  category_cuisine text,
-  maps_url text,
-  created_at timestamp not null default now()
+CREATE TABLE public.Follower (
+  follower_Id uuid NOT NULL,
+  following_Id uuid NOT NULL,
+  created_At timestamp without time zone DEFAULT now(),
+  CONSTRAINT Follower_pkey PRIMARY KEY (follower_Id, following_Id),
+  CONSTRAINT Follower_follower_Id_fkey FOREIGN KEY (follower_Id) REFERENCES public.User(user_Id),
+  CONSTRAINT Follower_following_Id_fkey FOREIGN KEY (following_Id) REFERENCES public.User(user_Id)
 );
-
--- approval records (your RestaurantApproval)
-create table if not exists public.restaurant_approval (
-  approval_id uuid primary key default gen_random_uuid(),
-  -- "crm_restaurant_id" in your diagram: keep nullable if it's "pending new restaurant"
-  crm_restaurant_id uuid references public.restaurant(restaurant_id) on delete set null,
-  restaurant_name text not null,
-  address text,
-  latitude double precision,
-  longitude double precision,
-  category_cuisine text,
-  maps_url text,
-  created_at timestamp not null default now()
+CREATE TABLE public.Likes (
+  post_Id uuid NOT NULL,
+  user_Id uuid NOT NULL,
+  created_At timestamp without time zone DEFAULT now(),
+  CONSTRAINT Likes_pkey PRIMARY KEY (post_Id, user_Id),
+  CONSTRAINT Likes_post_Id_fkey FOREIGN KEY (post_Id) REFERENCES public.Post(post_Id),
+  CONSTRAINT Likes_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id)
 );
-
-
--- =========================================================
--- 3) POST + POST IMAGE
--- =========================================================
-create table if not exists public.post (
-  post_id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  restaurant_id uuid references public.restaurant(restaurant_id) on delete set null,
+CREATE TABLE public.Notification (
+  id uuid NOT NULL,
+  user_id uuid,
+  content text,
+  redirect_To text,
+  created_At timestamp without time zone DEFAULT now(),
+  isRead boolean NOT NULL DEFAULT false,
+  CONSTRAINT Notification_pkey PRIMARY KEY (id),
+  CONSTRAINT Notification_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.User(user_Id)
+);
+CREATE TABLE public.Notification_Settings (
+  settings_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL UNIQUE,
+  likes boolean NOT NULL DEFAULT true,
+  comments boolean NOT NULL DEFAULT true,
+  followers boolean NOT NULL DEFAULT true,
+  mentions boolean NOT NULL DEFAULT true,
+  push boolean NOT NULL DEFAULT true,
+  inApp boolean NOT NULL DEFAULT true,
+  CONSTRAINT Notification_Settings_pkey PRIMARY KEY (settings_id),
+  CONSTRAINT notification_settings_user_fk FOREIGN KEY (user_id) REFERENCES public.User(user_Id)
+);
+CREATE TABLE public.Post (
+  post_Id uuid NOT NULL,
+  user_Id uuid,
+  restaurant_Id uuid,
   caption text,
-  created_at timestamp not null default now(),
-  updated_at timestamp not null default now(),
-  like_count integer not null default 0,
-  save_count integer not null default 0,
-  is_removed boolean not null default false
+  created_At timestamp without time zone DEFAULT now(),
+  updated_At timestamp without time zone,
+  likeCount integer DEFAULT 0,
+  saveCount integer DEFAULT 0,
+  isRemoved boolean DEFAULT false,
+  title text,
+  isBlocked boolean NOT NULL DEFAULT false,
+  isPending boolean NOT NULL DEFAULT false,
+  CONSTRAINT Post_pkey PRIMARY KEY (post_Id),
+  CONSTRAINT Post_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id),
+  CONSTRAINT Post_restaurant_Id_fkey FOREIGN KEY (restaurant_Id) REFERENCES public.Restaurant(restaurant_Id)
 );
-
-create index if not exists idx_post_user_id on public.post(user_id);
-create index if not exists idx_post_restaurant_id on public.post(restaurant_id);
-
--- your Post_Image
-create table if not exists public.post_image (
-  image_id uuid primary key default gen_random_uuid(),
-  post_id uuid not null references public.post(post_id) on delete cascade,
-  images bytea,
-  created_at timestamp not null default now()
+CREATE TABLE public.Post_Image (
+  image_Id uuid NOT NULL,
+  post_Id uuid,
+  image_url text,
+  CONSTRAINT Post_Image_pkey PRIMARY KEY (image_Id),
+  CONSTRAINT Post_Image_post_Id_fkey FOREIGN KEY (post_Id) REFERENCES public.Post(post_Id)
 );
-
-create index if not exists idx_post_image_post_id on public.post_image(post_id);
-
-
--- =========================================================
--- 4) COMMENTS + REPLIES
--- =========================================================
-create table if not exists public.comment (
-  comment_id uuid primary key default gen_random_uuid(),
-  post_id uuid not null references public.post(post_id) on delete cascade,
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  content text not null,
-  created_at timestamp not null default now()
+CREATE TABLE public.Reply (
+  reply_Id uuid NOT NULL,
+  comment_Id uuid,
+  user_Id uuid,
+  content text,
+  created_At timestamp without time zone DEFAULT now(),
+  CONSTRAINT Reply_pkey PRIMARY KEY (reply_Id),
+  CONSTRAINT Reply_comment_Id_fkey FOREIGN KEY (comment_Id) REFERENCES public.Comment(comment_Id),
+  CONSTRAINT Reply_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id)
 );
-
-create index if not exists idx_comment_post_id on public.comment(post_id);
-create index if not exists idx_comment_user_id on public.comment(user_id);
-
-create table if not exists public.reply (
-  reply_id uuid primary key default gen_random_uuid(),
-  comment_id uuid not null references public.comment(comment_id) on delete cascade,
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  content text not null,
-  created_at timestamp not null default now()
+CREATE TABLE public.Report (
+  report_Id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_Id uuid NOT NULL,
+  post_Id uuid,
+  comment_Id uuid,
+  reason text NOT NULL,
+  status integer NOT NULL DEFAULT 0,
+  created_At timestamp with time zone NOT NULL DEFAULT now(),
+  details text,
+  CONSTRAINT Report_pkey PRIMARY KEY (report_Id),
+  CONSTRAINT Report_user_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id),
+  CONSTRAINT Report_post_fkey FOREIGN KEY (post_Id) REFERENCES public.Post(post_Id),
+  CONSTRAINT Report_comment_fkey FOREIGN KEY (comment_Id) REFERENCES public.Comment(comment_Id),
+  CONSTRAINT Report_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id),
+  CONSTRAINT Report_post_Id_fkey FOREIGN KEY (post_Id) REFERENCES public.Post(post_Id),
+  CONSTRAINT Report_comment_Id_fkey FOREIGN KEY (comment_Id) REFERENCES public.Comment(comment_Id),
+  CONSTRAINT report_user_fk FOREIGN KEY (user_Id) REFERENCES public.User(user_Id)
 );
-
-create index if not exists idx_reply_comment_id on public.reply(comment_id);
-create index if not exists idx_reply_user_id on public.reply(user_id);
-
-
--- =========================================================
--- 5) LIKES + SAVED (junction tables)
--- =========================================================
-create table if not exists public.likes (
-  post_id uuid not null references public.post(post_id) on delete cascade,
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  created_at timestamp not null default now(),
-  primary key (post_id, user_id)
+CREATE TABLE public.Restaurant (
+  restaurant_Id uuid NOT NULL,
+  restaurant_name text,
+  address text,
+  latitude double precision,
+  longitude double precision,
+  maps_url text,
+  created_At timestamp without time zone DEFAULT now(),
+  main_cuisine_id uuid,
+  source text,
+  info_url text,
+  isDisabled boolean NOT NULL DEFAULT false,
+  CONSTRAINT Restaurant_pkey PRIMARY KEY (restaurant_Id),
+  CONSTRAINT restaurant_main_cuisine_fk FOREIGN KEY (main_cuisine_id) REFERENCES public.Cuisine(type_id)
 );
-
-create index if not exists idx_likes_user_id on public.likes(user_id);
-
-create table if not exists public.saved (
-  post_id uuid not null references public.post(post_id) on delete cascade,
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  created_at timestamp not null default now(),
-  primary key (post_id, user_id)
+CREATE TABLE public.RestaurantApproval (
+  approval_Id uuid NOT NULL,
+  curr_restaurant_id uuid,
+  restaurant_name text,
+  address text,
+  latitude double precision,
+  longitude double precision,
+  maps_url text,
+  source text,
+  status integer NOT NULL DEFAULT 0,
+  detectedAt timestamp without time zone DEFAULT now(),
+  main_cuisine_id uuid,
+  CONSTRAINT RestaurantApproval_pkey PRIMARY KEY (approval_Id),
+  CONSTRAINT restaurant_approval_curr_restaurant_fk FOREIGN KEY (curr_restaurant_id) REFERENCES public.Restaurant(restaurant_Id),
+  CONSTRAINT restaurant_approval_main_cuisine_fk FOREIGN KEY (main_cuisine_id) REFERENCES public.Cuisine(type_id)
 );
-
-create index if not exists idx_saved_user_id on public.saved(user_id);
-
-
--- =========================================================
--- 6) FOLLOWER (self-referencing junction)
--- =========================================================
-create table if not exists public.follower (
-  follower_id uuid not null references public.profiles(user_id) on delete cascade,
-  following_id uuid not null references public.profiles(user_id) on delete cascade,
-  created_at timestamp not null default now(),
-  primary key (follower_id, following_id),
-  constraint chk_not_follow_self check (follower_id <> following_id)
+CREATE TABLE public.Restaurant_Cuisine (
+  RestaurantId uuid NOT NULL,
+  CuisineId uuid NOT NULL,
+  CONSTRAINT Restaurant_Cuisine_pkey PRIMARY KEY (RestaurantId, CuisineId),
+  CONSTRAINT restaurant_cuisine_restaurant_fk FOREIGN KEY (RestaurantId) REFERENCES public.Restaurant(restaurant_Id),
+  CONSTRAINT restaurant_cuisine_cuisine_fk FOREIGN KEY (CuisineId) REFERENCES public.Cuisine(type_id)
 );
-
-create index if not exists idx_follower_following_id on public.follower(following_id);
-
-
--- =========================================================
--- 7) COLLECTIONS + COLLECTIONS_POST + COLLECTIONS_SHARES
--- =========================================================
-create table if not exists public.collections (
-  collection_id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  name text not null,
+CREATE TABLE public.User (
+  user_Id uuid NOT NULL,
+  name text,
+  bio text,
+  created_At timestamp without time zone DEFAULT now(),
+  password text NOT NULL DEFAULT ''::text,
+  role character varying NOT NULL DEFAULT 'user'::character varying CHECK (role::text = ANY (ARRAY['user'::character varying, 'admin'::character varying]::text[])),
+  username text NOT NULL DEFAULT ''::text UNIQUE,
+  CONSTRAINT User_pkey PRIMARY KEY (user_Id)
+);
+CREATE TABLE public.UserImage (
+  image_id uuid NOT NULL,
+  user_Id uuid,
+  profile_image bytea,
+  CONSTRAINT UserImage_pkey PRIMARY KEY (image_id),
+  CONSTRAINT UserImage_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id)
+);
+CREATE TABLE public.collections (
+  collection_Id uuid NOT NULL,
+  user_Id uuid,
+  name text,
   description text,
-  is_public boolean not null default false,
-  created_at timestamp not null default now()
+  is_public boolean DEFAULT true,
+  created_At timestamp without time zone DEFAULT now(),
+  collection_type text NOT NULL CHECK (collection_type = ANY (ARRAY['POST'::text, 'RESTAURANT'::text])),
+  is_default boolean NOT NULL DEFAULT false,
+  CONSTRAINT collections_pkey PRIMARY KEY (collection_Id),
+  CONSTRAINT collections_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id)
 );
-
-create index if not exists idx_collections_user_id on public.collections(user_id);
-
--- collections_post (many-to-many)
-create table if not exists public.collections_post (
-  collection_id uuid not null references public.collections(collection_id) on delete cascade,
-  post_id uuid not null references public.post(post_id) on delete cascade,
-  saved_at timestamp not null default now(),
-  primary key (collection_id, post_id)
+CREATE TABLE public.collections_item (
+  item_Id uuid NOT NULL DEFAULT gen_random_uuid(),
+  collection_Id uuid NOT NULL,
+  restaurant_id uuid,
+  post_id uuid,
+  savedAt timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT collections_item_pkey PRIMARY KEY (item_Id),
+  CONSTRAINT collections_item_collection_fk FOREIGN KEY (collection_Id) REFERENCES public.collections(collection_Id),
+  CONSTRAINT collections_item_restaurant_fk FOREIGN KEY (restaurant_id) REFERENCES public.Restaurant(restaurant_Id),
+  CONSTRAINT collections_item_post_fk FOREIGN KEY (post_id) REFERENCES public.Post(post_Id)
 );
-
-create index if not exists idx_col_post_post_id on public.collections_post(post_id);
-
--- collections_shares
-create table if not exists public.collections_shares (
-  collection_id uuid not null references public.collections(collection_id) on delete cascade,
-  share_with_id uuid not null references public.profiles(user_id) on delete cascade,
-  created_at timestamp not null default now(),
-  primary key (collection_id, share_with_id)
+CREATE TABLE public.collections_shares (
+  collection_Id uuid NOT NULL,
+  share_with_id uuid NOT NULL,
+  CONSTRAINT collections_shares_pkey PRIMARY KEY (collection_Id, share_with_id),
+  CONSTRAINT collections_shares_collection_Id_fkey FOREIGN KEY (collection_Id) REFERENCES public.collections(collection_Id),
+  CONSTRAINT collections_shares_share_with_id_fkey FOREIGN KEY (share_with_id) REFERENCES public.User(user_Id)
 );
-
-create index if not exists idx_col_shares_share_with_id on public.collections_shares(share_with_id);
-
-
--- =========================================================
--- 8) NOTIFICATION
--- =========================================================
-create table if not exists public.notification (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.profiles(user_id) on delete cascade,
-  content text not null,
-  redirect_to text,
-  created_at timestamp not null default now()
+CREATE TABLE public.hashtag (
+  hashtag_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  CONSTRAINT hashtag_pkey PRIMARY KEY (hashtag_id)
 );
-
-create index if not exists idx_notification_user_id on public.notification(user_id);
+CREATE TABLE public.post_hashtag (
+  post_Id uuid NOT NULL,
+  hashtag_id uuid NOT NULL,
+  CONSTRAINT post_hashtag_pkey PRIMARY KEY (post_Id, hashtag_id),
+  CONSTRAINT post_hashtag_post_fk FOREIGN KEY (post_Id) REFERENCES public.Post(post_Id),
+  CONSTRAINT post_hashtag_hashtag_fk FOREIGN KEY (hashtag_id) REFERENCES public.hashtag(hashtag_id)
+);
+CREATE TABLE public.swipe_history (
+  user_id uuid NOT NULL,
+  restaurant_id uuid NOT NULL,
+  swiped_at timestamp without time zone NOT NULL DEFAULT now(),
+  CONSTRAINT swipe_history_pkey PRIMARY KEY (user_id, restaurant_id, swiped_at),
+  CONSTRAINT swipe_history_user_fk FOREIGN KEY (user_id) REFERENCES public.User(user_Id),
+  CONSTRAINT swipe_history_restaurant_fk FOREIGN KEY (restaurant_id) REFERENCES public.Restaurant(restaurant_Id)
+);

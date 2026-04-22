@@ -1,6 +1,10 @@
 import 'package:flutter/cupertino.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/data/models/profile_model.dart';
+import 'package:taste_spot/data/repositories/post_repository.dart';
+import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/features/auth/screens/login_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/profile/screens/connections_screen.dart';
@@ -15,17 +19,78 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
+  bool _isLoading = true;
 
-  static const _userName = 'Walton G.';
-  static const _userHandle = 'waltonfoodieKL';
-  static const _userBio =
-      'Food explorer | Bouldering enthusiast\nKL based · Discovering hidden gems 🍜';
-  static const _avatarUrl = 'https://i.pravatar.cc/200?img=12';
-  static const _postsCount = 24;
-  static const _followersCount = 1243;
-  static const _followingCount = 318;
+  Profile? _userProfile;
+  List<PostModel> _myPosts = [];
+  List<PostModel> _likedPosts = [];
 
   static const _tabs = ['Notes', 'Liked'];
+  String get _avatarUrl =>
+      'https://i.pravatar.cc/200?u=${_userProfile?.userId ?? "guest"}';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProfileData();
+  }
+
+  Future<void> _fetchProfileData() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        final profileRepo = ProfileRepository(Supabase.instance.client);
+        _userProfile = await profileRepo.getProfile(user.id);
+
+        _myPosts = await PostRepository.instance.fetchPostsByUser(user.id);
+
+        try {
+          // Fetch Liked Posts
+          final likesResponse = await Supabase.instance.client
+              .from('likes')
+              .select('post_Id')
+              .eq('user_Id', user.id);
+
+          if (likesResponse.isNotEmpty) {
+            final List<dynamic> postIds = likesResponse
+                .map((l) => l['post_Id'])
+                .toList();
+
+            // Build filter string manually or use .inFilter
+            final postsResponse = await Supabase.instance.client
+                .from('Post')
+                .select('''
+                post_Id,
+                caption,
+                likeCount,
+                saveCount,
+                created_At,
+                User!Post_user_Id_fkey(user_Id, name),
+                Restaurant(restaurant_Id, restaurant_name, categoryCuisine)
+              ''')
+                .inFilter('post_Id', postIds);
+
+            _likedPosts = (postsResponse as List<dynamic>)
+                .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+                .toList();
+          }
+        } catch (e) {
+          print(
+            'Optional Liked Posts query failed or table does not match: $e',
+          );
+        }
+      }
+    } catch (e) {
+      print('Error fetching profile data: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   String _formatCount(int count) {
     if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}w';
@@ -36,36 +101,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<PostModel> get _currentPosts {
     switch (_selectedTab) {
       case 1:
-        return mockPosts.reversed.toList();
+        return _likedPosts;
       default:
-        return mockPosts;
+        return _myPosts;
     }
   }
+
+  int get _notesCount => _myPosts.length;
+  int get _followersCount => 0;
+  int get _followingCount => 0;
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppColors.background,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: AppColors.background,
         border: null, // Removes bottom border to flow smoothly into header
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: () => _showAccountsSheet(context),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                _userHandle,
-                style: TextStyle(
+                _userProfile?.username ?? 'user',
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.4,
                   color: AppColors.textPrimary,
                 ),
               ),
-              SizedBox(width: 4),
-              Icon(
+              const SizedBox(width: 4),
+              const Icon(
                 CupertinoIcons.chevron_down,
                 size: 14,
                 color: AppColors.textPrimary,
@@ -85,24 +155,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       child: SafeArea(
         bottom: false,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          slivers: [
-            SliverToBoxAdapter(child: _buildProfileSection(context)),
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _TextTabBarDelegate(
-                selectedTab: _selectedTab,
-                onTabChanged: (i) => setState(() => _selectedTab = i),
-                tabs: _tabs,
+        child: _isLoading
+            ? const Center(child: CupertinoActivityIndicator())
+            : CustomScrollView(
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+                slivers: [
+                  SliverToBoxAdapter(child: _buildProfileSection(context)),
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: _TextTabBarDelegate(
+                      selectedTab: _selectedTab,
+                      onTabChanged: (i) => setState(() => _selectedTab = i),
+                      tabs: _tabs,
+                    ),
+                  ),
+                  _buildSliverGrid(context),
+                  const SliverToBoxAdapter(child: SizedBox(height: 90)),
+                ],
               ),
-            ),
-            _buildSliverGrid(context),
-            const SliverToBoxAdapter(child: SizedBox(height: 90)),
-          ],
-        ),
       ),
     );
   }
@@ -119,100 +191,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           // Avatar + Stats Row
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildAvatar(),
-              const SizedBox(width: 24),
+              const SizedBox(width: 16),
               Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _StatItem(
-                      value: _formatCount(_postsCount),
-                      label: 'Notes',
-                    ),
-                    _StatItem(
-                      value: _formatCount(_followersCount),
-                      label: 'Fans',
-                      onTap: () => Navigator.of(context).push(
-                        CupertinoPageRoute(
-                            builder: (_) =>
-                                const ConnectionsScreen(initialTabIndex: 1)),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _StatItem(
+                          value: _formatCount(_notesCount),
+                          label: 'Notes',
+                          onTap: () => setState(() => _selectedTab = 0),
+                        ),
                       ),
-                    ),
-                    _StatItem(
-                      value: _formatCount(_followingCount),
-                      label: 'Following',
-                      onTap: () => Navigator.of(context).push(
-                        CupertinoPageRoute(
-                            builder: (_) =>
-                                const ConnectionsScreen(initialTabIndex: 0)),
+                      Expanded(
+                        child: _StatItem(
+                          value: _formatCount(_followersCount),
+                          label: 'Followers',
+                          onTap: () => Navigator.of(context).push(
+                            CupertinoPageRoute(
+                              builder: (_) =>
+                                  const ConnectionsScreen(initialTabIndex: 1),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                      Expanded(
+                        child: _StatItem(
+                          value: _formatCount(_followingCount),
+                          label: 'Following',
+                          onTap: () => Navigator.of(context).push(
+                            CupertinoPageRoute(
+                              builder: (_) =>
+                                  const ConnectionsScreen(initialTabIndex: 0),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
 
-          // User Name
-          Row(
-            children: [
-              const Text(
-                _userName,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.3,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Text(
-                  'he/him',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-            ],
+          // Name
+          Text(
+            _userProfile?.name ?? 'User',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+              letterSpacing: -0.3,
+            ),
           ),
           const SizedBox(height: 4),
 
           // Bio
-          const Text(
-            _userBio,
-            style: TextStyle(
+          Text(
+            _userProfile?.bio ?? 'No bio yet.',
+            style: const TextStyle(
               fontSize: 14,
-              color: AppColors.textSecondary,
+              color: AppColors.textPrimary,
               height: 1.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Links
-          GestureDetector(
-            onTap: () {},
-            child: const Row(
-              children: [
-                Icon(CupertinoIcons.link, size: 14, color: AppColors.primary),
-                SizedBox(width: 4),
-                Text(
-                  'beacons.ai/walton',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -224,11 +269,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: _PillButton(
                   label: 'Edit Profile',
                   filled: false,
-                  onTap: () => Navigator.of(context).push(
-                    CupertinoPageRoute(
-                      builder: (_) => const EditProfileScreen(),
-                    ),
-                  ),
+                  onTap: () async {
+                    if (_userProfile == null) return;
+                    await Navigator.of(context).push(
+                      CupertinoPageRoute(
+                        builder: (_) =>
+                            EditProfileScreen(profile: _userProfile!),
+                      ),
+                    );
+                    _fetchProfileData();
+                  },
                 ),
               ),
               const SizedBox(width: 8),
@@ -308,20 +358,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
       sliver: SliverGrid(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final post = posts[index];
-            return GestureDetector(
-              onTap: () => Navigator.of(context).push(
-                CupertinoPageRoute(
-                  builder: (_) => PostDetailScreen(post: post),
-                ),
-              ),
-              child: _XhsCard(post: post),
-            );
-          },
-          childCount: posts.length,
-        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final post = posts[index];
+          return GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
+            ),
+            child: _XhsCard(post: post),
+          );
+        }, childCount: posts.length),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           mainAxisSpacing: 10,
@@ -339,29 +384,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showAccountsSheet(BuildContext context) {
     showCupertinoModalPopup(
       context: context,
-      builder: (BuildContext context) => CupertinoActionSheet(
+      builder: (BuildContext sheetContext) => CupertinoActionSheet(
         title: const Text('Switch Account'),
         actions: <CupertinoActionSheetAction>[
           CupertinoActionSheetAction(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(sheetContext);
             },
-            child: const Text('$_userHandle (Current)'),
+            child: Text('${_userProfile?.name ?? "User"} (Current)'),
           ),
           CupertinoActionSheetAction(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(sheetContext);
             },
             child: const Text('Add Account...'),
           ),
           CupertinoActionSheetAction(
             isDestructiveAction: true,
-            onPressed: () {
-              // TODO: Implement actual Supabase logout
-              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                CupertinoPageRoute(builder: (context) => const LoginScreen()),
-                (route) => false,
-              );
+            onPressed: () async {
+              Navigator.pop(sheetContext); // Close the action sheet
+              try {
+                await Supabase.instance.client.auth.signOut();
+                if (mounted) {
+                  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                    CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+                  );
+                }
+              } catch (e) {
+                print('Error logging out: $e');
+              }
             },
             child: const Text('Log Out'),
           ),
@@ -369,7 +421,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         cancelButton: CupertinoActionSheetAction(
           isDefaultAction: true,
           onPressed: () {
-            Navigator.pop(context);
+            Navigator.pop(sheetContext);
           },
           child: const Text('Cancel'),
         ),
@@ -424,7 +476,10 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
       color: CupertinoColors.white,
       child: Column(
@@ -445,8 +500,9 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
                           tabs[i],
                           style: TextStyle(
                             fontSize: 14,
-                            fontWeight:
-                                active ? FontWeight.w700 : FontWeight.w400,
+                            fontWeight: active
+                                ? FontWeight.w700
+                                : FontWeight.w400,
                             color: active
                                 ? AppColors.textPrimary
                                 : AppColors.textSecondary,
@@ -585,7 +641,7 @@ class _StatItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

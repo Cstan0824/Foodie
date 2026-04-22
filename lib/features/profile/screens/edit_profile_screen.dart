@@ -1,8 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/models/profile_model.dart';
+import 'package:taste_spot/data/repositories/profile_repository.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditProfileScreen extends StatefulWidget {
-  const EditProfileScreen({super.key});
+  final Profile profile;
+
+  const EditProfileScreen({super.key, required this.profile});
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -11,29 +16,63 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
-  late TextEditingController _pronounsController;
   late TextEditingController _bioController;
-  late TextEditingController _linksController;
+
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: 'Walton G.');
-    _usernameController = TextEditingController(text: 'waltonfoodieKL');
-    _pronounsController = TextEditingController(text: 'he/him');
-    _bioController = TextEditingController(
-        text: 'Food explorer | Bouldering enthusiast\nKL based 🍜');
-    _linksController = TextEditingController(text: 'beacons.ai/walton');
+    _nameController = TextEditingController(text: widget.profile.name);
+    _usernameController = TextEditingController(
+      text:
+          widget.profile.username ??
+          widget.profile.name.replaceAll(' ', '').toLowerCase(),
+    );
+    _bioController = TextEditingController(text: widget.profile.bio ?? '');
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _usernameController.dispose();
-    _pronounsController.dispose();
     _bioController.dispose();
-    _linksController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    setState(() => _isSaving = true);
+    try {
+      final repository = ProfileRepository(Supabase.instance.client);
+      await repository.updateProfile(
+        userId: widget.profile.userId,
+        name: _nameController.text.trim(),
+        bio: _bioController.text.trim(),
+      );
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text(e.toString()),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
   }
 
   @override
@@ -43,21 +82,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       navigationBar: CupertinoNavigationBar(
         backgroundColor: CupertinoColors.white,
         border: const Border(
-            bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+          bottom: BorderSide(color: AppColors.divider, width: 0.5),
+        ),
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel',
-              style: TextStyle(
-                  fontWeight: FontWeight.w400, color: AppColors.textPrimary)),
+          onPressed: _isSaving ? null : () => Navigator.pop(context),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(
+              fontWeight: FontWeight.w400,
+              color: AppColors.textPrimary,
+            ),
+          ),
         ),
         middle: const Text('Edit Profile'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Done',
-              style: TextStyle(
-                  fontWeight: FontWeight.w600, color: AppColors.primary)),
+          onPressed: _isSaving ? null : _saveProfile,
+          child: _isSaving
+              ? const CupertinoActivityIndicator()
+              : const Text(
+                  'Done',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
         ),
       ),
       child: SafeArea(
@@ -138,13 +188,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         children: [
           _CupertinoEditRow(label: 'Name', controller: _nameController),
           const _CustomDivider(),
-          _CupertinoEditRow(label: 'Username', controller: _usernameController),
+          _CupertinoEditRow(
+            label: 'Username',
+            controller: _usernameController,
+            readOnly: true,
+          ),
           const _CustomDivider(),
-          _CupertinoEditRow(label: 'Pronouns', controller: _pronounsController),
-          const _CustomDivider(),
-          _CupertinoEditRow(label: 'Bio', controller: _bioController, minLines: 2),
-          const _CustomDivider(),
-          _CupertinoEditRow(label: 'Links', controller: _linksController),
+          _CupertinoEditRow(
+            label: 'Bio',
+            controller: _bioController,
+            minLines: 2,
+          ),
         ],
       ),
     );
@@ -167,11 +221,13 @@ class _CupertinoEditRow extends StatelessWidget {
   final String label;
   final TextEditingController controller;
   final int minLines;
+  final bool readOnly;
 
   const _CupertinoEditRow({
     required this.label,
     required this.controller,
     this.minLines = 1,
+    this.readOnly = false,
   });
 
   @override
@@ -179,8 +235,9 @@ class _CupertinoEditRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
-        crossAxisAlignment:
-            minLines > 1 ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+        crossAxisAlignment: minLines > 1
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
         children: [
           SizedBox(
             width: 90,
@@ -199,15 +256,19 @@ class _CupertinoEditRow extends StatelessWidget {
           Expanded(
             child: CupertinoTextField(
               controller: controller,
+              readOnly: readOnly,
               padding: const EdgeInsets.symmetric(vertical: 12),
               minLines: minLines,
               maxLines: null, // Allow expanding
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
-                color: AppColors.textPrimary,
+                color: readOnly
+                    ? AppColors.textSecondary
+                    : AppColors.textPrimary,
               ),
               decoration: const BoxDecoration(
-                color: CupertinoColors.transparent, // entirely flat like iOS native cell
+                color: CupertinoColors
+                    .transparent, // entirely flat like iOS native cell
               ),
               placeholder: label,
               placeholderStyle: const TextStyle(
