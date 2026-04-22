@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/collection_model.dart';
 
 class CollectionRepository {
@@ -30,6 +31,7 @@ class CollectionRepository {
     final response = await _supabase
         .from('collections')
         .insert({
+          'collection_Id': const Uuid().v4(),
           'user_Id': userId,
           'name': name,
           'description': description,
@@ -124,6 +126,17 @@ class CollectionRepository {
   // ==========================================
   // 3. Collection Sharing Management
   // ==========================================
+
+  Future<List<String>> getSharedUserIds(String collectionId) async {
+    final response = await _supabase
+        .from('collections_shares')
+        .select('share_with_id')
+        .eq('collection_Id', collectionId);
+    
+    return (response as List<dynamic>)
+        .map((row) => row['share_with_id'] as String)
+        .toList();
+  }
 
   Future<void> shareCollection(String collectionId, String targetUserId) async {
     await _supabase.from('collections_shares').insert({

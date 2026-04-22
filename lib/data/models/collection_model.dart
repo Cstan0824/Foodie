@@ -4,6 +4,7 @@ class Collection {
   final String name;
   final String? description;
   final bool isPublic;
+  final bool isDefault;
   final DateTime createdAt;
 
   Collection({
@@ -12,6 +13,7 @@ class Collection {
     required this.name,
     this.description,
     required this.isPublic,
+    this.isDefault = false,
     required this.createdAt,
   });
 
@@ -27,6 +29,7 @@ class Collection {
       name: json['name'] as String,
       description: json['description'] as String?,
       isPublic: json['is_public'] as bool? ?? false,
+      isDefault: json['is_default'] as bool? ?? false,
       createdAt: DateTime.parse(createdAtRaw),
     );
   }
