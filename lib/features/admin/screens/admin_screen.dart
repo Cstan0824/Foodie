@@ -20,7 +20,7 @@ class _AdminScreenState extends State<AdminScreen> {
       activeIcon: CupertinoIcons.chart_bar_square_fill,
     ),
     _AdminTab(
-      label: 'Posts',
+      label: 'Reports',
       icon: CupertinoIcons.doc_text,
       activeIcon: CupertinoIcons.doc_text_fill,
     ),

@@ -7,6 +7,7 @@ import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
+import 'package:taste_spot/features/post/widgets/post_hashtag_composer.dart';
 
 class AddPostScreen extends StatefulWidget {
   const AddPostScreen({super.key});
@@ -25,6 +26,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
   // Chosen restaurant
   RestaurantModel? _selectedRestaurant;
+  List<String> _hashtags = [];
 
   // State
   bool _isPublishing = false;
@@ -101,6 +103,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
         restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
+        hashtags: _hashtags,
         images: imageByteslist,
       );
 
@@ -233,6 +236,13 @@ class _AddPostScreenState extends State<AddPostScreen> {
                   minLines: 4,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
+              ),
+
+              _divider(),
+
+              PostHashtagComposer(
+                initialTags: _hashtags,
+                onChanged: (tags) => _hashtags = tags,
               ),
 
               _divider(),

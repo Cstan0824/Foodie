@@ -46,6 +46,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
+        transitionBetweenRoutes: false,
         backgroundColor: CupertinoColors.white,
         border: null, // Clean look
         middle: const Text('Collections', style: TextStyle(fontWeight: FontWeight.w600)),

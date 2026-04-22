@@ -5,7 +5,6 @@ class ReportRepository {
   ReportRepository._();
   static final instance = ReportRepository._();
 
-  static const int _pendingStatus = 0;
   static const int _removedStatus = 1;
   static const int _dismissedStatus = 2;
 
@@ -22,11 +21,26 @@ class ReportRepository {
     }
   }
 
-  Future<List<ReportedPost>> fetchPostReports() async {
+  ReportActionStatus _statusFromDbValue(dynamic rawStatus) {
+    switch ((rawStatus as num?)?.toInt()) {
+      case _removedStatus:
+        return ReportActionStatus.removed;
+      case _dismissedStatus:
+        return ReportActionStatus.dismissed;
+      case 0:
+      default:
+        return ReportActionStatus.pending;
+    }
+  }
+
+  Future<List<ReportedPost>> fetchPostReports({
+    ReportActionStatus status = ReportActionStatus.pending,
+  }) async {
     final response = await SupabaseService.client
         .from('Report')
         .select('''
           id:report_Id,
+          status,
           reason,
           details,
           created_At,
@@ -41,7 +55,7 @@ class ReportRepository {
           )
         ''')
         .isFilter('comment_Id', null)
-        .eq('status', _pendingStatus)
+        .eq('status', status.dbValue)
         .order('created_At', ascending: false);
 
     return (response as List<dynamic>).map((r) {
@@ -56,6 +70,7 @@ class ReportRepository {
       return ReportedPost(
         id: r['id']?.toString() ?? '',
         postId: post['post_Id']?.toString() ?? '',
+        status: _statusFromDbValue(r['status']),
         postTitle: post['title']?.toString() ?? 'Untitled Post',
         authorHandle: authorName,
         authorInitial: authorName.isNotEmpty ? authorName[0].toUpperCase() : '?',
@@ -70,11 +85,14 @@ class ReportRepository {
     }).toList();
   }
 
-  Future<List<ReportedComment>> fetchCommentReports() async {
+  Future<List<ReportedComment>> fetchCommentReports({
+    ReportActionStatus status = ReportActionStatus.pending,
+  }) async {
     final response = await SupabaseService.client
         .from('Report')
         .select('''
           id:report_Id,
+          status,
           reason,
           details,
           created_At,
@@ -93,7 +111,7 @@ class ReportRepository {
           )
         ''')
         .not('comment_Id', 'is', null)
-        .eq('status', _pendingStatus)
+        .eq('status', status.dbValue)
         .order('created_At', ascending: false);
 
     return (response as List<dynamic>).map((r) {
@@ -112,6 +130,7 @@ class ReportRepository {
       return ReportedComment(
         id: r['id']?.toString() ?? '',
         commentId: comment['comment_Id']?.toString() ?? '',
+        status: _statusFromDbValue(r['status']),
         commentText: comment['content']?.toString() ?? '',
         commentAuthor: commentAuthor,
         commentAuthorInitial: commentAuthor.isNotEmpty ? commentAuthor[0].toUpperCase() : '?',
@@ -135,7 +154,7 @@ class ReportRepository {
         .update({'status': _dismissedStatus})
         .eq('post_Id', postId)
         .isFilter('comment_Id', null)
-        .eq('status', _pendingStatus);
+        .eq('status', ReportActionStatus.pending.dbValue);
   }
 
   Future<void> dismissCommentReports(String commentId) async {
@@ -143,7 +162,7 @@ class ReportRepository {
         .from('Report')
         .update({'status': _dismissedStatus})
         .eq('comment_Id', commentId)
-        .eq('status', _pendingStatus);
+        .eq('status', ReportActionStatus.pending.dbValue);
   }
 
   Future<void> markPostReportsRemoved(String postId) async {
@@ -152,7 +171,7 @@ class ReportRepository {
         .update({'status': _removedStatus})
         .eq('post_Id', postId)
         .isFilter('comment_Id', null)
-        .eq('status', _pendingStatus);
+        .eq('status', ReportActionStatus.pending.dbValue);
   }
 
   Future<void> markCommentReportsRemoved(String commentId) async {
@@ -160,7 +179,7 @@ class ReportRepository {
         .from('Report')
         .update({'status': _removedStatus})
         .eq('comment_Id', commentId)
-        .eq('status', _pendingStatus);
+        .eq('status', ReportActionStatus.pending.dbValue);
   }
 
   List<String> _parsePostImages(Map<String, dynamic>? post) {

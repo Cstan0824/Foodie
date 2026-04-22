@@ -14,6 +14,7 @@ class PostModel {
   final String? location;
   final String restaurantName;
   final DateTime? createdAt;
+  final List<String> hashtags;
 
   const PostModel({
     required this.id,
@@ -31,6 +32,7 @@ class PostModel {
     this.location,
     this.restaurantName = '',
     this.createdAt,
+    this.hashtags = const [],
   });
 
   PostModel copyWith({
@@ -38,6 +40,7 @@ class PostModel {
     String? description,
     int? likes,
     int? saveCount,
+    List<String>? hashtags,
   }) {
     return PostModel(
       id: id,
@@ -55,6 +58,7 @@ class PostModel {
       location: location,
       restaurantName: restaurantName,
       createdAt: createdAt,
+      hashtags: hashtags ?? this.hashtags,
     );
   }
 
@@ -71,6 +75,7 @@ class PostModel {
     final restaurantId = restaurant?['restaurant_Id'] as String?;
 
     final createdAtRaw = json['created_At'] as String?;
+    final hashtags = <String>[];
 
     // Get all image URLs from joined Post_Image rows
     final List<String> imageUrls = [];
@@ -80,6 +85,19 @@ class PostModel {
         final url = (img as Map<String, dynamic>)['image_url'] as String?;
         if (url != null && url.isNotEmpty) imageUrls.add(url);
       }
+    }
+
+    final rawHashtagLinks = json['post_hashtag'] as List<dynamic>?;
+    if (rawHashtagLinks != null) {
+      for (final entry in rawHashtagLinks) {
+        final link = entry as Map<String, dynamic>;
+        final hashtag = link['hashtag'] as Map<String, dynamic>?;
+        final name = hashtag?['name'] as String?;
+        if (name != null && name.isNotEmpty && !hashtags.contains(name)) {
+          hashtags.add(name);
+        }
+      }
+      hashtags.sort();
     }
 
     return PostModel(
@@ -98,7 +116,7 @@ class PostModel {
       restaurantName: restaurantName,
       createdAt:
           createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
+      hashtags: hashtags,
     );
   }
 }
-

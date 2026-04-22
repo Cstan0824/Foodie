@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
@@ -138,12 +139,14 @@ class PostRepository {
     required String restaurantId,
     required String title,
     required String caption,
+    List<String> hashtags = const [],
     required List<String> deletedImageUrls,
     required List<Uint8List> newImages,
   }) async {
     if (restaurantId.trim().isEmpty) {
       throw Exception('A post must be tied to a restaurant.');
     }
+    final normalizedHashtags = _normalizeAndValidateHashtags(hashtags);
 
     await ensurePostAvailable(
       postId,
@@ -206,6 +209,8 @@ class PostRepository {
     if (postImageRecords.isNotEmpty) {
       await SupabaseService.client.from('Post_Image').insert(postImageRecords);
     }
+
+    await _syncPostHashtags(postId, normalizedHashtags);
   }
 
   /// User soft delete.
@@ -240,11 +245,13 @@ class PostRepository {
     required String restaurantId,
     required String title,
     required String caption,
+    List<String> hashtags = const [],
     List<Uint8List> images = const [],
   }) async {
     if (restaurantId.trim().isEmpty) {
       throw Exception('A post must be tied to a restaurant.');
     }
+    final normalizedHashtags = _normalizeAndValidateHashtags(hashtags);
 
     final postId = _generateUUID();
     final postImageRecords = <Map<String, dynamic>>[];
@@ -285,6 +292,8 @@ class PostRepository {
       await SupabaseService.client.from('Post_Image').insert(postImageRecords);
     }
 
+    await _syncPostHashtags(postId, normalizedHashtags);
+
     return postId;
   }
 
@@ -300,6 +309,101 @@ class PostRepository {
         '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
         '-${hex.substring(20)}';
   }
+
+  Future<List<String>> searchHashtags(String query, {int limit = 6}) async {
+    final normalizedQuery = HashtagUtils.normalizeToken(query);
+    if (normalizedQuery.isEmpty ||
+        HashtagUtils.validateToken(normalizedQuery) != null) {
+      return const [];
+    }
+
+    final response = await SupabaseService.client
+        .from('hashtag')
+        .select('name')
+        // Use a contains match so legacy rows like "#sushi" still show up
+        // while the app transitions to normalized storage without "#".
+        .ilike('name', '%$normalizedQuery%')
+        .order('name', ascending: true)
+        .range(0, limit - 1);
+
+    final normalizedResults = HashtagUtils.normalizeAll(
+      (response as List<dynamic>)
+          .map((row) => (row as Map<String, dynamic>)['name']?.toString() ?? ''),
+    ).where((tag) => tag.contains(normalizedQuery)).toList();
+
+    normalizedResults.sort((a, b) {
+      final aExact = a == normalizedQuery;
+      final bExact = b == normalizedQuery;
+      if (aExact != bExact) return aExact ? -1 : 1;
+
+      final aPrefix = a.startsWith(normalizedQuery);
+      final bPrefix = b.startsWith(normalizedQuery);
+      if (aPrefix != bPrefix) return aPrefix ? -1 : 1;
+
+      final lengthCompare = a.length.compareTo(b.length);
+      if (lengthCompare != 0) return lengthCompare;
+      return a.compareTo(b);
+    });
+
+    return normalizedResults.take(limit).toList();
+  }
+
+  List<String> _normalizeAndValidateHashtags(List<String> hashtags) {
+    final normalized = HashtagUtils.normalizeAll(hashtags);
+    final error = HashtagUtils.validateList(normalized);
+    if (error != null) {
+      throw Exception(error);
+    }
+    return normalized;
+  }
+
+  Future<void> _syncPostHashtags(String postId, List<String> hashtags) async {
+    await SupabaseService.client
+        .from('post_hashtag')
+        .delete()
+        .eq('post_Id', postId);
+
+    if (hashtags.isEmpty) {
+      return;
+    }
+
+    await SupabaseService.client.from('hashtag').upsert(
+          hashtags.map((tag) => {'name': tag}).toList(),
+          onConflict: 'name',
+        );
+
+    final hashtagRows = await SupabaseService.client
+        .from('hashtag')
+        .select('hashtag_id, name')
+        .inFilter('name', hashtags);
+
+    final hashtagIdsByName = <String, String>{};
+    for (final row in hashtagRows as List<dynamic>) {
+      final map = row as Map<String, dynamic>;
+      final name = map['name']?.toString();
+      final id = map['hashtag_id']?.toString();
+      if (name != null && id != null && name.isNotEmpty && id.isNotEmpty) {
+        hashtagIdsByName[name] = id;
+      }
+    }
+
+    final missingTags = hashtags.where((tag) => !hashtagIdsByName.containsKey(tag));
+    if (missingTags.isNotEmpty) {
+      throw Exception('Failed to save hashtags.');
+    }
+
+    await SupabaseService.client.from('post_hashtag').insert(
+          hashtags
+              .map(
+                (tag) => {
+                  'post_Id': postId,
+                  'hashtag_id': hashtagIdsByName[tag],
+                },
+              )
+              .toList(),
+        );
+  }
+
   /// Toggles the like status of a post. The post likeCount is handled automatically via a backend Postgres Trigger.
   Future<void> toggleLike(String postId, String userId, bool isLiking) async {
     await ensurePostAvailable(

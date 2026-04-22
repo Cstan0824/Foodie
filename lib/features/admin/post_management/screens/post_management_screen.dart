@@ -23,13 +23,16 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     with SingleTickerProviderStateMixin {
   int _tab = 0;
   late final AnimationController _tabAnim;
+  final TextEditingController _searchController = TextEditingController();
 
   List<ReportedPost> _posts = [];
   List<ReportedComment> _comments = [];
   bool _isLoadingPosts = false;
   bool _isLoadingComments = false;
-  bool _hasFetchedPosts = false;
-  bool _hasFetchedComments = false;
+  ReportActionStatus _statusFilter = ReportActionStatus.pending;
+  String _searchQuery = '';
+  int _postsRequestId = 0;
+  int _commentsRequestId = 0;
 
   @override
   void initState() {
@@ -42,33 +45,48 @@ class _PostManagementScreenState extends State<PostManagementScreen>
   }
 
   Future<void> _fetchPosts() async {
-    if (_hasFetchedPosts) return;
+    final requestId = ++_postsRequestId;
+    final requestedStatus = _statusFilter;
     setState(() => _isLoadingPosts = true);
     try {
-      final data = await ReportRepository.instance.fetchPostReports();
-      if (mounted) setState(() { _posts = data; _hasFetchedPosts = true; });
+      final data = await ReportRepository.instance.fetchPostReports(
+        status: requestedStatus,
+      );
+      if (mounted && requestId == _postsRequestId) {
+        setState(() => _posts = data);
+      }
     } catch (e) {
       debugPrint('Error fetching post reports: $e');
     } finally {
-      if (mounted) setState(() => _isLoadingPosts = false);
+      if (mounted && requestId == _postsRequestId) {
+        setState(() => _isLoadingPosts = false);
+      }
     }
   }
 
   Future<void> _fetchComments() async {
-    if (_hasFetchedComments) return;
+    final requestId = ++_commentsRequestId;
+    final requestedStatus = _statusFilter;
     setState(() => _isLoadingComments = true);
     try {
-      final data = await ReportRepository.instance.fetchCommentReports();
-      if (mounted) setState(() { _comments = data; _hasFetchedComments = true; });
+      final data = await ReportRepository.instance.fetchCommentReports(
+        status: requestedStatus,
+      );
+      if (mounted && requestId == _commentsRequestId) {
+        setState(() => _comments = data);
+      }
     } catch (e) {
       debugPrint('Error fetching comment reports: $e');
     } finally {
-      if (mounted) setState(() => _isLoadingComments = false);
+      if (mounted && requestId == _commentsRequestId) {
+        setState(() => _isLoadingComments = false);
+      }
     }
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _tabAnim.dispose();
     super.dispose();
   }
@@ -85,6 +103,74 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     }
   }
 
+  void _setStatusFilter(ReportActionStatus? status) {
+    if (status == null || status == _statusFilter) return;
+    setState(() => _statusFilter = status);
+    _fetchPosts();
+    _fetchComments();
+  }
+
+  bool get _canModerateCurrentStatus =>
+      _statusFilter == ReportActionStatus.pending;
+
+  String get _normalizedQuery => _searchQuery.trim().toLowerCase();
+
+  int get _postGroupCount => _groupPosts(_posts).length;
+  int get _commentGroupCount => _groupComments(_comments).length;
+
+  List<List<ReportedPost>> _groupPosts(List<ReportedPost> reports) {
+    final grouped = <String, List<ReportedPost>>{};
+    for (final report in reports) {
+      grouped.putIfAbsent(report.postId, () => []).add(report);
+    }
+    return grouped.values.toList();
+  }
+
+  List<List<ReportedComment>> _groupComments(List<ReportedComment> reports) {
+    final grouped = <String, List<ReportedComment>>{};
+    for (final report in reports) {
+      grouped.putIfAbsent(report.commentId, () => []).add(report);
+    }
+    return grouped.values.toList();
+  }
+
+  bool _groupMatchesPostQuery(List<ReportedPost> group) {
+    final query = _normalizedQuery;
+    if (query.isEmpty) return true;
+
+    final first = group.first;
+    final haystacks = <String>[
+      first.postTitle,
+      first.authorHandle,
+      first.restaurantName,
+      for (final report in group) report.reportedBy,
+    ];
+
+    return haystacks.any((value) => value.toLowerCase().contains(query));
+  }
+
+  bool _groupMatchesCommentQuery(List<ReportedComment> group) {
+    final query = _normalizedQuery;
+    if (query.isEmpty) return true;
+
+    final first = group.first;
+    final haystacks = <String>[
+      first.postTitle,
+      first.postAuthor,
+      first.commentAuthor,
+      first.restaurantName,
+      for (final report in group) report.reportedBy,
+    ];
+
+    return haystacks.any((value) => value.toLowerCase().contains(query));
+  }
+
+  List<List<ReportedPost>> get _visiblePostGroups =>
+      _groupPosts(_posts).where(_groupMatchesPostQuery).toList();
+
+  List<List<ReportedComment>> get _visibleCommentGroups =>
+      _groupComments(_comments).where(_groupMatchesCommentQuery).toList();
+
   Future<void> _dismissPost(String postId) async {
     try {
       await ReportRepository.instance.dismissPostReports(postId);
@@ -94,23 +180,16 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     }
   }
 
-  void _blockPost(String postId) {
-    _confirm(
-      title: 'Block Post',
-      message: 'This post will be blocked and hidden from users.',
-      label: 'Block Post',
-      onConfirm: () async {
-        try {
-          await PostRepository.instance.blockPost(postId);
-          await ReportRepository.instance.markPostReportsRemoved(postId);
-          if (mounted) {
-            setState(() => _posts.removeWhere((p) => p.postId == postId));
-          }
-        } catch (e) {
-          debugPrint('Error blocking post: $e');
-        }
-      },
-    );
+  Future<void> _blockPost(String postId) async {
+    try {
+      await PostRepository.instance.blockPost(postId);
+      await ReportRepository.instance.markPostReportsRemoved(postId);
+      if (mounted) {
+        setState(() => _posts.removeWhere((p) => p.postId == postId));
+      }
+    } catch (e) {
+      debugPrint('Error blocking post: $e');
+    }
   }
 
   Future<void> _dismissComment(String commentId) async {
@@ -122,52 +201,16 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     }
   }
 
-  void _blockComment(String commentId) {
-    _confirm(
-      title: 'Block Comment',
-      message: 'This comment will be blocked and hidden from users.',
-      label: 'Block Comment',
-      onConfirm: () async {
-        try {
-          await CommentRepository.instance.blockComment(commentId);
-          await ReportRepository.instance.markCommentReportsRemoved(commentId);
-          if (mounted) {
-            setState(() => _comments.removeWhere((c) => c.commentId == commentId));
-          }
-        } catch (e) {
-          debugPrint('Error blocking comment: $e');
-        }
-      },
-    );
-  }
-
-  void _confirm({
-    required String title,
-    required String message,
-    required String label,
-    required VoidCallback onConfirm,
-  }) {
-    showCupertinoDialog(
-      context: context,
-      builder: (_) => CupertinoAlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () {
-              Navigator.pop(context);
-              onConfirm();
-            },
-            child: Text(label),
-          ),
-        ],
-      ),
-    );
+  Future<void> _blockComment(String commentId) async {
+    try {
+      await CommentRepository.instance.blockComment(commentId);
+      await ReportRepository.instance.markCommentReportsRemoved(commentId);
+      if (mounted) {
+        setState(() => _comments.removeWhere((c) => c.commentId == commentId));
+      }
+    } catch (e) {
+      debugPrint('Error blocking comment: $e');
+    }
   }
 
   @override
@@ -188,7 +231,7 @@ class _PostManagementScreenState extends State<PostManagementScreen>
                   bottom: 12,
                 ),
                 child: const Text(
-                  'Post Management',
+                  'Report Management',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
@@ -197,11 +240,46 @@ class _PostManagementScreenState extends State<PostManagementScreen>
                   ),
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: CupertinoSlidingSegmentedControl<ReportActionStatus>(
+                  groupValue: _statusFilter,
+                  backgroundColor: AppColors.surface,
+                  thumbColor: AppColors.primary,
+                  children: {
+                    for (final status in ReportActionStatus.values)
+                      status: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          status.label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _statusFilter == status
+                                ? CupertinoColors.white
+                                : AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                  },
+                  onValueChanged: _setStatusFilter,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: CupertinoSearchTextField(
+                  controller: _searchController,
+                  placeholder: _tab == 0
+                      ? 'Search by post, owner, or reporter'
+                      : 'Search by post, owner, or reporter',
+                  onChanged: (value) => setState(() => _searchQuery = value),
+                ),
+              ),
               // ── Animated underline tab bar ──
               _SlideTabBar(
                 labels: [
-                  'Posts  ${_posts.isNotEmpty ? "(${_posts.length})" : ""}',
-                  'Comments  ${_comments.isNotEmpty ? "(${_comments.length})" : ""}',
+                  'Posts  ${_postGroupCount > 0 ? "($_postGroupCount)" : ""}',
+                  'Comments  ${_commentGroupCount > 0 ? "($_commentGroupCount)" : ""}',
                 ],
                 selectedIndex: _tab,
                 onTap: _switchTab,
@@ -220,27 +298,32 @@ class _PostManagementScreenState extends State<PostManagementScreen>
 
   Widget _buildPostsList() {
     if (_isLoadingPosts) return const Center(child: CupertinoActivityIndicator());
-    if (_posts.isEmpty) {
-      return const _EmptyState(icon: CupertinoIcons.doc_text, message: 'No reported posts');
+    final groups = _visiblePostGroups;
+    if (groups.isEmpty) {
+      return _EmptyState(
+        icon: CupertinoIcons.doc_text,
+        message: _searchQuery.isNotEmpty
+            ? 'No matching post reports'
+            : 'No ${_statusFilter.label.toLowerCase()} post reports',
+      );
     }
-    
-    final Map<String, List<ReportedPost>> grouped = {};
-    for (final p in _posts) {
-      grouped.putIfAbsent(p.postId, () => []).add(p);
-    }
-    final keys = grouped.keys.toList();
 
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 0),
-      itemCount: keys.length,
+      itemCount: groups.length,
       separatorBuilder: (context, index) =>
           Container(height: 10, color: AppColors.divider.withAlpha(60)),
       itemBuilder: (_, i) {
-        final group = grouped[keys[i]]!;
+        final group = groups[i];
         return _ReportedPostRow(
           posts: group,
-          onDismiss: () => _dismissPost(group.first.postId),
-          onBlock: () => _blockPost(group.first.postId),
+          onDismiss: _canModerateCurrentStatus
+              ? () => _dismissPost(group.first.postId)
+              : null,
+          onBlock: _canModerateCurrentStatus
+              ? () => _blockPost(group.first.postId)
+              : null,
+          showModerationActions: _canModerateCurrentStatus,
         );
       },
     );
@@ -248,28 +331,32 @@ class _PostManagementScreenState extends State<PostManagementScreen>
 
   Widget _buildCommentsList() {
     if (_isLoadingComments) return const Center(child: CupertinoActivityIndicator());
-    if (_comments.isEmpty) {
-      return const _EmptyState(
-          icon: CupertinoIcons.chat_bubble, message: 'No reported comments');
+    final groups = _visibleCommentGroups;
+    if (groups.isEmpty) {
+      return _EmptyState(
+        icon: CupertinoIcons.chat_bubble,
+        message: _searchQuery.isNotEmpty
+            ? 'No matching comment reports'
+            : 'No ${_statusFilter.label.toLowerCase()} comment reports',
+      );
     }
-    
-    final Map<String, List<ReportedComment>> grouped = {};
-    for (final c in _comments) {
-      grouped.putIfAbsent(c.commentId, () => []).add(c);
-    }
-    final keys = grouped.keys.toList();
 
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 0),
-      itemCount: keys.length,
+      itemCount: groups.length,
       separatorBuilder: (context, index) =>
           Container(height: 10, color: AppColors.divider.withAlpha(60)),
       itemBuilder: (_, i) {
-        final group = grouped[keys[i]]!;
+        final group = groups[i];
         return _ReportedCommentRow(
           comments: group,
-          onDismiss: () => _dismissComment(group.first.commentId),
-          onBlock: () => _blockComment(group.first.commentId),
+          onDismiss: _canModerateCurrentStatus
+              ? () => _dismissComment(group.first.commentId)
+              : null,
+          onBlock: _canModerateCurrentStatus
+              ? () => _blockComment(group.first.commentId)
+              : null,
+          showModerationActions: _canModerateCurrentStatus,
         );
       },
     );
@@ -352,13 +439,15 @@ class _SlideTabBar extends StatelessWidget {
 
 class _ReportedPostRow extends StatelessWidget {
   final List<ReportedPost> posts;
-  final VoidCallback onDismiss;
-  final VoidCallback onBlock;
+  final VoidCallback? onDismiss;
+  final VoidCallback? onBlock;
+  final bool showModerationActions;
 
   const _ReportedPostRow({
     required this.posts,
     required this.onDismiss,
     required this.onBlock,
+    required this.showModerationActions,
   });
 
   @override
@@ -373,13 +462,12 @@ class _ReportedPostRow extends StatelessWidget {
           CupertinoPageRoute(
             builder: (_) => AdminPostReviewScreen(
               posts: posts,
-              onDismiss: onDismiss,
-              onBlock: onBlock,
+              showModerationActions: showModerationActions,
             ),
           ),
         );
-        if (result == ReviewResult.dismiss) onDismiss();
-        if (result == ReviewResult.block) onBlock();
+        if (result == ReviewResult.dismiss) onDismiss?.call();
+        if (result == ReviewResult.block) onBlock?.call();
       },
       child: Container(
         color: AppColors.cardBackground,
@@ -404,6 +492,9 @@ class _ReportedPostRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 8),
+                _StatusBadge(status: firstPost.status),
+                const SizedBox(width: 8),
                 Text(
                   firstPost.timeAgo, // Display time of the first report logic
                   style: const TextStyle(fontSize: 12, color: AppColors.textLight),
@@ -469,13 +560,15 @@ class _ReportedPostRow extends StatelessWidget {
 
 class _ReportedCommentRow extends StatelessWidget {
   final List<ReportedComment> comments;
-  final VoidCallback onDismiss;
-  final VoidCallback onBlock;
+  final VoidCallback? onDismiss;
+  final VoidCallback? onBlock;
+  final bool showModerationActions;
 
   const _ReportedCommentRow({
     required this.comments,
     required this.onDismiss,
     required this.onBlock,
+    required this.showModerationActions,
   });
 
   @override
@@ -523,13 +616,12 @@ class _ReportedCommentRow extends StatelessWidget {
                 CupertinoPageRoute(
                   builder: (_) => AdminCommentReviewScreen(
                     comments: comments,
-                    onDismiss: onDismiss,
-                    onBlock: onBlock,
+                    showModerationActions: showModerationActions,
                   ),
                 ),
               );
-              if (result == ReviewResult.dismiss) onDismiss();
-              if (result == ReviewResult.block) onBlock();
+              if (result == ReviewResult.dismiss) onDismiss?.call();
+              if (result == ReviewResult.block) onBlock?.call();
             },
             child: Container(
               padding: const EdgeInsets.all(12),
@@ -601,6 +693,8 @@ class _ReportedCommentRow extends StatelessWidget {
                       color: AppColors.textPrimary,
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  _StatusBadge(status: firstComment.status),
                 ],
               ),
             ),
@@ -703,6 +797,44 @@ class _ReasonBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  final ReportActionStatus status;
+
+  const _StatusBadge({required this.status});
+
+  Color get _color {
+    switch (status) {
+      case ReportActionStatus.pending:
+        return const Color(0xFFFF9500);
+      case ReportActionStatus.removed:
+        return const Color(0xFFFF3B30);
+      case ReportActionStatus.dismissed:
+        return const Color(0xFF34C759);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _color;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withAlpha(18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(55), width: 0.8),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
       ),
     );
   }
