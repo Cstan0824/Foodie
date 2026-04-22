@@ -61,8 +61,9 @@ class PostModel {
   /// Maps a Supabase `Post` row with joined `User` + `Restaurant`.
   factory PostModel.fromJson(Map<String, dynamic> json) {
     // Supabase returns the joined User under the FK name when disambiguated
-    final user = (json['User!Post_user_Id_fkey'] ?? json['User'])
-        as Map<String, dynamic>?;
+    final user =
+        (json['User!Post_user_Id_fkey'] ?? json['User'])
+            as Map<String, dynamic>?;
     final authorName = (user?['name'] as String?) ?? 'Unknown';
 
     final restaurant = json['Restaurant'] as Map<String, dynamic>?;

@@ -8,7 +8,25 @@ class PostRepository {
   PostRepository._();
   static final PostRepository instance = PostRepository._();
 
-  /// Fetches the latest public posts for the Discover feed.
+  static const String _postSelect = '''
+          post_Id,
+          title,
+          caption,
+          likeCount,
+          saveCount,
+          created_At,
+          User!Post_user_Id_fkey(user_Id, name),
+          Restaurant(
+            restaurant_Id,
+            restaurant_name,
+            mainCuisine:Cuisine!restaurant_main_cuisine_fk(description:desc)
+          ),
+          Post_Image(image_Id, image_url)
+        ''';
+
+  /// Fetches the latest posts for the Discover feed.
+  /// Supports offset-based pagination: pass [offset] to load the next page.
+  /// Joins: User (author name), Restaurant (name only)
   Future<List<PostModel>> fetchDiscoverPosts({
     int limit = 20,
     int offset = 0,
@@ -216,6 +234,8 @@ class PostRepository {
           .delete()
           .inFilter('image_url', deletedImageUrls);
 
+      // Best-effort: clean up Storage blobs (swallow errors — orphaned blobs are
+      // not fatal and can be cleaned up by a maintenance job later).
       final pathsToDelete = deletedImageUrls.map((url) {
         final segments = Uri.parse(url).pathSegments;
         final idx = segments.indexOf('post_images');
@@ -234,6 +254,7 @@ class PostRepository {
       }
     }
 
+    // 3. Only now update the Post row — all image work has already succeeded.
     await SupabaseService.client.from('Post').update({
       'title': title,
       'caption': caption,
@@ -337,8 +358,7 @@ class PostRepository {
         '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
         '-${hex.substring(20)}';
   }
-
-  /// The like count is handled by the backend trigger.
+  /// Toggles the like status of a post. The post likeCount is handled automatically via a backend Postgres Trigger.
   Future<void> toggleLike(String postId, String userId, bool isLiking) async {
     if (isLiking) {
       await SupabaseService.client.from('Likes').insert({
