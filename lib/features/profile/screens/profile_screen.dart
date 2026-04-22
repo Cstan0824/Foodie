@@ -29,6 +29,10 @@ class ProfileScreenState extends State<ProfileScreen> {
   int _followersCount = 0;
   int _followingCount = 0;
 
+  // Follow state for viewing another user's profile
+  bool _isFollowingUser = false;
+  bool _isFollowUpdating = false;
+
   static const _tabs = ['Notes', 'Liked'];
   String get _avatarUrl =>
       'https://i.pravatar.cc/200?u=${_userProfile?.userId ?? "guest"}';
@@ -46,64 +50,45 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> loadUserPosts({bool silent = false}) async {
-    if (!silent && mounted) {
-      setState(() => _isLoading = true);
-    }
-    await _fetchProfileData();
+    await _fetchProfileData(silent: silent);
   }
 
-  Future<void> _fetchProfileData() async {
+  Future<void> _fetchProfileData({bool silent = false}) async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    if (!silent) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final currentUser = Supabase.instance.client.auth.currentUser;
-      final targetUserId = widget.userId ?? currentUser?.id;
+      final targetUserId =
+          widget.userId ??
+          currentUser?.id ??
+          '00000000-0000-0000-0000-000000000001';
 
-      if (targetUserId != null) {
-        final profileRepo = ProfileRepository(Supabase.instance.client);
-        _userProfile = await profileRepo.getProfile(targetUserId);
+      final profileRepo = ProfileRepository(Supabase.instance.client);
+      _userProfile = await profileRepo.getProfile(targetUserId);
 
-        _myPosts = await PostRepository.instance.fetchUserPosts(userId: targetUserId);
-        _followersCount = await profileRepo.getFollowersCount(targetUserId);
-        _followingCount = await profileRepo.getFollowingCount(targetUserId);
+      _myPosts = await PostRepository.instance.fetchUserPosts(
+        userId: targetUserId,
+      );
+      _followersCount = await profileRepo.getFollowersCount(targetUserId);
+      _followingCount = await profileRepo.getFollowingCount(targetUserId);
 
-        try {
-          // Fetch Liked Posts
-          final likesResponse = await Supabase.instance.client
-              .from('Likes')
-              .select('post_Id')
-              .eq('user_Id', targetUserId);
-
-          if (likesResponse.isNotEmpty) {
-            final List<dynamic> postIds = likesResponse
-                .map((l) => l['post_Id'])
-                .toList();
-
-            // Build filter string manually or use .inFilter
-            final postsResponse = await Supabase.instance.client
-                .from('Post')
-                .select('''
-                post_Id,
-                caption,
-                likeCount,
-                saveCount,
-                created_At,
-                User!Post_user_Id_fkey(user_Id, name),
-                Restaurant(restaurant_Id, restaurant_name)
-              ''')
-                .inFilter('post_Id', postIds);
-
-            _likedPosts = (postsResponse as List<dynamic>)
-                .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
-                .toList();
-          }
-        } catch (e) {
-          print(
-            'Optional Liked Posts query failed or table does not match: $e',
+      // Check follow status when viewing another user's profile
+      if (!_isCurrentUser) {
+        final currentUserId = currentUser?.id;
+        if (currentUserId != null) {
+          _isFollowingUser = await profileRepo.checkIsFollowing(
+            followerId: currentUserId,
+            followingId: targetUserId,
           );
         }
       }
+
+      _likedPosts = await PostRepository.instance.fetchLikedPosts(
+        userId: targetUserId,
+      );
     } catch (e) {
       print('Error fetching profile data: $e');
     } finally {
@@ -113,13 +98,68 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _toggleFollowUser() async {
+    if (_isFollowUpdating) return;
+
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final currentUserId = currentUser?.id;
+    final targetUserId = widget.userId;
+
+    if (currentUserId == null || targetUserId == null) return;
+    if (currentUserId == targetUserId) return;
+
+    final nextState = !_isFollowingUser;
+    setState(() {
+      _isFollowUpdating = true;
+      _isFollowingUser = nextState;
+      // Optimistically update the follower count shown on this profile
+      _followersCount = (_followersCount + (nextState ? 1 : -1)).clamp(0, 99999999);
+    });
+
+    final profileRepo = ProfileRepository(Supabase.instance.client);
+    try {
+      await profileRepo.setFollowing(
+        followerId: currentUserId,
+        followingId: targetUserId,
+        isFollowing: nextState,
+      );
+    } catch (e) {
+      print('[PROFILE FOLLOW ERROR] $e');
+      // Revert optimistic updates on failure
+      if (mounted) {
+        setState(() {
+          _isFollowingUser = !nextState;
+          _followersCount = (_followersCount + (nextState ? -1 : 1)).clamp(0, 99999999);
+        });
+        showCupertinoDialog(
+          context: context,
+          builder: (_) => CupertinoAlertDialog(
+            title: const Text('Could not update follow'),
+            content: const Text('Something went wrong. Please try again.'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isFollowUpdating = false);
+    }
+  }
+
   String _formatCount(int count) {
     if (count >= 10000) return '${(count / 10000).toStringAsFixed(1)}w';
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
     return count.toString();
   }
 
-
+  String? get _profileEmail {
+    if (!_isCurrentUser) return null;
+    return Supabase.instance.client.auth.currentUser?.email;
+  }
 
   List<PostModel> get _currentPosts {
     switch (_selectedTab) {
@@ -217,6 +257,7 @@ class ProfileScreenState extends State<ProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: 8),
           // Avatar + Stats Row
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -240,12 +281,16 @@ class ProfileScreenState extends State<ProfileScreen> {
                           value: _formatCount(_followersCount),
                           label: 'Followers',
                           onTap: () {
-                            final targetUserId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+                            final targetUserId =
+                                widget.userId ??
+                                Supabase.instance.client.auth.currentUser?.id;
                             if (targetUserId == null) return;
                             Navigator.of(context).push(
                               CupertinoPageRoute(
-                                builder: (_) =>
-                                    ConnectionsScreen(initialTabIndex: 1, userId: targetUserId),
+                                builder: (_) => ConnectionsScreen(
+                                  initialTabIndex: 1,
+                                  userId: targetUserId,
+                                ),
                               ),
                             );
                           },
@@ -256,12 +301,16 @@ class ProfileScreenState extends State<ProfileScreen> {
                           value: _formatCount(_followingCount),
                           label: 'Following',
                           onTap: () {
-                            final targetUserId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+                            final targetUserId =
+                                widget.userId ??
+                                Supabase.instance.client.auth.currentUser?.id;
                             if (targetUserId == null) return;
                             Navigator.of(context).push(
                               CupertinoPageRoute(
-                                builder: (_) =>
-                                    ConnectionsScreen(initialTabIndex: 0, userId: targetUserId),
+                                builder: (_) => ConnectionsScreen(
+                                  initialTabIndex: 0,
+                                  userId: targetUserId,
+                                ),
                               ),
                             );
                           },
@@ -285,6 +334,17 @@ class ProfileScreenState extends State<ProfileScreen> {
               letterSpacing: -0.3,
             ),
           ),
+          if ((_profileEmail ?? '').isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              _profileEmail!,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                height: 1.25,
+              ),
+            ),
+          ],
           const SizedBox(height: 4),
 
           // Bio
@@ -322,11 +382,11 @@ class ProfileScreenState extends State<ProfileScreen> {
               ] else ...[
                 Expanded(
                   child: _PillButton(
-                    label: 'Follow',
-                    filled: true,
-                    onTap: () {
-                      // TODO: Implement follow logic
-                    },
+                    label: _isFollowUpdating
+                        ? '...'
+                        : (_isFollowingUser ? 'Following' : 'Follow'),
+                    filled: !_isFollowingUser,
+                    onTap: _toggleFollowUser,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -389,9 +449,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   Widget _buildSliverGrid(BuildContext context) {
     if (_isLoading) {
       return const SliverFillRemaining(
-        child: Center(
-          child: CupertinoActivityIndicator(),
-        ),
+        child: Center(child: CupertinoActivityIndicator()),
       );
     }
 
@@ -422,16 +480,23 @@ class ProfileScreenState extends State<ProfileScreen> {
           final post = posts[index];
           return PostCard(
             post: post,
-            onTap: () => Navigator.of(context).push(
-              CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
-            ),
+            onTap: () async {
+              final result = await Navigator.of(context).push(
+                CupertinoPageRoute(
+                  builder: (_) => PostDetailScreen(post: post),
+                ),
+              );
+              if (result == true) {
+                _fetchProfileData();
+              }
+            },
           );
         }, childCount: posts.length),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          childAspectRatio: 0.72,
+          childAspectRatio: 0.58,
         ),
       ),
     );
@@ -535,7 +600,7 @@ class _ProfileMasonryGrid extends StatelessWidget {
     final rightCol = <PostModel>[];
 
     for (int i = 0; i < posts.length; i++) {
-        (i.isEven ? leftCol : rightCol).add(posts[i]);
+      (i.isEven ? leftCol : rightCol).add(posts[i]);
     }
 
     return Row(
@@ -544,10 +609,12 @@ class _ProfileMasonryGrid extends StatelessWidget {
         Expanded(
           child: Column(
             children: leftCol
-                .map((p) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: PostCard(post: p, onTap: () => onPostTap(p)),
-                    ))
+                .map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: PostCard(post: p, onTap: () => onPostTap(p)),
+                  ),
+                )
                 .toList(),
           ),
         ),
@@ -555,10 +622,12 @@ class _ProfileMasonryGrid extends StatelessWidget {
         Expanded(
           child: Column(
             children: rightCol
-                .map((p) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: PostCard(post: p, onTap: () => onPostTap(p)),
-                    ))
+                .map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: PostCard(post: p, onTap: () => onPostTap(p)),
+                  ),
+                )
                 .toList(),
           ),
         ),
@@ -647,7 +716,6 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(covariant _TextTabBarDelegate old) =>
       old.selectedTab != selectedTab || old.tabs != tabs;
 }
-
 
 // ===================================================
 // HELPER WIDGETS
