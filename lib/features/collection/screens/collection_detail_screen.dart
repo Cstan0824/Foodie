@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/data/repositories/collection_repository.dart';
 import 'package:taste_spot/data/models/profile_model.dart';
 import 'package:taste_spot/data/repositories/profile_repository.dart';
+import 'package:taste_spot/core/widgets/post_card.dart';
+import 'package:taste_spot/data/repositories/repository_support.dart';
 
 class CollectionDetailScreen extends StatefulWidget {
   final Collection collection;
@@ -74,16 +76,10 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
 
       final postsResponse = await Supabase.instance.client
           .from('Post')
-          .select('''
-            post_Id,
-            caption,
-            likeCount,
-            saveCount,
-            created_At,
-            User!Post_user_Id_fkey(user_Id, name),
-            Restaurant(restaurant_Id, restaurant_name)
-          ''')
-          .inFilter('post_Id', postIds);
+          .select(publicPostSelect)
+          .inFilter('post_Id', postIds)
+          .eq('isRemoved', false)
+          .eq('isBlocked', false);
 
       final posts = (postsResponse as List<dynamic>)
           .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
@@ -268,112 +264,55 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 0.72,
-      ),
-      itemCount: postsToShow.length,
-      itemBuilder: (context, index) {
-        final post = postsToShow[index];
-        return GestureDetector(
-          onTap: () {
-            Navigator.of(context).push(
-              CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
-            );
-          },
-          child: _XhsCard(post: post),
-        );
-      },
-    );
-  }
-}
+    final leftCol = <PostModel>[];
+    final rightCol = <PostModel>[];
+    for (int i = 0; i < postsToShow.length; i++) {
+      (i.isEven ? leftCol : rightCol).add(postsToShow[i]);
+    }
 
-// XHS CARD — image + title + like count
-class _XhsCard extends StatelessWidget {
-  final PostModel post;
-  const _XhsCard({required this.post});
-
-  String _fmt(int n) {
-    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}w';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}k';
-    return n.toString();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: CupertinoColors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      clipBehavior: Clip.hardEdge,
-      child: Column(
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 20),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: post.imageUrl.isNotEmpty
-                ? Image.network(
-                    post.imageUrl,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildPlaceholder(),
-                  )
-                : _buildPlaceholder(),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  post.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textPrimary,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(
-                      CupertinoIcons.heart_fill,
-                      size: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      _fmt(post.likes),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textSecondary,
+              children: leftCol.map((post) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: PostCard(
+                  post: post,
+                  onTap: () async {
+                    final result = await Navigator.of(context).push(
+                      CupertinoPageRoute(
+                        builder: (_) => PostDetailScreen(post: post),
                       ),
-                    ),
-                  ],
+                    );
+                    if (result == true && mounted) _loadPosts();
+                  },
                 ),
-              ],
+              )).toList(),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              children: rightCol.map((post) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: PostCard(
+                  post: post,
+                  onTap: () async {
+                    final result = await Navigator.of(context).push(
+                      CupertinoPageRoute(
+                        builder: (_) => PostDetailScreen(post: post),
+                      ),
+                    );
+                    if (result == true && mounted) _loadPosts();
+                  },
+                ),
+              )).toList(),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildPlaceholder() {
-    return Container(
-      color: AppColors.surface,
-      child: const Center(
-        child: Icon(
-          CupertinoIcons.photo,
-          color: AppColors.textLight,
-          size: 28,
-        ),
       ),
     );
   }
@@ -491,10 +430,10 @@ class _ShareSheetState extends State<_ShareSheet> {
                 ],
               ),
             ),
-            
+
             // Content
             Expanded(
-              child: _isLoading 
+              child: _isLoading
                 ? const Center(child: CupertinoActivityIndicator())
                 : _followers.isEmpty
                   ? const Center(
@@ -508,7 +447,7 @@ class _ShareSheetState extends State<_ShareSheet> {
                       itemBuilder: (context, index) {
                         final follower = _followers[index];
                         final isShared = _sharedUserIds.contains(follower.userId);
-                        
+
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           child: Row(
@@ -525,8 +464,8 @@ class _ShareSheetState extends State<_ShareSheet> {
                                     'https://i.pravatar.cc/200?u=${follower.userId}',
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => const Icon(
-                                      CupertinoIcons.person_solid, 
-                                      color: AppColors.textLight, 
+                                      CupertinoIcons.person_solid,
+                                      color: AppColors.textLight,
                                       size: 24,
                                     ),
                                   ),
@@ -560,4 +499,3 @@ class _ShareSheetState extends State<_ShareSheet> {
     );
   }
 }
-

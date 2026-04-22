@@ -473,30 +473,54 @@ class ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
+    final leftCol = <PostModel>[];
+    final rightCol = <PostModel>[];
+    for (int i = 0; i < posts.length; i++) {
+      (i.isEven ? leftCol : rightCol).add(posts[i]);
+    }
+
+    PostCard _card(PostModel post) => PostCard(
+          post: post,
+          onTap: () async {
+            final result = await Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => PostDetailScreen(post: post),
+              ),
+            );
+            if (result == true) {
+              _fetchProfileData();
+            }
+          },
+        );
+
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-      sliver: SliverGrid(
-        delegate: SliverChildBuilderDelegate((context, index) {
-          final post = posts[index];
-          return PostCard(
-            post: post,
-            onTap: () async {
-              final result = await Navigator.of(context).push(
-                CupertinoPageRoute(
-                  builder: (_) => PostDetailScreen(post: post),
-                ),
-              );
-              if (result == true) {
-                _fetchProfileData();
-              }
-            },
-          );
-        }, childCount: posts.length),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
-          childAspectRatio: 0.58,
+      sliver: SliverToBoxAdapter(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                children: leftCol
+                    .map((p) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _card(p),
+                        ))
+                    .toList(),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                children: rightCol
+                    .map((p) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _card(p),
+                        ))
+                    .toList(),
+              ),
+            ),
+          ],
         ),
       ),
     );
