@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/collection_model.dart';
 
 class CollectionRepository {
@@ -30,6 +31,7 @@ class CollectionRepository {
     final response = await _supabase
         .from('collections')
         .insert({
+          'collection_Id': const Uuid().v4(),
           'user_Id': userId,
           'name': name,
           'description': description,

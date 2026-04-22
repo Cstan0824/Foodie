@@ -2,9 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors; // For slight shadows
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/collection_model.dart';
-import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/collection_repository.dart';
-import 'package:taste_spot/data/repositories/post_repository.dart';
+import 'package:taste_spot/features/collection/screens/collection_detail_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CollectionScreen extends StatefulWidget {
@@ -15,9 +14,6 @@ class CollectionScreen extends StatefulWidget {
 }
 
 class _CollectionScreenState extends State<CollectionScreen> {
-  // Simulating tabs for "Saved Posts" and "My Albums"
-  int _selectedSegment = 0;
-
   final CollectionRepository _collectionRepository = CollectionRepository(
     Supabase.instance.client,
   );
@@ -25,15 +21,24 @@ class _CollectionScreenState extends State<CollectionScreen> {
   bool _isLoadingCollections = true;
   String? _collectionError;
 
-  List<PostModel> _savedPosts = [];
-  bool _isLoadingSavedPosts = true;
-  String? _savedPostsError;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text;
+      });
+    });
     _loadCollections();
-    _loadSavedPosts();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCollections() async {
@@ -76,58 +81,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
     }
   }
 
-  Future<void> _loadSavedPosts() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      if (mounted) {
-        setState(() {
-          _savedPosts = [];
-          _isLoadingSavedPosts = false;
-          _savedPostsError = null;
-        });
-      }
-      return;
-    }
 
-    if (mounted) {
-      setState(() {
-        _isLoadingSavedPosts = true;
-        _savedPostsError = null;
-      });
-    }
-
-    try {
-      final savedPostIds = await _collectionRepository.getSavedPostIdsForUser(
-        user.id,
-      );
-
-      if (savedPostIds.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _savedPosts = [];
-            _isLoadingSavedPosts = false;
-          });
-        }
-        return;
-      }
-
-      final posts = await PostRepository.instance.fetchPostsByIds(savedPostIds);
-      if (mounted) {
-        setState(() {
-          _savedPosts = posts;
-          _isLoadingSavedPosts = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _savedPosts = [];
-          _isLoadingSavedPosts = false;
-          _savedPostsError = e.toString();
-        });
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -143,7 +97,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () {},
+          onPressed: () => _showCreateCollectionDialog(context),
           child: const Icon(
             CupertinoIcons.add,
             size: 24,
@@ -154,55 +108,17 @@ class _CollectionScreenState extends State<CollectionScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            // Segmented Control (Tabs)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: CupertinoSlidingSegmentedControl<int>(
-                  backgroundColor: AppColors.surface,
-                  thumbColor: AppColors.primary,
-                  groupValue: _selectedSegment,
-                  children: {
-                    0: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Text(
-                        'Albums',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: _selectedSegment == 0
-                              ? CupertinoColors.white
-                              : AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                    1: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Text(
-                        'All Saved',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: _selectedSegment == 1
-                              ? CupertinoColors.white
-                              : AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                  },
-                  onValueChanged: (value) {
-                    if (value != null) setState(() => _selectedSegment = value);
-                  },
-                ),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: CupertinoSearchTextField(
+                controller: _searchController,
+                placeholder: 'Search collections...',
+                style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
               ),
             ),
-
             // Content
             Expanded(
-              child: _selectedSegment == 0
-                  ? _buildAlbumsGrid()
-                  : _buildAllSavedGrid(),
+              child: _buildAlbumsGrid(),
             ),
           ],
         ),
@@ -210,92 +126,12 @@ class _CollectionScreenState extends State<CollectionScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // TAB 1: ALL SAVED POSTS (Masonry Grid Style)
-  // ══════════════════════════════════════════
-  Widget _buildAllSavedGrid() {
-    if (_isLoadingSavedPosts) {
-      return const Center(child: CupertinoActivityIndicator());
-    }
 
-    if (_savedPostsError != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Failed to load saved posts',
-              style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 8),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _loadSavedPosts,
-              child: const Text('Try again'),
-            ),
-          ],
-        ),
-      );
-    }
 
-    if (_savedPosts.isEmpty) {
-      return const Center(
-        child: Text(
-          'No saved posts yet',
-          style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
-        ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(4),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 2,
-        crossAxisSpacing: 2,
-        childAspectRatio: 0.8, // Slightly taller for "card" feel or square
-      ),
-      itemCount: _savedPosts.length,
-      itemBuilder: (context, index) {
-        final post = _savedPosts[index];
-        return GestureDetector(
-          onTap: () {},
-          child: post.imageUrl.isNotEmpty
-              ? Image.network(
-                  post.imageUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                )
-              : Container(
-                  color: AppColors.surface,
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        CupertinoIcons.photo,
-                        color: AppColors.textLight,
-                        size: 20,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        post.title.isEmpty ? 'Saved post' : post.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-        );
-      },
-    );
+  List<Collection> get _filteredCollections {
+    if (_searchQuery.isEmpty) return _collections;
+    final lowerQuery = _searchQuery.toLowerCase();
+    return _collections.where((c) => c.name.toLowerCase().contains(lowerQuery)).toList();
   }
 
   // ══════════════════════════════════════════
@@ -326,11 +162,13 @@ class _CollectionScreenState extends State<CollectionScreen> {
       );
     }
 
-    if (_collections.isEmpty) {
-      return const Center(
+    final collectionsToShow = _filteredCollections;
+
+    if (collectionsToShow.isEmpty) {
+      return Center(
         child: Text(
-          'No collections yet',
-          style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
+          _collections.isEmpty ? 'No collections yet' : 'No matches found',
+          style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
         ),
       );
     }
@@ -343,11 +181,17 @@ class _CollectionScreenState extends State<CollectionScreen> {
         mainAxisSpacing: 16,
         childAspectRatio: 0.85,
       ),
-      itemCount: _collections.length,
+      itemCount: collectionsToShow.length,
       itemBuilder: (context, index) {
-        final album = _collections[index];
+        final album = collectionsToShow[index];
         return GestureDetector(
-          onTap: () {},
+          onTap: () {
+            Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => CollectionDetailScreen(collection: album),
+              ),
+            );
+          },
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -423,6 +267,91 @@ class _CollectionScreenState extends State<CollectionScreen> {
               ),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  // ══════════════════════════════════════════
+  // CREATE COLLECTION DIALOG
+  // ══════════════════════════════════════════
+  void _showCreateCollectionDialog(BuildContext context) {
+    final TextEditingController nameController = TextEditingController();
+    bool isCreating = false;
+
+    showCupertinoDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return CupertinoAlertDialog(
+              title: const Text('New Collection'),
+              content: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: CupertinoTextField(
+                  controller: nameController,
+                  placeholder: 'Collection Name',
+                  autofocus: true,
+                  style: const TextStyle(color: AppColors.textPrimary),
+                ),
+              ),
+              actions: [
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                CupertinoDialogAction(
+                  isDefaultAction: true,
+                  onPressed: isCreating
+                      ? null
+                      : () async {
+                          final name = nameController.text.trim();
+                          if (name.isEmpty) return;
+
+                          setDialogState(() => isCreating = true);
+
+                          final user = Supabase.instance.client.auth.currentUser;
+                          if (user != null) {
+                            try {
+                              await _collectionRepository.createCollection(
+                                userId: user.id,
+                                name: name,
+                                collectionType: 'POST', // Default type
+                              );
+                              if (context.mounted) {
+                                Navigator.pop(context);
+                                _loadCollections(); // Refresh list
+                              }
+                            } catch (e) {
+                              setDialogState(() => isCreating = false);
+                              print('Error creating collection: $e');
+                              // Show an alert dialog with the error
+                              if (context.mounted) {
+                                showCupertinoDialog(
+                                  context: context,
+                                  builder: (_) => CupertinoAlertDialog(
+                                    title: const Text('Error'),
+                                    content: Text(e.toString()),
+                                    actions: [
+                                      CupertinoDialogAction(
+                                        child: const Text('OK'),
+                                        onPressed: () => Navigator.pop(context),
+                                      )
+                                    ],
+                                  ),
+                                );
+                              }
+                            }
+                          }
+                        },
+                  child: isCreating
+                      ? const CupertinoActivityIndicator()
+                      : const Text('Create'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

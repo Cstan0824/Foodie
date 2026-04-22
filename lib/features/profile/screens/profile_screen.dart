@@ -50,7 +50,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         try {
           // Fetch Liked Posts
           final likesResponse = await Supabase.instance.client
-              .from('likes')
+              .from('Likes')
               .select('post_Id')
               .eq('user_Id', user.id);
 

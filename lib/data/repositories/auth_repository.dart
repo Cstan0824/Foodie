@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 class AuthRepository {
   final SupabaseClient _supabase;
@@ -84,6 +85,24 @@ class AuthRepository {
           'name': name,
           'username': name,
         });
+
+        // Create default collections
+        await _supabase.from('collections').insert([
+          {
+            'collection_Id': const Uuid().v4(),
+            'user_Id': response.user!.id,
+            'name': 'Saved Posts',
+            'is_public': false,
+            'collection_type': 'POST',
+          },
+          {
+            'collection_Id': const Uuid().v4(),
+            'user_Id': response.user!.id,
+            'name': 'Restaurant',
+            'is_public': false,
+            'collection_type': 'POST',
+          }
+        ]);
       } on PostgrestException catch (e) {
         if (e.code == '23505' &&
             (e.message.contains('User_username_key') ||
