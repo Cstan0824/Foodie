@@ -13,16 +13,73 @@ import 'package:taste_spot/features/restaurant/screens/blind_box_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load .env file
-  await dotenv.load(fileName: '.env');
+  try {
+    // Load .env file
+    await dotenv.load(fileName: '.env');
 
-  // Initialise Supabase
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-  );
+    final url = dotenv.env['SUPABASE_URL'];
+    final anonKey = dotenv.env['SUPABASE_ANON_KEY'];
 
-  runApp(const FoodiApp());
+    if (url == null || url.isEmpty || anonKey == null || anonKey.isEmpty) {
+      throw Exception('Missing SUPABASE_URL or SUPABASE_ANON_KEY in .env file.');
+    }
+
+    // Initialise Supabase
+    await Supabase.initialize(
+      url: url,
+      anonKey: anonKey,
+    );
+
+    runApp(const FoodiApp());
+  } catch (e) {
+    runApp(ErrorApp(error: e.toString()));
+  }
+}
+
+class ErrorApp extends StatelessWidget {
+  final String error;
+  const ErrorApp({super.key, required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoApp(
+      home: CupertinoPageScaffold(
+        navigationBar: const CupertinoNavigationBar(
+          middle: Text('Configuration Error'),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 64, color: CupertinoColors.systemRed),
+                const SizedBox(height: 24),
+                const Text(
+                  'Failed to initialize app',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  error,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: CupertinoColors.systemGrey),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Please ensure your .env file exists in the project root and contains valid SUPABASE_URL and SUPABASE_ANON_KEY.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class FoodiApp extends StatelessWidget {
@@ -62,6 +119,9 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  final GlobalKey<HomeScreenState> homeKey = GlobalKey();
+  final GlobalKey<ProfileScreenState> profileKey = GlobalKey();
+
   // Active tab: 0=Home, 1=Collection, 3=BlindBox, 4=Profile (2=Add, never stored)
   int _selectedTab = 0;
 
@@ -79,13 +139,18 @@ class _MainShellState extends State<MainShell> {
     }
   }
 
-  void _showAddPost() {
-    Navigator.of(context).push(
+  void _showAddPost() async {
+    final result = await Navigator.of(context).push(
       CupertinoPageRoute(
         fullscreenDialog: true,
         builder: (context) => const AddPostScreen(),
       ),
     );
+    if (result == true && mounted) {
+      setState(() => _selectedTab = 0);
+      homeKey.currentState?.loadPosts();
+      profileKey.currentState?.loadUserPosts();
+    }
   }
 
   @override
@@ -96,11 +161,11 @@ class _MainShellState extends State<MainShell> {
         Expanded(
           child: IndexedStack(
             index: _screenIndex,
-            children: const [
-              HomeScreen(),
-              CollectionScreen(),
-              BlindBoxScreen(),
-              ProfileScreen(),
+            children: [
+              HomeScreen(key: homeKey),
+              const CollectionScreen(),
+              const BlindBoxScreen(),
+              ProfileScreen(key: profileKey),
             ],
           ),
         ),
@@ -141,7 +206,11 @@ class _MainShellState extends State<MainShell> {
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => setState(() => _selectedTab = tab),
+        onTap: () {
+          setState(() => _selectedTab = tab);
+          if (tab == 0) homeKey.currentState?.loadPosts(silent: true);
+          if (tab == 4) profileKey.currentState?.loadUserPosts(silent: true);
+        },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

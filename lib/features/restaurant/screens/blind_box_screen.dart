@@ -295,7 +295,7 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
               cardBuilder: (context, index) {
                 final restaurant = _restaurants[index];
                 return _RestaurantCard(
-                  key: ValueKey(restaurant['id']), // Add key to force rebuild on new card
+                  key: ValueKey(restaurant['name']), // Add key to force rebuild on new card
                   restaurant: restaurant,
                 );
               },
@@ -382,7 +382,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                   Positioned.fill(
                     child: images.isNotEmpty
                         ? Hero(
-                            tag: 'restaurant_image_${widget.restaurant['id']}',
+                            tag: 'restaurant_image_${widget.restaurant['name']}',
                             child: Image.network(
                               images[_currentImageIndex],
                               fit: BoxFit.cover,
