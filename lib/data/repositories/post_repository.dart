@@ -3,38 +3,25 @@ import 'dart:typed_data';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/data/repositories/repository_support.dart';
 
 class PostRepository {
   PostRepository._();
   static final PostRepository instance = PostRepository._();
 
-  static const String _postSelect = '''
-          post_Id,
-          title,
-          caption,
-          likeCount,
-          saveCount,
-          created_At,
-          User!Post_user_Id_fkey(user_Id, name),
-          Restaurant(
-            restaurant_Id,
-            restaurant_name,
-            mainCuisine:Cuisine!restaurant_main_cuisine_fk(description:desc)
-          ),
-          Post_Image(image_Id, image_url)
-        ''';
-
   /// Fetches the latest posts for the Discover feed.
   /// Supports offset-based pagination: pass [offset] to load the next page.
-  /// Joins: User (author name), Restaurant (name + cuisine)
+  /// Joins: User (author name), Restaurant (name only)
   Future<List<PostModel>> fetchDiscoverPosts({
     int limit = 20,
     int offset = 0,
   }) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select(_postSelect)
+        .select(publicPostSelect)
         .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .eq('isPending', false)
         .order('created_At', ascending: false)
         .range(offset, offset + limit - 1);
 
@@ -43,7 +30,44 @@ class PostRepository {
         .toList();
   }
 
-  /// Fetches posts by a specific user.
+  /// Fetches posts from accounts the current user follows.
+  Future<List<PostModel>> fetchFollowingPosts({
+    required String userId,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final followingResponse = await SupabaseService.client
+        .from('Follower')
+        .select('following_Id')
+        .eq('follower_Id', userId);
+
+    final followingIds = (followingResponse as List<dynamic>)
+        .map((row) => (row as Map<String, dynamic>)['following_Id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (followingIds.isEmpty) {
+      return const [];
+    }
+
+    final response = await SupabaseService.client
+        .from('Post')
+        .select(publicPostSelect)
+        .inFilter('user_Id', followingIds)
+        .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .eq('isPending', false)
+        .order('created_At', ascending: false)
+        .range(offset, offset + limit - 1);
+
+    return (response as List<dynamic>)
+        .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Fetches public posts by a specific user.
   Future<List<PostModel>> fetchUserPosts({
     required String userId,
     int limit = 20,
@@ -51,9 +75,11 @@ class PostRepository {
   }) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select(_postSelect)
+        .select(publicPostSelect)
         .eq('user_Id', userId)
         .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .eq('isPending', false)
         .order('created_At', ascending: false)
         .range(offset, offset + limit - 1);
 
@@ -62,7 +88,7 @@ class PostRepository {
         .toList();
   }
 
-  /// Fetches posts liked by a specific user.
+  /// Fetches public posts liked by a specific user.
   Future<List<PostModel>> fetchLikedPosts({
     required String userId,
     int limit = 20,
@@ -71,11 +97,13 @@ class PostRepository {
     final response = await SupabaseService.client
         .from('Post')
         .select('''
-          $_postSelect,
+          $publicPostSelect,
           Likes!inner(user_Id)
         ''')
         .eq('Likes.user_Id', userId)
         .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .eq('isPending', false)
         .order('created_At', ascending: false)
         .range(offset, offset + limit - 1);
 
@@ -84,12 +112,15 @@ class PostRepository {
         .toList();
   }
 
-  /// Fetches a single post by ID, including author + restaurant info.
+  /// Fetches a single public post by ID.
   Future<PostModel?> fetchPostById(String postId) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select(_postSelect)
+        .select(publicPostSelect)
         .eq('post_Id', postId)
+        .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .eq('isPending', false)
         .maybeSingle();
 
     if (response == null) return null;
@@ -97,18 +128,29 @@ class PostRepository {
   }
 
   /// Updates the details, tags, and images of an existing post.
-  /// Order mirrors createPost: upload images FIRST (fail fast), then write to DB.
+  /// Order mirrors createPost: upload images first, then write to DB.
+  ///
+  /// Temporary testing choice: image IDs are still generated client-side so the
+  /// created UUIDs are known immediately during tests. Long term this should
+  /// move to a Supabase-generated/server-managed flow.
   Future<void> updatePost({
     required String postId,
-    String? restaurantId,
+    required String restaurantId,
     required String title,
     required String caption,
     required List<String> deletedImageUrls,
     required List<Uint8List> newImages,
   }) async {
-    // 1. Upload ALL new images first — fail fast before touching the DB.
-    //    (Same pattern as createPost: if any upload throws, nothing in the DB changes.)
-    final List<Map<String, dynamic>> postImageRecords = [];
+    if (restaurantId.trim().isEmpty) {
+      throw Exception('A post must be tied to a restaurant.');
+    }
+
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
+    final postImageRecords = <Map<String, dynamic>>[];
     for (final bytes in newImages) {
       final imageId = _generateUUID();
       final path = 'posts/$postId/$imageId.jpg';
@@ -128,8 +170,6 @@ class PostRepository {
       });
     }
 
-    // 2. Remove deleted images from DB and Storage.
-    //    Done before the Post update so any deletion failure surfaces early.
     if (deletedImageUrls.isNotEmpty) {
       await SupabaseService.client
           .from('Post_Image')
@@ -138,17 +178,14 @@ class PostRepository {
 
       // Best-effort: clean up Storage blobs (swallow errors — orphaned blobs are
       // not fatal and can be cleaned up by a maintenance job later).
-      final pathsToDelete = deletedImageUrls
-          .map((url) {
-            final segments = Uri.parse(url).pathSegments;
-            final idx = segments.indexOf('post_images');
-            if (idx != -1 && idx + 1 < segments.length) {
-              return segments.sublist(idx + 1).join('/');
-            }
-            return '';
-          })
-          .where((p) => p.isNotEmpty)
-          .toList();
+      final pathsToDelete = deletedImageUrls.map((url) {
+        final segments = Uri.parse(url).pathSegments;
+        final idx = segments.indexOf('post_images');
+        if (idx != -1 && idx + 1 < segments.length) {
+          return segments.sublist(idx + 1).join('/');
+        }
+        return '';
+      }).where((p) => p.isNotEmpty).toList();
 
       if (pathsToDelete.isNotEmpty) {
         try {
@@ -160,22 +197,18 @@ class PostRepository {
     }
 
     // 3. Only now update the Post row — all image work has already succeeded.
-    await SupabaseService.client
-        .from('Post')
-        .update({
-          'title': title,
-          'caption': caption,
-          'restaurant_Id': restaurantId,
-        })
-        .eq('post_Id', postId);
+    await SupabaseService.client.from('Post').update({
+      'title': title,
+      'caption': caption,
+      'restaurant_Id': restaurantId,
+    }).eq('post_Id', postId);
 
-    // 4. Insert new Post_Image records linking the freshly-uploaded images.
     if (postImageRecords.isNotEmpty) {
       await SupabaseService.client.from('Post_Image').insert(postImageRecords);
     }
   }
 
-  /// Soft deletes a post by setting isRemoved = true
+  /// User soft delete.
   Future<void> deletePost(String postId) async {
     await SupabaseService.client
         .from('Post')
@@ -183,41 +216,43 @@ class PostRepository {
         .eq('post_Id', postId);
   }
 
-  /// Fetches all posts by a specific user.
-  Future<List<PostModel>> fetchPostsByUser(
-    String userId, {
-    int limit = 50,
-  }) async {
+  /// Admin block.
+  Future<void> blockPost(String postId) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select(_postSelect)
-        .eq('user_Id', userId)
-        .eq('isRemoved', false)
-        .order('created_At', ascending: false)
-        .limit(limit);
+        .update({'isBlocked': true})
+        .eq('post_Id', postId)
+        .select('post_Id')
+        .maybeSingle();
 
-    return (response as List<dynamic>)
-        .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
-        .toList();
+    if (response == null) {
+      throw Exception('This post is no longer available.');
+    }
   }
 
-  /// Creates a new post with optional images uploaded to Supabase Storage.
+  /// Creates a new post with images uploaded to Supabase Storage.
+  ///
+  /// Temporary testing choice: this method still generates UUIDs client-side so
+  /// the created IDs are visible immediately and can be used in storage paths.
+  /// Long term this should move to Supabase-generated UUIDs via a server-side flow.
   Future<String> createPost({
     required String userId,
-    String? restaurantId,
+    required String restaurantId,
     required String title,
     required String caption,
     List<Uint8List> images = const [],
   }) async {
-    final postId = _generateUUID();
+    if (restaurantId.trim().isEmpty) {
+      throw Exception('A post must be tied to a restaurant.');
+    }
 
-    // 1. Upload images natively FIRST (fail fast if any upload fails)
-    final List<Map<String, dynamic>> postImageRecords = [];
+    final postId = _generateUUID();
+    final postImageRecords = <Map<String, dynamic>>[];
+
     for (final bytes in images) {
       final imageId = _generateUUID();
       final path = 'posts/$postId/$imageId.jpg';
 
-      // Upload to Storage
       await SupabaseService.client.storage
           .from('post_images')
           .uploadBinary(path, bytes);
@@ -233,19 +268,19 @@ class PostRepository {
       });
     }
 
-    // 2. Insert Post Row (Only happens if ALL images succeeded!)
     await SupabaseService.client.from('Post').insert({
       'post_Id': postId,
       'user_Id': userId,
-      if (restaurantId != null) 'restaurant_Id': restaurantId,
+      'restaurant_Id': restaurantId,
       'title': title,
       'caption': caption,
       'isRemoved': false,
+      'isBlocked': false,
+      'isPending': false,
       'likeCount': 0,
       'saveCount': 0,
     });
 
-    // 3. Insert Image Rows safely
     if (postImageRecords.isNotEmpty) {
       await SupabaseService.client.from('Post_Image').insert(postImageRecords);
     }
@@ -253,14 +288,7 @@ class PostRepository {
     return postId;
   }
 
-  // NOTE: Unlike comment_repository.dart, we CANNOT delegate UUID generation to
-  //       Supabase here. The postId and imageId are needed client-side BEFORE any
-  //       network call because we use them to build the Storage upload path:
-  //       e.g. 'posts/$postId/$imageId.jpg'.
-  //       If we let Supabase auto-generate them, we'd have no path to upload to!
-  //
-  // TODO: One future approach is to pre-generate the path on the server (RPC function)
-  //       but for now client-side generation is the correct pattern here.
+  // We still generate these client-side for testing and storage-path construction.
   static final _secureRand = Random.secure();
 
   String _generateUUID() {
@@ -272,30 +300,34 @@ class PostRepository {
         '-${hex.substring(12, 16)}-${hex.substring(16, 20)}'
         '-${hex.substring(20)}';
   }
-
   /// Toggles the like status of a post. The post likeCount is handled automatically via a backend Postgres Trigger.
-  Future<void> toggleLike(
-    String postId,
-    String userId,
-    bool isLiking,
-    int newCount,
-  ) async {
+  Future<void> toggleLike(String postId, String userId, bool isLiking) async {
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
     if (isLiking) {
       await SupabaseService.client.from('Likes').insert({
         'post_Id': postId,
         'user_Id': userId,
       });
-    } else {
-      await SupabaseService.client
-          .from('Likes')
-          .delete()
-          .eq('post_Id', postId)
-          .eq('user_Id', userId);
+      return;
     }
+
+    await SupabaseService.client
+        .from('Likes')
+        .delete()
+        .eq('post_Id', postId)
+        .eq('user_Id', userId);
   }
 
-  /// Checks if a post is liked by the user.
   Future<bool> checkIsLiked(String postId, String userId) async {
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
     final response = await SupabaseService.client
         .from('Likes')
         .select('post_Id')
@@ -305,13 +337,17 @@ class PostRepository {
     return response != null;
   }
 
-  /// Submits a report for a post. Enforces anti-spam uniquely per user/post via database.
   Future<void> reportPost({
     required String postId,
     required String userId,
     required String reason,
     String? details,
   }) async {
+    await ensurePostAvailable(
+      postId,
+      errorMessage: 'This post is no longer available.',
+    );
+
     try {
       await SupabaseService.client.from('Report').insert({
         'post_Id': postId,
@@ -321,14 +357,14 @@ class PostRepository {
         'status': 0,
       });
     } catch (e) {
-      if (e.toString().contains('23505') || e.toString().contains('duplicate key')) {
+      final message = e.toString();
+      if (message.contains('23505') || message.contains('duplicate key')) {
         throw Exception('You have already reported this post.');
       }
-      if (e.toString().contains('Users cannot report their own posts')) {
+      if (message.contains('Users cannot report their own posts')) {
         throw Exception('You cannot report your own post.');
       }
       rethrow;
     }
   }
 }
-

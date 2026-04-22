@@ -7,6 +7,7 @@ CREATE TABLE public.Comment (
   user_Id uuid,
   content text,
   created_At timestamp without time zone DEFAULT now(),
+  isBlocked boolean NOT NULL DEFAULT false,
   CONSTRAINT Comment_pkey PRIMARY KEY (comment_Id),
   CONSTRAINT Comment_post_Id_fkey FOREIGN KEY (post_Id) REFERENCES public.Post(post_Id),
   CONSTRAINT Comment_user_Id_fkey FOREIGN KEY (user_Id) REFERENCES public.User(user_Id)
