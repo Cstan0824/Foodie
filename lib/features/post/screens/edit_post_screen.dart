@@ -8,6 +8,7 @@ import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
+import 'package:taste_spot/features/post/widgets/post_hashtag_composer.dart';
 
 class EditPostScreen extends StatefulWidget {
   final PostModel post;
@@ -28,6 +29,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   final List<XFile> _selectedImages = [];
 
   RestaurantModel? _selectedRestaurant;
+  late List<String> _hashtags;
   bool _isSaving = false;
 
   @override
@@ -46,6 +48,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
         name: widget.post.restaurantName,
       );
     }
+    _hashtags = List<String>.from(widget.post.hashtags);
   }
 
   @override
@@ -120,6 +123,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
         restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
+        hashtags: _hashtags,
         deletedImageUrls: _deletedImageUrls,
         newImages: newImageBytesList,
       );
@@ -262,6 +266,13 @@ class _EditPostScreenState extends State<EditPostScreen> {
                   minLines: 4,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
+              ),
+
+              _divider(),
+
+              PostHashtagComposer(
+                initialTags: _hashtags,
+                onChanged: (tags) => _hashtags = tags,
               ),
 
               _divider(),

@@ -5,14 +5,12 @@ import 'package:taste_spot/features/admin/screens/admin_models.dart';
 
 class AdminCommentReviewScreen extends StatefulWidget {
   final List<ReportedComment> comments;
-  final VoidCallback? onDismiss;
-  final VoidCallback? onBlock;
+  final bool showModerationActions;
 
   const AdminCommentReviewScreen({
     super.key,
     required this.comments,
-    this.onDismiss,
-    this.onBlock,
+    this.showModerationActions = true,
   });
 
   @override
@@ -64,18 +62,18 @@ class _AdminCommentReviewScreenState extends State<AdminCommentReviewScreen> {
   void _handleDismissAll() {
     showCupertinoDialog(
       context: context,
-      builder: (_) => CupertinoAlertDialog(
+      builder: (dialogContext) => CupertinoAlertDialog(
         title: const Text('Dismiss All Reports'),
         content: const Text(
             'All remaining reports against this comment will be dismissed.'),
         actions: [
           CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           CupertinoDialogAction(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               Navigator.pop(context, ReviewResult.dismiss);
             },
             child: const Text(
@@ -91,22 +89,22 @@ class _AdminCommentReviewScreenState extends State<AdminCommentReviewScreen> {
   void _handleBlock() {
     showCupertinoDialog(
       context: context,
-      builder: (_) => CupertinoAlertDialog(
-        title: const Text('Remove Comment'),
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('Block Comment'),
         content: const Text(
-            'This comment will be permanently deleted and all its associated reports removed.'),
+            'This comment will be blocked, hidden from users, and all its pending reports marked as removed.'),
         actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               Navigator.pop(context, ReviewResult.block);
             },
-            child: const Text('Remove Comment'),
+            child: const Text('Block Comment'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
           ),
         ],
       ),
@@ -451,8 +449,10 @@ class _AdminCommentReviewScreenState extends State<AdminCommentReviewScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            _buildCommentActionRow(),
+            if (widget.showModerationActions) ...[
+              const SizedBox(height: 8),
+              _buildCommentActionRow(),
+            ],
           ],
         ),
       ),
@@ -499,7 +499,7 @@ class _AdminCommentReviewScreenState extends State<AdminCommentReviewScreen> {
                 ),
                 child: const Center(
                   child: Text(
-                    'Remove Comment',
+                    'Block Comment',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
