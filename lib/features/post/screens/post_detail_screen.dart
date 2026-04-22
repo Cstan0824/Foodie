@@ -6,6 +6,8 @@ import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/comment_repository.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
+import 'package:taste_spot/features/post/screens/report_form_screen.dart';
+import 'package:taste_spot/features/post/screens/report_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -66,7 +68,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _checkLikeStatus() async {
     try {
       final isLiked = await PostRepository.instance.checkIsLiked(
-        _currentPost.id, 
+        _currentPost.id,
         '00000000-0000-0000-0000-000000000001',
       );
       // Wait, if it's currently incorrectly showing '+1' locally due to initial DB sum plus the true literal, updating the model avoids this
@@ -92,9 +94,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       await PostRepository.instance.toggleLike(
-        _currentPost.id, 
-        '00000000-0000-0000-0000-000000000001', 
-        newIsLiked, 
+        _currentPost.id,
+        '00000000-0000-0000-0000-000000000001',
+        newIsLiked,
         newCount,
       );
     } catch (_) {
@@ -122,8 +124,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _loadComments() async {
     setState(() => _isLoadingComments = true);
     try {
-      final comments = await CommentRepository.instance
-          .fetchComments(_currentPost.id);
+      final comments = await CommentRepository.instance.fetchComments(
+        _currentPost.id,
+      );
       if (mounted) setState(() => _comments = comments);
     } catch (_) {
       // silently keep empty list on error
@@ -231,7 +234,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           children: [
             CupertinoButton(
               padding: EdgeInsets.zero,
-              onPressed: () => Navigator.of(context).pop(_wasEdited ? true : null),
+              onPressed: () =>
+                  Navigator.of(context).pop(_wasEdited ? true : null),
               child: const Icon(
                 CupertinoIcons.chevron_back,
                 color: AppColors.textPrimary,
@@ -239,7 +243,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
             const SizedBox(width: 8), // Spacing between back button and avatar
-
             // Avatar
             ClipOval(
               child: Image.network(
@@ -251,8 +254,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   width: 36,
                   height: 36,
                   color: AppColors.surface,
-                  child: const Icon(CupertinoIcons.person_fill,
-                      color: AppColors.textLight),
+                  child: const Icon(
+                    CupertinoIcons.person_fill,
+                    color: AppColors.textLight,
+                  ),
                 ),
               ),
             ),
@@ -274,9 +279,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   const Text(
                     'Food Explorer 🍜',
                     style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textLight,
-                        fontWeight: FontWeight.w400),
+                      fontSize: 11,
+                      color: AppColors.textLight,
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                 ],
               ),
@@ -286,11 +292,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               onTap: () => setState(() => _isFollowing = !_isFollowing),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: _isFollowing
-                      ? AppColors.surface
-                      : AppColors.primary,
+                  color: _isFollowing ? AppColors.surface : AppColors.primary,
                   borderRadius: BorderRadius.circular(20),
                   border: _isFollowing
                       ? Border.all(color: AppColors.divider, width: 0.8)
@@ -309,16 +316,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
             const SizedBox(width: 8),
-             GestureDetector(
+            GestureDetector(
               onTap: () => _showMoreOptions(context),
               child: Padding(
                 padding: const EdgeInsets.all(4.0),
                 child: Icon(
-                  _currentPost.userId == '00000000-0000-0000-0000-000000000001' 
-                      ? CupertinoIcons.ellipsis 
+                  _currentPost.userId == '00000000-0000-0000-0000-000000000001'
+                      ? CupertinoIcons.ellipsis
                       : CupertinoIcons.arrow_turn_up_right,
-                  size: 20, 
-                  color: AppColors.textPrimary
+                  size: 20,
+                  color: AppColors.textPrimary,
                 ),
               ),
             ),
@@ -346,8 +353,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               errorBuilder: (_, _, _) => Container(
                 color: AppColors.surface,
                 child: const Center(
-                  child: Icon(CupertinoIcons.photo,
-                      size: 48, color: AppColors.textLight),
+                  child: Icon(
+                    CupertinoIcons.photo,
+                    size: 48,
+                    color: AppColors.textLight,
+                  ),
                 ),
               ),
             ),
@@ -449,7 +459,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: GestureDetector(
         onTap: () async {
           final query = Uri.encodeComponent(_currentPost.restaurantName);
-          final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+          final url = Uri.parse(
+            'https://www.google.com/maps/search/?api=1&query=$query',
+          );
           try {
             if (await canLaunchUrl(url)) {
               await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -467,8 +479,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(CupertinoIcons.location_solid,
-                  size: 14, color: AppColors.primary),
+              const Icon(
+                CupertinoIcons.location_solid,
+                size: 14,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 6),
               Text(
                 _currentPost.restaurantName,
@@ -479,8 +494,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ),
               const SizedBox(width: 4),
-              const Icon(CupertinoIcons.chevron_right,
-                  size: 12, color: AppColors.primary),
+              const Icon(
+                CupertinoIcons.chevron_right,
+                size: 12,
+                color: AppColors.primary,
+              ),
             ],
           ),
         ),
@@ -523,11 +541,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               color: AppColors.textPrimary,
             ),
           ),
-          if (_isLoadingComments) ...
-            const [
-              SizedBox(width: 8),
-              CupertinoActivityIndicator(radius: 8),
-            ],
+          if (_isLoadingComments) ...const [
+            SizedBox(width: 8),
+            CupertinoActivityIndicator(radius: 8),
+          ],
         ],
       ),
     );
@@ -537,61 +554,67 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // COMMENT TILE
   // ══════════════════════════════════════════
   Widget _buildCommentTile(CommentModel comment) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Initials avatar (no image URL available from DB)
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primary.withValues(alpha: 0.12),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              comment.initials,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
+    return GestureDetector(
+      onLongPress: () => _showCommentOptions(context, comment),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Initials avatar (no image URL available from DB)
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary.withValues(alpha: 0.12),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                comment.initials,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  comment.authorName,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    comment.authorName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  comment.content,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
-                    height: 1.4,
+                  const SizedBox(height: 3),
+                  Text(
+                    comment.content,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                      height: 1.4,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  comment.timeAgo,
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.textLight),
-                ),
-              ],
+                  const SizedBox(height: 5),
+                  Text(
+                    comment.timeAgo,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -603,7 +626,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     return Container(
       // Add SafeArea bottom padding if needed, or handle manually
-      padding: EdgeInsets.fromLTRB(14, 10, 14, bottomPadding > 0 ? bottomPadding : 10),
+      padding: EdgeInsets.fromLTRB(
+        14,
+        10,
+        14,
+        bottomPadding > 0 ? bottomPadding : 10,
+      ),
       decoration: BoxDecoration(
         color: CupertinoColors.white,
         border: const Border(
@@ -633,13 +661,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 alignment: Alignment.centerLeft,
                 child: const Text(
                   'Add a comment...',
-                  style: TextStyle(
-                      fontSize: 14, color: AppColors.textLight),
+                  style: TextStyle(fontSize: 14, color: AppColors.textLight),
                 ),
               ),
             ),
           ),
-          
+
           const SizedBox(width: 16),
 
           // Action icons - Grouped tighter
@@ -651,9 +678,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ? CupertinoIcons.heart_fill
                     : CupertinoIcons.heart,
                 label: _formatCount(_currentPost.likes),
-                color: _isLiked
-                    ? AppColors.primary
-                    : AppColors.textSecondary,
+                color: _isLiked ? AppColors.primary : AppColors.textSecondary,
                 onTap: _toggleLike,
               ),
               const SizedBox(width: 16),
@@ -664,9 +689,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 // Show the DB saveCount directly — no local +1 offset,
                 // since _isSaved is not yet backed by a real Supabase check.
                 label: _formatCount(_currentPost.saveCount),
-                color: _isSaved
-                    ? AppColors.primary
-                    : AppColors.textSecondary,
+                color: _isSaved ? AppColors.primary : AppColors.textSecondary,
                 onTap: () => setState(() => _isSaved = !_isSaved),
               ),
             ],
@@ -680,9 +703,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     showCupertinoModalPopup(
       context: context,
       builder: (BuildContext ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: Container(
           color: CupertinoColors.white,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -694,7 +715,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 // Current user avatar placeholder
                 ClipOval(
                   child: Image.network(
-                    'https://i.pravatar.cc/200?img=12', 
+                    'https://i.pravatar.cc/200?img=12',
                     width: 36,
                     height: 36,
                     fit: BoxFit.cover,
@@ -707,11 +728,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     autofocus: true,
                     placeholder: 'Add a comment...',
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
                     maxLines: 4,
                     minLines: 1,
                     style: const TextStyle(
-                        fontSize: 14, color: AppColors.textPrimary),
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF5F5F5),
                       borderRadius: BorderRadius.circular(18),
@@ -780,11 +805,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             label: 'Edit',
                             onTap: () async {
                               Navigator.pop(context);
-                              final updatedPost = await Navigator.of(context).push<PostModel>(
-                                CupertinoPageRoute(
-                                  builder: (_) => EditPostScreen(post: _currentPost),
-                                ),
-                              );
+                              final updatedPost = await Navigator.of(context)
+                                  .push<PostModel>(
+                                    CupertinoPageRoute(
+                                      builder: (_) =>
+                                          EditPostScreen(post: _currentPost),
+                                    ),
+                                  );
                               if (updatedPost != null && mounted) {
                                 setState(() {
                                   _currentPost = updatedPost;
@@ -828,9 +855,87 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             icon: CupertinoIcons.flag,
                             label: 'Report',
                             isDestructive: true,
-                            onTap: () => Navigator.pop(context),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.of(context).push(
+                                CupertinoPageRoute(
+                                  fullscreenDialog: true,
+                                  builder: (_) =>
+                                      ReportFormScreen(post: _currentPost),
+                                ),
+                              );
+                            },
                           ),
                         ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCommentOptions(BuildContext context, CommentModel comment) {
+    const currentUserId = '00000000-0000-0000-0000-000000000001';
+    final isOwner = comment.userId == currentUserId;
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (modalContext) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.only(bottom: 30, top: 10),
+        decoration: const BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 5,
+                margin: const EdgeInsets.only(bottom: 24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E0E0),
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
+              ),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isOwner)
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.delete,
+                        label: 'Delete',
+                        isDestructive: true,
+                        onTap: () {
+                          Navigator.pop(modalContext);
+                          _deleteComment(comment);
+                        },
+                      )
+                    else
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.flag,
+                        label: 'Report',
+                        isDestructive: true,
+                        onTap: () {
+                          Navigator.pop(modalContext);
+                          Navigator.of(context).push(
+                            CupertinoPageRoute(
+                              fullscreenDialog: true,
+                              builder: (_) =>
+                                  ReportFormScreen(comment: comment),
+                            ),
+                          );
+                        },
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -846,7 +951,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required VoidCallback onTap,
     bool isDestructive = false,
   }) {
-    final color = isDestructive ? CupertinoColors.destructiveRed : AppColors.textPrimary;
+    final color = isDestructive
+        ? CupertinoColors.destructiveRed
+        : AppColors.textPrimary;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -912,13 +1019,61 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         showCupertinoDialog(
           context: context,
           builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('Error'),
-            content: const Text('Failed to delete the post.'),
+            title: const Text('Failed to delete'),
+            content: Text(e.toString()),
             actions: [
               CupertinoDialogAction(
                 child: const Text('OK'),
                 onPressed: () => Navigator.pop(ctx),
-              )
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteComment(CommentModel comment) async {
+    final confirm = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Delete Comment?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await CommentRepository.instance.deleteComment(comment.commentId);
+      if (mounted) {
+        setState(() {
+          _comments.removeWhere((c) => c.commentId == comment.commentId);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('Failed to delete'),
+            content: Text(e.toString()),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
             ],
           ),
         );
@@ -926,7 +1081,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 }
-
 // ══════════════════════════════════════════
 // HELPER WIDGETS
 // ══════════════════════════════════════════
@@ -959,4 +1113,3 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-
