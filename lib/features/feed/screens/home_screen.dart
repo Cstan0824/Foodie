@@ -11,16 +11,17 @@ class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
   int _topNavIndex = 1; // default: Discover
   final _scrollController = ScrollController();
 
-  static const _topNavItems = ['Following', 'Discover', 'Nearby'];
+  static const _topNavItems = ['Following', 'Discover'];
   static const _pageSize = 20;
   static const _paginationThreshold = 300.0;
+  static const _tempUserId = '00000000-0000-0000-0000-000000000001';
 
   List<PostModel> _posts = [];
   bool _isLoading = true; // true only on initial load
@@ -32,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadPosts();
+    loadPosts();
   }
 
   @override
@@ -55,20 +56,47 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  bool get _isFollowingTab => _topNavIndex == 0;
+
+  Future<List<PostModel>> _fetchFeedPage({required int offset}) {
+    if (_isFollowingTab) {
+      return PostRepository.instance.fetchFollowingPosts(
+        userId: _tempUserId,
+        limit: _pageSize,
+        offset: offset,
+      );
+    }
+
+    return PostRepository.instance.fetchDiscoverPosts(
+      limit: _pageSize,
+      offset: offset,
+    );
+  }
+
+  String get _emptyFeedMessage {
+    if (_isFollowingTab) {
+      return 'Follow people to see their posts here.';
+    }
+    return 'No posts yet 🍽️';
+  }
+
+  void _handleTopNavTap(int index) {
+    if (index == _topNavIndex) return;
+    setState(() => _topNavIndex = index);
+    loadPosts();
+  }
+
   // ── Initial load (or pull-to-refresh) ────────────────────────────────────
-  Future<void> _loadPosts() async {
+  Future<void> loadPosts({bool silent = false}) async {
+    if (!silent && mounted) setState(() => _isLoading = true);
     setState(() {
-      _isLoading = true;
       _error = null;
       _offset = 0;
       _hasMore = true;
       _posts = [];
     });
     try {
-      final posts = await PostRepository.instance.fetchDiscoverPosts(
-        limit: _pageSize,
-        offset: 0,
-      );
+      final posts = await _fetchFeedPage(offset: 0);
       if (mounted) {
         setState(() {
           _posts = posts;
@@ -91,10 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
     try {
-      final more = await PostRepository.instance.fetchDiscoverPosts(
-        limit: _pageSize,
-        offset: _offset,
-      );
+      final more = await _fetchFeedPage(offset: _offset);
       if (mounted) {
         setState(() {
           _posts.addAll(more);
@@ -122,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _TopNavBar(
             selectedIndex: _topNavIndex,
             items: _topNavItems,
-            onTap: (i) => setState(() => _topNavIndex = i),
+            onTap: _handleTopNavTap,
           ),
 
           // ── Feed ──
@@ -167,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 16),
               CupertinoButton(
-                onPressed: _loadPosts,
+                onPressed: loadPosts,
                 child: const Text('Try again'),
               ),
             ],
@@ -178,10 +203,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // ── Empty state ──
     if (_posts.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'No posts yet 🍽️',
-          style: TextStyle(color: AppColors.textSecondary),
+          _emptyFeedMessage,
+          style: const TextStyle(color: AppColors.textSecondary),
         ),
       );
     }
@@ -201,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         slivers: [
           // Pull-to-refresh
-          CupertinoSliverRefreshControl(onRefresh: _loadPosts),
+          CupertinoSliverRefreshControl(onRefresh: loadPosts),
 
           // Posts grid
           SliverPadding(
@@ -209,14 +234,19 @@ class _HomeScreenState extends State<HomeScreen> {
             sliver: SliverToBoxAdapter(
               child: _MasonryGrid(
                 posts: _posts,
-                onPostTap: (post) => Navigator.of(context).push(
-                  CupertinoPageRoute(
-                    builder: (_) => HeroMode(
-                      enabled: false,
-                      child: PostDetailScreen(post: post),
+                onPostTap: (post) async {
+                  final result = await Navigator.of(context).push(
+                    CupertinoPageRoute(
+                      builder: (_) => HeroMode(
+                        enabled: false,
+                        child: PostDetailScreen(post: post),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                  if (result == true && mounted) {
+                    loadPosts();
+                  }
+                },
               ),
             ),
           ),
@@ -248,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 // ══════════════════════════════════════════════
 //  TOP NAVIGATION BAR
-//  🔔  |  Following · Discover · Nearby  |  🔍
+//  🔔  |  Following · Discover  |  🔍
 // ══════════════════════════════════════════════
 class _TopNavBar extends StatelessWidget {
   final int selectedIndex;

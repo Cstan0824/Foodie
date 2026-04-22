@@ -4,33 +4,49 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
 
-class AddPostScreen extends StatefulWidget {
-  const AddPostScreen({super.key});
+class EditPostScreen extends StatefulWidget {
+  final PostModel post;
+
+  const EditPostScreen({super.key, required this.post});
 
   @override
-  State<AddPostScreen> createState() => _AddPostScreenState();
+  State<EditPostScreen> createState() => _EditPostScreenState();
 }
 
-class _AddPostScreenState extends State<AddPostScreen> {
-  final _titleController = TextEditingController();
-  final _captionController = TextEditingController();
+class _EditPostScreenState extends State<EditPostScreen> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _captionController;
   final _imagePicker = ImagePicker();
 
-  // Selected photos from device
+  late final List<String> _existingImages;
+  final List<String> _deletedImageUrls = [];
   final List<XFile> _selectedImages = [];
 
-  // Chosen restaurant
   RestaurantModel? _selectedRestaurant;
+  bool _isSaving = false;
 
-  // State
-  bool _isPublishing = false;
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.post.title);
+    _captionController = TextEditingController(text: widget.post.description);
 
-  // TODO: replace with real auth userId
-  static const _tempUserId = '00000000-0000-0000-0000-000000000001';
+    _existingImages = widget.post.imageUrls.isNotEmpty 
+        ? List.from(widget.post.imageUrls)
+        : (widget.post.imageUrl.isNotEmpty ? [widget.post.imageUrl] : []);
+
+    if (widget.post.restaurantName.isNotEmpty) {
+      _selectedRestaurant = RestaurantModel(
+        restaurantId: widget.post.restaurantId ?? '',
+        name: widget.post.restaurantName,
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -50,12 +66,17 @@ class _AddPostScreenState extends State<AddPostScreen> {
     }
   }
 
-  // ── Remove a selected image ───────────────────────────────────────────────
-  void _removeImage(int index) {
+  void _removeExistingImage(int index) {
+    setState(() {
+      _deletedImageUrls.add(_existingImages[index]);
+      _existingImages.removeAt(index);
+    });
+  }
+
+  void _removeNewImage(int index) {
     setState(() => _selectedImages.removeAt(index));
   }
 
-  // ── Show restaurant search bottom sheet ────────────────────────────────────
   void _showRestaurantPicker() {
     showCupertinoModalPopup<RestaurantModel>(
       context: context,
@@ -68,47 +89,51 @@ class _AddPostScreenState extends State<AddPostScreen> {
     );
   }
 
-  // ── Publish ───────────────────────────────────────────────────────────────
-  Future<void> _publish() async {
+  Future<void> _updatePost() async {
     final title = _titleController.text.trim();
     final caption = _captionController.text.trim();
     if (title.isEmpty) {
-      _showError('Please add a title before publishing.');
+      _showError('Please add a title before saving.');
       return;
     }
 
     if (_selectedRestaurant == null ||
         _selectedRestaurant!.restaurantId.trim().isEmpty) {
-      _showError('Please tag a restaurant before publishing.');
+      _showError('Please tag a restaurant before saving.');
       return;
     }
 
-    if (_selectedImages.isEmpty) {
-      _showError('Please add at least one photo before publishing.');
-      return;
+    if (_existingImages.isEmpty && _selectedImages.isEmpty) {
+       _showError('Please add at least one photo.');
+       return;
     }
 
-    setState(() => _isPublishing = true);
+    setState(() => _isSaving = true);
     try {
-      // Convert XFiles to bytes
-      final imageByteslist = <Uint8List>[];
+      final newImageBytesList = <Uint8List>[];
       for (final xFile in _selectedImages) {
-        imageByteslist.add(await xFile.readAsBytes());
+        newImageBytesList.add(await xFile.readAsBytes());
       }
 
-      await PostRepository.instance.createPost(
-        userId: _tempUserId,
+      await PostRepository.instance.updatePost(
+        postId: widget.post.id,
         restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
-        images: imageByteslist,
+        deletedImageUrls: _deletedImageUrls,
+        newImages: newImageBytesList,
       );
 
-      if (mounted) Navigator.of(context).pop(true); // true = feed should refresh
+      // Wait a moment for Supabase to sync indices if necessary, but returning the fetch immediately should work.
+      final newPostModel = await PostRepository.instance.fetchPostById(widget.post.id);
+
+      if (mounted) {
+        Navigator.of(context).pop(newPostModel ?? widget.post);
+      }
     } catch (e) {
-      if (mounted) _showError('Failed to publish: $e');
+      if (mounted) _showError('Failed to save changes: $e');
     } finally {
-      if (mounted) setState(() => _isPublishing = false);
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -128,7 +153,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
@@ -143,23 +167,23 @@ class _AddPostScreenState extends State<AddPostScreen> {
               color: AppColors.textPrimary, size: 22),
         ),
         middle: const Text(
-          'New Post',
+          'Edit Note',
           style: TextStyle(
               fontWeight: FontWeight.w600, color: AppColors.textPrimary),
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _isPublishing ? null : _publish,
+          onPressed: _isSaving ? null : _updatePost,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
-              color: _isPublishing ? AppColors.textLight : AppColors.primary,
+              color: _isSaving ? AppColors.textLight : AppColors.primary,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: _isPublishing
+            child: _isSaving
                 ? const CupertinoActivityIndicator()
                 : const Text(
-                    'Publish',
+                    'Save',
                     style: TextStyle(
                       color: CupertinoColors.white,
                       fontSize: 14,
@@ -182,12 +206,17 @@ class _AddPostScreenState extends State<AddPostScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   scrollDirection: Axis.horizontal,
-                  itemCount: _selectedImages.length + 1,
+                  itemCount: _existingImages.length + _selectedImages.length + 1,
                   itemBuilder: (_, i) {
-                    if (i == _selectedImages.length) {
+                    if (i == _existingImages.length + _selectedImages.length) {
                       return _buildAddButton();
                     }
-                    return _buildImagePreview(i);
+                    if (i < _existingImages.length) {
+                      return _buildExistingImagePreview(i);
+                    } else {
+                      final newIndex = i - _existingImages.length;
+                      return _buildNewImagePreview(newIndex);
+                    }
                   },
                 ),
               ),
@@ -341,7 +370,44 @@ class _AddPostScreenState extends State<AddPostScreen> {
     );
   }
 
-  Widget _buildImagePreview(int index) {
+  Widget _buildExistingImagePreview(int index) {
+    final url = _existingImages[index];
+    return Stack(
+      children: [
+        Container(
+          width: 96,
+          height: 96,
+          margin: const EdgeInsets.only(right: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: AppColors.surface,
+            image: DecorationImage(
+              image: NetworkImage(url),
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+        Positioned(
+          top: 4,
+          right: 14,
+          child: GestureDetector(
+            onTap: () => _removeExistingImage(index),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Color(0xAA000000),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(CupertinoIcons.xmark,
+                  color: CupertinoColors.white, size: 11),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNewImagePreview(int index) {
     final xFile = _selectedImages[index];
     return Stack(
       children: [
@@ -351,6 +417,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
           margin: const EdgeInsets.only(right: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
+            color: AppColors.surface,
             image: DecorationImage(
               image: FileImage(File(xFile.path)),
               fit: BoxFit.cover,
@@ -361,7 +428,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
           top: 4,
           right: 14,
           child: GestureDetector(
-            onTap: () => _removeImage(index),
+            onTap: () => _removeNewImage(index),
             child: Container(
               padding: const EdgeInsets.all(4),
               decoration: const BoxDecoration(
@@ -379,7 +446,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
 }
 
 // ══════════════════════════════════════════════
-//  RESTAURANT PICKER SHEET
+//  RESTAURANT PICKER SHEET (Duplicated from add_post_screen.dart)
 // ══════════════════════════════════════════════
 class _RestaurantPickerSheet extends StatefulWidget {
   final ValueChanged<RestaurantModel> onSelected;
@@ -391,8 +458,7 @@ class _RestaurantPickerSheet extends StatefulWidget {
       _RestaurantPickerSheetState();
 }
 
-class _RestaurantPickerSheetState
-    extends State<_RestaurantPickerSheet> {
+class _RestaurantPickerSheetState extends State<_RestaurantPickerSheet> {
   final _searchCtrl = TextEditingController();
   List<RestaurantModel> _results = [];
   bool _isLoading = true;
@@ -487,7 +553,6 @@ class _RestaurantPickerSheetState
                         child: Text('No restaurants found 🍴',
                             style: TextStyle(color: AppColors.textLight)))
                     : ListView.separated(
-                        padding: EdgeInsets.zero,
                         itemCount: _results.length,
                         separatorBuilder: (_, _) => Container(
                             height: 0.5,

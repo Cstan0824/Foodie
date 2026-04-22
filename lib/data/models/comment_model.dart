@@ -19,8 +19,7 @@ class CommentModel {
 
   factory CommentModel.fromJson(Map<String, dynamic> json) {
     // Joined User table — disambiguated FK
-    final user = (json['User!Comment_user_Id_fkey'] ?? json['User'])
-        as Map<String, dynamic>?;
+    final user = (json['User!Comment_user_Id_fkey'] ?? json['User']) as Map<String, dynamic>?;
     final authorName = (user?['name'] as String?) ?? 'Unknown';
 
     return CommentModel(
