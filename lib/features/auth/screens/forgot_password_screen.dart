@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -11,12 +13,48 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
   bool _isSent = false;
+  bool _isLoading = false;
 
-  void _resetPassword() {
-    // TODO: Implement Supabase password reset
-    setState(() {
-      _isSent = true;
-    });
+  late final AuthRepository _authRepo = AuthRepository(Supabase.instance.client);
+
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      _showErrorAlert('Please enter your email address.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _authRepo.resetPassword(email: email);
+      if (!mounted) return;
+      setState(() => _isSent = true);
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      _showErrorAlert(e.message);
+    } catch (e) {
+      if (!mounted) return;
+      _showErrorAlert('An unexpected error occurred. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showErrorAlert(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Reset Error'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          )
+        ],
+      ),
+    );
   }
 
   @override
@@ -106,7 +144,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 // ── Reset Button ──
                 GestureDetector(
                   onTap: () {
-                    if (_emailController.text.trim().isNotEmpty) {
+                    if (_emailController.text.trim().isNotEmpty && !_isLoading) {
                       _resetPassword();
                     }
                   },
@@ -123,15 +161,17 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         ),
                       ],
                     ),
-                    child: const Center(
-                      child: Text(
-                        'Send Instructions',
-                        style: TextStyle(
-                          color: CupertinoColors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                    child: Center(
+                      child: _isLoading
+                          ? const CupertinoActivityIndicator(color: CupertinoColors.white)
+                          : const Text(
+                              'Send Instructions',
+                              style: TextStyle(
+                                color: CupertinoColors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
                   ),
                 ),
