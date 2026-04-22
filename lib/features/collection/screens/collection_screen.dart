@@ -10,10 +10,10 @@ class CollectionScreen extends StatefulWidget {
   const CollectionScreen({super.key});
 
   @override
-  State<CollectionScreen> createState() => _CollectionScreenState();
+  State<CollectionScreen> createState() => CollectionScreenState();
 }
 
-class _CollectionScreenState extends State<CollectionScreen> {
+class CollectionScreenState extends State<CollectionScreen> {
   final CollectionRepository _collectionRepository = CollectionRepository(
     Supabase.instance.client,
   );
@@ -41,18 +41,12 @@ class _CollectionScreenState extends State<CollectionScreen> {
     super.dispose();
   }
 
+  void refreshCollections() {
+    _loadCollections();
+  }
+
   Future<void> _loadCollections() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      if (mounted) {
-        setState(() {
-          _collections = [];
-          _isLoadingCollections = false;
-          _collectionError = null;
-        });
-      }
-      return;
-    }
+    final userId = Supabase.instance.client.auth.currentUser?.id ?? '00000000-0000-0000-0000-000000000001';
 
     if (mounted) {
       setState(() {
@@ -63,7 +57,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
 
     try {
       final collections = await _collectionRepository.getUserCollections(
-        user.id,
+        userId,
       );
       if (mounted) {
         setState(() {
