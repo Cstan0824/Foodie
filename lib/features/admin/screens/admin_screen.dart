@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/features/admin/post_management/screens/post_management_screen.dart';
+import 'package:taste_spot/features/admin/restaurant_management/screens/restaurant_management_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -43,11 +44,7 @@ class _AdminScreenState extends State<AdminScreen> {
       case 1:
         return const PostManagementScreen();
       case 2:
-        return const _PlaceholderTab(
-          icon: CupertinoIcons.building_2_fill,
-          title: 'Restaurant Management',
-          subtitle: 'Coming soon',
-        );
+        return const RestaurantManagementScreen();
       case 3:
         return const _PlaceholderTab(
           icon: CupertinoIcons.person_fill,

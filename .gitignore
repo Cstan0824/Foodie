@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# macOS
+ios/Runner.xcodeproj/project.pbxproj
+ios/Runner.xcodeproj/Info.plist
