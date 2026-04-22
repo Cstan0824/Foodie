@@ -15,6 +15,7 @@ class RestaurantRepository {
         .select(
           'restaurant_Id, restaurant_name, address, maps_url, mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc)',
         )
+        .eq('isDisabled', false)
         .ilike('restaurant_name', '%$query%')
         .order('restaurant_name')
         .limit(limit);
@@ -31,6 +32,7 @@ class RestaurantRepository {
         .select(
           'restaurant_Id, restaurant_name, address, mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc)',
         )
+        .eq('isDisabled', false)
         .order('created_At', ascending: false)
         .limit(limit);
 

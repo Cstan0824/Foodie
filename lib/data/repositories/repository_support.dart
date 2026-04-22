@@ -1,0 +1,31 @@
+import 'package:taste_spot/core/services/supabase_service.dart';
+
+const String publicPostSelect = '''
+  post_Id,
+  title,
+  caption,
+  likeCount,
+  saveCount,
+  created_At,
+  User!Post_user_Id_fkey(user_Id, name),
+  Restaurant(restaurant_Id, restaurant_name),
+  Post_Image(image_Id, image_url)
+''';
+
+Future<void> ensurePostAvailable(
+  String postId, {
+  required String errorMessage,
+}) async {
+  final response = await SupabaseService.client
+      .from('Post')
+      .select('post_Id')
+      .eq('post_Id', postId)
+      .eq('isRemoved', false)
+      .eq('isBlocked', false)
+      .eq('isPending', false)
+      .maybeSingle();
+
+  if (response == null) {
+    throw Exception(errorMessage);
+  }
+}
