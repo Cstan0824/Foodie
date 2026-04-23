@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
@@ -30,9 +31,6 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
   // State
   bool _isPublishing = false;
-
-  // TODO: replace with real auth userId
-  static const _tempUserId = '00000000-0000-0000-0000-000000000001';
 
   @override
   void dispose() {
@@ -99,7 +97,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
       }
 
       await PostRepository.instance.createPost(
-        userId: _tempUserId,
+        userId: SupabaseService.requireCurrentUserId(),
         restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
