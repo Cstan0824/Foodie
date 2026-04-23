@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Material, PopupMenuButton, PopupMenuItem;
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/repositories/report_repository.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
@@ -27,12 +28,17 @@ class _PostManagementScreenState extends State<PostManagementScreen>
 
   List<ReportedPost> _posts = [];
   List<ReportedComment> _comments = [];
+  int _postGroupCount = 0;
+  int _commentGroupCount = 0;
   bool _isLoadingPosts = false;
   bool _isLoadingComments = false;
   ReportActionStatus _statusFilter = ReportActionStatus.pending;
   String _searchQuery = '';
   int _postsRequestId = 0;
   int _commentsRequestId = 0;
+  int _countsRequestId = 0;
+  ReportActionStatus? _loadedPostsStatus;
+  ReportActionStatus? _loadedCommentsStatus;
 
   @override
   void initState() {
@@ -41,6 +47,7 @@ class _PostManagementScreenState extends State<PostManagementScreen>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
+    _fetchCounts();
     _fetchPosts();
   }
 
@@ -53,7 +60,10 @@ class _PostManagementScreenState extends State<PostManagementScreen>
         status: requestedStatus,
       );
       if (mounted && requestId == _postsRequestId) {
-        setState(() => _posts = data);
+        setState(() {
+          _posts = data;
+          _loadedPostsStatus = requestedStatus;
+        });
       }
     } catch (e) {
       debugPrint('Error fetching post reports: $e');
@@ -73,7 +83,10 @@ class _PostManagementScreenState extends State<PostManagementScreen>
         status: requestedStatus,
       );
       if (mounted && requestId == _commentsRequestId) {
-        setState(() => _comments = data);
+        setState(() {
+          _comments = data;
+          _loadedCommentsStatus = requestedStatus;
+        });
       }
     } catch (e) {
       debugPrint('Error fetching comment reports: $e');
@@ -81,6 +94,29 @@ class _PostManagementScreenState extends State<PostManagementScreen>
       if (mounted && requestId == _commentsRequestId) {
         setState(() => _isLoadingComments = false);
       }
+    }
+  }
+
+  Future<void> _fetchCounts() async {
+    final requestId = ++_countsRequestId;
+    final requestedStatus = _statusFilter;
+    try {
+      final results = await Future.wait([
+        ReportRepository.instance.fetchPostReportGroupCount(
+          status: requestedStatus,
+        ),
+        ReportRepository.instance.fetchCommentReportGroupCount(
+          status: requestedStatus,
+        ),
+      ]);
+      if (mounted && requestId == _countsRequestId) {
+        setState(() {
+          _postGroupCount = results[0];
+          _commentGroupCount = results[1];
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching report counts: $e');
     }
   }
 
@@ -96,27 +132,43 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     setState(() => _tab = index);
     if (index == 1) {
       _tabAnim.forward();
-      _fetchComments();
+      if (_loadedCommentsStatus != _statusFilter) {
+        _fetchComments();
+      }
     } else {
       _tabAnim.reverse();
-      _fetchPosts();
+      if (_loadedPostsStatus != _statusFilter) {
+        _fetchPosts();
+      }
     }
   }
 
   void _setStatusFilter(ReportActionStatus? status) {
     if (status == null || status == _statusFilter) return;
-    setState(() => _statusFilter = status);
-    _fetchPosts();
-    _fetchComments();
+    setState(() {
+      _statusFilter = status;
+      _postGroupCount = 0;
+      _commentGroupCount = 0;
+      if (_tab == 0) {
+        _posts = [];
+        _loadedPostsStatus = null;
+      } else {
+        _comments = [];
+        _loadedCommentsStatus = null;
+      }
+    });
+    _fetchCounts();
+    if (_tab == 0) {
+      _fetchPosts();
+    } else {
+      _fetchComments();
+    }
   }
 
   bool get _canModerateCurrentStatus =>
       _statusFilter == ReportActionStatus.pending;
 
   String get _normalizedQuery => _searchQuery.trim().toLowerCase();
-
-  int get _postGroupCount => _groupPosts(_posts).length;
-  int get _commentGroupCount => _groupComments(_comments).length;
 
   List<List<ReportedPost>> _groupPosts(List<ReportedPost> reports) {
     final grouped = <String, List<ReportedPost>>{};
@@ -169,12 +221,32 @@ class _PostManagementScreenState extends State<PostManagementScreen>
       _groupPosts(_posts).where(_groupMatchesPostQuery).toList();
 
   List<List<ReportedComment>> get _visibleCommentGroups =>
-      _groupComments(_comments).where(_groupMatchesCommentQuery).toList();
+      _groupComments(_comments)
+          .where(_groupMatchesCommentQuery)
+          .toList();
+
+  void _applyPostStatus(String postId, ReportActionStatus nextStatus) {
+    setState(() {
+      _posts.removeWhere((report) => report.postId == postId);
+      if (_postGroupCount > 0) {
+        _postGroupCount -= 1;
+      }
+    });
+  }
+
+  void _applyCommentStatus(String commentId, ReportActionStatus nextStatus) {
+    setState(() {
+      _comments.removeWhere((report) => report.commentId == commentId);
+      if (_commentGroupCount > 0) {
+        _commentGroupCount -= 1;
+      }
+    });
+  }
 
   Future<void> _dismissPost(String postId) async {
     try {
       await ReportRepository.instance.dismissPostReports(postId);
-      setState(() => _posts.removeWhere((p) => p.postId == postId));
+      _applyPostStatus(postId, ReportActionStatus.dismissed);
     } catch (e) {
       debugPrint('Error dismissing report: $e');
     }
@@ -184,9 +256,7 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     try {
       await PostRepository.instance.blockPost(postId);
       await ReportRepository.instance.markPostReportsRemoved(postId);
-      if (mounted) {
-        setState(() => _posts.removeWhere((p) => p.postId == postId));
-      }
+      _applyPostStatus(postId, ReportActionStatus.removed);
     } catch (e) {
       debugPrint('Error blocking post: $e');
     }
@@ -195,7 +265,7 @@ class _PostManagementScreenState extends State<PostManagementScreen>
   Future<void> _dismissComment(String commentId) async {
     try {
         await ReportRepository.instance.dismissCommentReports(commentId);
-        setState(() => _comments.removeWhere((c) => c.commentId == commentId));
+        _applyCommentStatus(commentId, ReportActionStatus.dismissed);
     } catch (e) {
       debugPrint('Error dismissing report: $e');
     }
@@ -205,9 +275,7 @@ class _PostManagementScreenState extends State<PostManagementScreen>
     try {
       await CommentRepository.instance.blockComment(commentId);
       await ReportRepository.instance.markCommentReportsRemoved(commentId);
-      if (mounted) {
-        setState(() => _comments.removeWhere((c) => c.commentId == commentId));
-      }
+      _applyCommentStatus(commentId, ReportActionStatus.removed);
     } catch (e) {
       debugPrint('Error blocking comment: $e');
     }
@@ -219,70 +287,90 @@ class _PostManagementScreenState extends State<PostManagementScreen>
       children: [
         // ── Header ──
         Container(
-          color: AppColors.cardBackground,
+          decoration: const BoxDecoration(
+            color: AppColors.cardBackground,
+            border: Border(
+              bottom: BorderSide(color: AppColors.divider, width: 0.5),
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
                 padding: EdgeInsets.only(
-                  top: MediaQuery.of(context).padding.top + 12,
+                  top: MediaQuery.of(context).padding.top + 8,
                   left: 16,
                   right: 16,
-                  bottom: 12,
+                  bottom: 8,
                 ),
-                child: const Text(
-                  'Report Management',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: CupertinoSlidingSegmentedControl<ReportActionStatus>(
-                  groupValue: _statusFilter,
-                  backgroundColor: AppColors.surface,
-                  thumbColor: AppColors.primary,
-                  children: {
-                    for (final status in ReportActionStatus.values)
-                      status: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Report Management',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    if (_statusFilter == ReportActionStatus.pending &&
+                        (_postGroupCount + _commentGroupCount) > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF9500).withAlpha(22),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0xFFFF9500).withAlpha(60),
+                            width: 0.8,
+                          ),
+                        ),
                         child: Text(
-                          status.label,
-                          style: TextStyle(
-                            fontSize: 13,
+                          '${_postGroupCount + _commentGroupCount}',
+                          style: const TextStyle(
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: _statusFilter == status
-                                ? CupertinoColors.white
-                                : AppColors.textPrimary,
+                            color: Color(0xFFFF9500),
                           ),
                         ),
                       ),
-                  },
-                  onValueChanged: _setStatusFilter,
+                  ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: CupertinoSearchTextField(
-                  controller: _searchController,
-                  placeholder: _tab == 0
-                      ? 'Search by post, owner, or reporter'
-                      : 'Search by post, owner, or reporter',
-                  onChanged: (value) => setState(() => _searchQuery = value),
-                ),
-              ),
-              // ── Animated underline tab bar ──
-              _SlideTabBar(
-                labels: [
-                  'Posts  ${_postGroupCount > 0 ? "($_postGroupCount)" : ""}',
-                  'Comments  ${_commentGroupCount > 0 ? "($_commentGroupCount)" : ""}',
-                ],
+              // ── Pill Segment Tab Bar ──
+              _PillTabBar(
+                labels: const ['Posts', 'Comments'],
+                counts: [_postGroupCount, _commentGroupCount],
                 selectedIndex: _tab,
                 onTap: _switchTab,
+              ),
+              const SizedBox(height: 12),
+              // ── Search & Filter ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 8,
+                      child: _SearchBar(
+                        controller: _searchController,
+                        onChanged: (value) => setState(() => _searchQuery = value),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: _StatusDropdown(
+                        selected: _statusFilter,
+                        onChanged: _setStatusFilter,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -297,7 +385,9 @@ class _PostManagementScreenState extends State<PostManagementScreen>
   }
 
   Widget _buildPostsList() {
-    if (_isLoadingPosts) return const Center(child: CupertinoActivityIndicator());
+    if (_isLoadingPosts && _posts.isEmpty) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
     final groups = _visiblePostGroups;
     if (groups.isEmpty) {
       return _EmptyState(
@@ -330,7 +420,9 @@ class _PostManagementScreenState extends State<PostManagementScreen>
   }
 
   Widget _buildCommentsList() {
-    if (_isLoadingComments) return const Center(child: CupertinoActivityIndicator());
+    if (_isLoadingComments && _comments.isEmpty) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
     final groups = _visibleCommentGroups;
     if (groups.isEmpty) {
       return _EmptyState(
@@ -363,74 +455,255 @@ class _PostManagementScreenState extends State<PostManagementScreen>
   }
 }
 
-// ── Animated underline tab bar ────────────────────────────────────────────────
+// ── Search bar ────────────────────────────────────────────────────────────────
 
-class _SlideTabBar extends StatelessWidget {
+class _SearchBar extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _SearchBar({required this.controller, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: CupertinoTextField(
+        controller: controller,
+        onChanged: onChanged,
+        placeholder: 'Search posts, owners, reporters…',
+        placeholderStyle: const TextStyle(
+          fontSize: 14,
+          color: AppColors.textSecondary,
+        ),
+        style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+        prefix: const Padding(
+          padding: EdgeInsets.only(left: 14, right: 4),
+          child: Icon(
+            CupertinoIcons.search,
+            size: 16,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        clearButtonMode: OverlayVisibilityMode.editing,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+        decoration: const BoxDecoration(),
+      ),
+    );
+  }
+}
+
+// ── Status dropdown ───────────────────────────────────────────────────────────
+
+class _StatusDropdown extends StatelessWidget {
+  final ReportActionStatus selected;
+  final ValueChanged<ReportActionStatus?> onChanged;
+
+  const _StatusDropdown({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  static Color _colorFor(ReportActionStatus status) {
+    switch (status) {
+      case ReportActionStatus.pending:
+        return const Color(0xFFFF9500);
+      case ReportActionStatus.removed:
+        return const Color(0xFFFF3B30);
+      case ReportActionStatus.dismissed:
+        return const Color(0xFF34C759);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isNonDefault = selected != ReportActionStatus.pending;
+    return Material(
+      color: const Color(0x00000000),
+      borderRadius: BorderRadius.circular(8),
+      child: PopupMenuButton<ReportActionStatus>(
+        onSelected: (value) => onChanged(value),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        color: AppColors.cardBackground,
+        offset: const Offset(0, 42),
+        elevation: 4,
+        itemBuilder: (context) => ReportActionStatus.values.map((status) {
+          final isSelected = status == selected;
+          final color = _colorFor(status);
+          return PopupMenuItem<ReportActionStatus>(
+            value: status,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  status.label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    color: isSelected
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
+                  ),
+                ),
+                if (isSelected) ...[
+                  const Spacer(),
+                  const Icon(
+                    CupertinoIcons.checkmark,
+                    size: 13,
+                    color: AppColors.primary,
+                  ),
+                ],
+              ],
+            ),
+          );
+        }).toList(),
+        child: Container(
+          height: 36,
+          decoration: BoxDecoration(
+            color: isNonDefault
+                ? AppColors.primary.withAlpha(15)
+                : AppColors.surface,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Icon(
+              CupertinoIcons.slider_horizontal_3,
+              size: 18,
+              color: isNonDefault ? AppColors.primary : AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Pill Segment Tab Bar ──────────────────────────────────────────────────────
+
+class _PillTabBar extends StatelessWidget {
   final List<String> labels;
+  final List<int> counts;
   final int selectedIndex;
   final ValueChanged<int> onTap;
 
-  const _SlideTabBar({
+  const _PillTabBar({
     required this.labels,
+    required this.counts,
     required this.selectedIndex,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: List.generate(labels.length, (i) {
-            final selected = i == selectedIndex;
-            return Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onTap(i),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Center(
-                    child: AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 180),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
-                        color: selected
-                            ? AppColors.textPrimary
-                            : AppColors.textSecondary,
-                      ),
-                      child: Text(labels[i]),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-        ),
-        // Sliding underline
-        LayoutBuilder(builder: (ctx, constraints) {
-          final tabWidth = constraints.maxWidth / labels.length;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      height: 38,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final totalWidth = constraints.maxWidth;
+          final tabWidth = totalWidth / labels.length;
           return Stack(
             children: [
-              Container(height: 1, color: AppColors.divider),
+              // ── Sliding white pill (animates position, not size) ──
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeInOut,
-                left: tabWidth * selectedIndex,
+                left: selectedIndex * tabWidth + 2,
+                top: 2,
+                width: tabWidth - 4,
+                height: constraints.maxHeight - 4,
                 child: Container(
-                  width: tabWidth,
-                  height: 2,
-                  decoration: const BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(6),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF000000).withAlpha(18),
+                        blurRadius: 6,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
                 ),
               ),
+              // ── Labels row (always on top of the pill) ──
+              Row(
+                children: List.generate(labels.length, (i) {
+                  final isSelected = i == selectedIndex;
+                  final count = i < counts.length ? counts[i] : 0;
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onTap(i),
+                      child: Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 180),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                              ),
+                              child: Text(labels[i]),
+                            ),
+                            if (count > 0) ...[
+                              const SizedBox(width: 5),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.primary.withAlpha(20)
+                                      : AppColors.textLight.withAlpha(60),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  '$count',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
             ],
           );
-        }),
-      ],
+        },
+      ),
     );
   }
 }
@@ -454,7 +727,7 @@ class _ReportedPostRow extends StatelessWidget {
   Widget build(BuildContext context) {
     if (posts.isEmpty) return const SizedBox.shrink();
     final firstPost = posts.first;
-    
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () async {
@@ -502,7 +775,7 @@ class _ReportedPostRow extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            
+
             // ── Report Preview Info ──
             Container(
               padding: const EdgeInsets.all(12),
@@ -647,7 +920,7 @@ class _ReportedCommentRow extends StatelessWidget {
                         ),
                       ],
                     ),
-                  const SizedBox(height: 4),  
+                  const SizedBox(height: 4),
                   Text(
                     '"${firstComment.commentText}"',
                     style: const TextStyle(

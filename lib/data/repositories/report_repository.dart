@@ -34,9 +34,9 @@ class ReportRepository {
   }
 
   Future<List<ReportedPost>> fetchPostReports({
-    ReportActionStatus status = ReportActionStatus.pending,
+    ReportActionStatus? status,
   }) async {
-    final response = await SupabaseService.client
+    var query = SupabaseService.client
         .from('Report')
         .select('''
           id:report_Id,
@@ -54,9 +54,13 @@ class ReportRepository {
             Post_Image(image_url)
           )
         ''')
-        .isFilter('comment_Id', null)
-        .eq('status', status.dbValue)
-        .order('created_At', ascending: false);
+        .isFilter('comment_Id', null);
+
+    if (status != null) {
+      query = query.eq('status', status.dbValue);
+    }
+
+    final response = await query.order('created_At', ascending: false);
 
     return (response as List<dynamic>).map((r) {
       final post = r['Post'] as Map<String, dynamic>;
@@ -86,9 +90,9 @@ class ReportRepository {
   }
 
   Future<List<ReportedComment>> fetchCommentReports({
-    ReportActionStatus status = ReportActionStatus.pending,
+    ReportActionStatus? status,
   }) async {
-    final response = await SupabaseService.client
+    var query = SupabaseService.client
         .from('Report')
         .select('''
           id:report_Id,
@@ -110,9 +114,13 @@ class ReportRepository {
             )
           )
         ''')
-        .not('comment_Id', 'is', null)
-        .eq('status', status.dbValue)
-        .order('created_At', ascending: false);
+        .not('comment_Id', 'is', null);
+
+    if (status != null) {
+      query = query.eq('status', status.dbValue);
+    }
+
+    final response = await query.order('created_At', ascending: false);
 
     return (response as List<dynamic>).map((r) {
       final comment = r['Comment'] as Map<String, dynamic>;
@@ -146,6 +154,42 @@ class ReportRepository {
         timeAgo: _formatTimeAgo(r['created_At']?.toString() ?? ''),
       );
     }).toList();
+  }
+
+  Future<int> fetchPostReportGroupCount({
+    required ReportActionStatus status,
+  }) async {
+    final response = await SupabaseService.client
+        .from('Report')
+        .select('post_Id')
+        .isFilter('comment_Id', null)
+        .eq('status', status.dbValue);
+
+    final ids = (response as List<dynamic>)
+        .map((row) => (row as Map<String, dynamic>)['post_Id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    return ids.length;
+  }
+
+  Future<int> fetchCommentReportGroupCount({
+    required ReportActionStatus status,
+  }) async {
+    final response = await SupabaseService.client
+        .from('Report')
+        .select('comment_Id')
+        .not('comment_Id', 'is', null)
+        .eq('status', status.dbValue);
+
+    final ids = (response as List<dynamic>)
+        .map((row) => (row as Map<String, dynamic>)['comment_Id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    return ids.length;
   }
 
   Future<void> dismissPostReports(String postId) async {

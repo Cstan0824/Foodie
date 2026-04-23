@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
@@ -61,6 +62,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String _formatCount(int count) {
     if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
     return count.toString();
+  }
+
+  String? get _currentUserId => SupabaseService.currentUserId;
+
+  bool get _isCurrentUserPostOwner =>
+      _currentUserId != null && _currentPost.userId == _currentUserId;
+
+  void _showAuthRequiredDialog() {
+    showCupertinoDialog(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('Sign In Required'),
+        content: const Text('Please sign in to continue.'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(dialogContext),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -165,6 +187,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _checkLikeStatus() async {
+    final currentUserId = _currentUserId;
+    if (currentUserId == null || currentUserId.isEmpty) {
+      if (mounted) setState(() => _isLiked = false);
+      return;
+    }
+
     try {
       final currentUserId = Supabase.instance.client.auth.currentUser?.id;
       if (currentUserId == null) {
@@ -185,10 +213,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _toggleLike() async {
     if (_isLiking) return;
-
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    if (currentUserId == null) return;
-
+    final currentUserId = _currentUserId;
+    if (currentUserId == null || currentUserId.isEmpty) {
+      _showAuthRequiredDialog();
+      return;
+    }
     setState(() => _isLiking = true);
 
     final newIsLiked = !_isLiked;
@@ -256,12 +285,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     setState(() => _isPostingComment = true);
     try {
-      // TODO: replace with real auth userId when auth is implemented
-      const tempUserId = '00000000-0000-0000-0000-000000000001';
+      final currentUserId = SupabaseService.requireCurrentUserId();
       if (editingComment != null) {
         final updatedComment = await CommentRepository.instance.updateComment(
           commentId: editingComment.commentId,
-          userId: tempUserId,
+          userId: currentUserId,
           content: text,
         );
         if (mounted) {
@@ -280,7 +308,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       } else {
         final newComment = await CommentRepository.instance.postComment(
           postId: _currentPost.id,
-          userId: tempUserId,
+          userId: currentUserId,
           content: text,
         );
         if (mounted) {
@@ -478,7 +506,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(4.0),
                 child: Icon(
-                  _currentPost.userId == '00000000-0000-0000-0000-000000000001'
+                  _isCurrentUserPostOwner
                       ? CupertinoIcons.ellipsis
                       : CupertinoIcons.arrow_turn_up_right,
                   size: 20,
@@ -972,8 +1000,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _showMoreOptions(BuildContext context) {
-    const currentUserId = '00000000-0000-0000-0000-000000000001';
-    final isOwner = _currentPost.userId == currentUserId;
+    final isOwner = _isCurrentUserPostOwner;
 
     showCupertinoModalPopup(
       context: context,
@@ -1221,8 +1248,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _showCommentOptions(BuildContext context, CommentModel comment) {
-    const currentUserId = '00000000-0000-0000-0000-000000000001';
-    final isOwner = comment.userId == currentUserId;
+    final isOwner = _currentUserId != null && comment.userId == _currentUserId;
 
     showCupertinoModalPopup(
       context: context,

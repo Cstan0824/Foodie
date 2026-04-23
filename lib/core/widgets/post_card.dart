@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
@@ -44,6 +44,14 @@ class _PostCardState extends State<PostCard> {
   }
 
   Future<void> _checkLikeStatus() async {
+    final currentUserId = SupabaseService.currentUserId;
+    if (currentUserId == null || currentUserId.isEmpty) {
+      if (mounted) {
+        setState(() => _isLiked = false);
+      }
+      return;
+    }
+
     try {
       final currentUserId = Supabase.instance.client.auth.currentUser?.id;
       if (currentUserId == null) {
@@ -65,10 +73,10 @@ class _PostCardState extends State<PostCard> {
 
   Future<void> _toggleLike() async {
     if (_isLiking) return;
-
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    if (currentUserId == null) return;
-
+    final currentUserId = SupabaseService.currentUserId;
+    if (currentUserId == null || currentUserId.isEmpty) {
+      return;
+    }
     setState(() => _isLiking = true);
 
     final newIsLiked = !_isLiked;
