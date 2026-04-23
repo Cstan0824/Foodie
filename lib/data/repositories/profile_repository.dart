@@ -10,7 +10,7 @@ class ProfileRepository {
   Future<Profile?> getProfile(String userId) async {
     final response = await _supabase
         .from('User')
-        .select()
+        .select('user_Id, name, username, bio, created_At')
         .eq('user_Id', userId)
         .maybeSingle();
 

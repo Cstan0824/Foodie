@@ -132,7 +132,7 @@ class CollectionRepository {
         .from('collections_shares')
         .select('share_with_id')
         .eq('collection_Id', collectionId);
-    
+
     return (response as List<dynamic>)
         .map((row) => row['share_with_id'] as String)
         .toList();
@@ -146,7 +146,7 @@ class CollectionRepository {
         .eq('is_default', true)
         .eq('collection_type', 'POST')
         .maybeSingle();
-    
+
     if (response == null) return null;
     return Collection.fromJson(response);
   }
@@ -164,5 +164,66 @@ class CollectionRepository {
         .delete()
         .eq('collection_Id', collectionId)
         .eq('share_with_id', targetUserId);
+  }
+
+  /// Returns the real total number of times [postId] has been saved,
+  /// counted directly from [collections_item] rows (not the cached Post.saveCount column).
+  Future<int> getPostSaveCount(String postId) async {
+    final response = await _supabase
+        .from('collections_item')
+        .select('item_Id')
+        .eq('post_id', postId);
+    return (response as List<dynamic>).length;
+  }
+
+  /// Returns true if [userId] has already saved [postId] in any of their collections.
+  Future<bool> isPostSavedByUser({
+    required String userId,
+    required String postId,
+  }) async {
+    final collectionIds = await _supabase
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId);
+
+    final ids = (collectionIds as List<dynamic>)
+        .map((r) => r['collection_Id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    if (ids.isEmpty) return false;
+
+    final saved = await _supabase
+        .from('collections_item')
+        .select('item_Id')
+        .eq('post_id', postId)
+        .inFilter('collection_Id', ids)
+        .limit(1);
+
+    return (saved as List<dynamic>).isNotEmpty;
+  }
+
+  /// Removes [postId] from every collection owned by [userId].
+  Future<void> unsavePostForUser({
+    required String userId,
+    required String postId,
+  }) async {
+    final collectionIds = await _supabase
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId);
+
+    final ids = (collectionIds as List<dynamic>)
+        .map((r) => r['collection_Id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    if (ids.isEmpty) return;
+
+    await _supabase
+        .from('collections_item')
+        .delete()
+        .eq('post_id', postId)
+        .inFilter('collection_Id', ids);
   }
 }

@@ -26,6 +26,9 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isCheckingUsername = false;
   bool? _isUsernameAvailable;
   Timer? _usernameDebounce;
+  bool _isCheckingEmail = false;
+  bool? _isEmailTaken;
+  Timer? _emailDebounce;
   late final StreamSubscription<AuthState> _authStateSubscription;
 
   late final AuthRepository _authRepo = AuthRepository(
@@ -89,10 +92,16 @@ class _SignupScreenState extends State<SignupScreen> {
 
           final fallbackUsername = await _buildUniqueUsername(fallbackName);
 
+          final avatarUrl =
+              (rawMeta?['avatar_url'] as String?) ??
+              (rawMeta?['picture'] as String?);
+
           await Supabase.instance.client.from('User').insert({
             'user_Id': user.id,
             'name': fallbackName,
             'username': fallbackUsername,
+            if (avatarUrl != null && avatarUrl.isNotEmpty)
+              'avatar_url': avatarUrl,
           });
           return true; // Is a new user needing profile completion
         }
@@ -108,6 +117,7 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _authStateSubscription.cancel();
     _usernameDebounce?.cancel();
+    _emailDebounce?.cancel();
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -164,6 +174,47 @@ class _SignupScreenState extends State<SignupScreen> {
         setState(() {
           _isCheckingUsername = false;
           _isUsernameAvailable = null;
+        });
+      }
+    });
+  }
+
+  void _onEmailChanged(String value) {
+    _emailDebounce?.cancel();
+
+    final email = value.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      if (mounted) {
+        setState(() {
+          _isCheckingEmail = false;
+          _isEmailTaken = null;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isCheckingEmail = true;
+        _isEmailTaken = null;
+      });
+    }
+
+    _emailDebounce = Timer(const Duration(milliseconds: 700), () async {
+      try {
+        final taken = await _authRepo.isEmailRegistered(email);
+        if (!mounted) return;
+        if (_emailController.text.trim() != email) return;
+        setState(() {
+          _isCheckingEmail = false;
+          _isEmailTaken = taken;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        if (_emailController.text.trim() != email) return;
+        setState(() {
+          _isCheckingEmail = false;
+          _isEmailTaken = null;
         });
       }
     });
@@ -229,16 +280,31 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
+    // Check email existence before attempting signup
+    try {
+      final emailTaken = await _authRepo.isEmailRegistered(email);
+      if (emailTaken) {
+        if (mounted) setState(() => _isEmailTaken = true);
+        _showAlert(
+          'Email Already Registered',
+          'This email is already linked to an account. Please log in or use a different email.',
+        );
+        return;
+      }
+    } catch (_) {
+      // Non-fatal — Supabase will catch duplicates if the check fails
+    }
+
     setState(() => _isLoading = true);
 
     try {
       final response = await _authRepo.signUp(email: email, password: password, name: name);
-      
+
       // Check if we should skip OTP verification.
       // 1. If response.session != null, Supabase already logged them in (Confirm Email is OFF).
       // 2. Or if the environment variable overrides it.
       final bool disableAuth = dotenv.env['disableAuthForSignUp'] == 'true';
-      
+
       if (response.session == null && !disableAuth) {
         if (mounted) {
           _showOtpDialog(email);
@@ -313,7 +379,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     : () async {
                         final token = otpController.text.trim();
                         if (token.length != 6) return;
-                        
+
                         setStateDialog(() => isVerifying = true);
                         try {
                           await _authRepo.verifySignUpOtp(
@@ -474,7 +540,41 @@ class _SignupScreenState extends State<SignupScreen> {
                 placeholder: 'Email',
                 icon: CupertinoIcons.mail,
                 keyboardType: TextInputType.emailAddress,
+                onChanged: _onEmailChanged,
               ),
+              if (_isCheckingEmail)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Checking email...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                )
+              else if (_isEmailTaken == true)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Email is already registered',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CupertinoColors.systemRed,
+                    ),
+                  ),
+                )
+              else if (_isEmailTaken == false)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    'Email is available ✓',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: CupertinoColors.activeGreen,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 16),
               _buildModernTextField(
                 controller: _passwordController,

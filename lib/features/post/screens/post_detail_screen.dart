@@ -10,6 +10,7 @@ import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/data/models/collection_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
+import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 import 'package:taste_spot/features/post/screens/report_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -29,6 +30,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isSaved = false;
   bool _isFollowing = false;
   bool _isFollowUpdating = false;
+
   int _currentImageIndex = 0;
   final _commentController = TextEditingController();
   final _scrollController = ScrollController();
@@ -221,6 +223,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  void _navigateToProfile(String userId) {
+    if (userId.isEmpty) return;
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ProfileScreen(userId: userId),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _commentController.dispose();
@@ -361,49 +372,55 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 size: 26,
               ),
             ),
-            const SizedBox(width: 8), // Spacing between back button and avatar
-            // Avatar
-            ClipOval(
-              child: Image.network(
-                _currentPost.authorAvatar,
-                width: 36,
-                height: 36,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
+            const SizedBox(width: 8),
+            // Avatar — tappable → author profile
+            GestureDetector(
+              onTap: () => _navigateToProfile(_currentPost.userId),
+              child: ClipOval(
+                child: Image.network(
+                  _currentPost.authorAvatar,
                   width: 36,
                   height: 36,
-                  color: AppColors.surface,
-                  child: const Icon(
-                    CupertinoIcons.person_fill,
-                    color: AppColors.textLight,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    width: 36,
+                    height: 36,
+                    color: AppColors.surface,
+                    child: const Icon(
+                      CupertinoIcons.person_fill,
+                      color: AppColors.textLight,
+                    ),
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 10),
-            // Name + subtitle
+            // Name + subtitle — tappable → author profile
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _currentPost.authorName,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+              child: GestureDetector(
+                onTap: () => _navigateToProfile(_currentPost.userId),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _currentPost.authorName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
-                  ),
-                  const Text(
-                    'Food Explorer 🍜',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textLight,
-                      fontWeight: FontWeight.w400,
+                    const Text(
+                      'Food Explorer 🍜',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textLight,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             if (_currentPost.userId !=
@@ -686,21 +703,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Initials avatar (no image URL available from DB)
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary.withValues(alpha: 0.12),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                comment.initials,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+            // Initials avatar — tappable → commenter profile
+            GestureDetector(
+              onTap: () => _navigateToProfile(comment.userId),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  comment.initials,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
             ),
@@ -709,12 +729,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    comment.authorName,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                  GestureDetector(
+                    onTap: () => _navigateToProfile(comment.userId),
+                    child: Text(
+                      comment.authorName,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -810,8 +833,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 icon: _isSaved
                     ? CupertinoIcons.bookmark_fill
                     : CupertinoIcons.bookmark,
-                // Show the DB saveCount directly — no local +1 offset,
-                // since _isSaved is not yet backed by a real Supabase check.
                 label: _formatCount(_currentPost.saveCount),
                 color: _isSaved ? AppColors.primary : AppColors.textSecondary,
                 onTap: _toggleSave,
@@ -1130,7 +1151,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _wasEdited = true;
         });
       }
-      print('[SAVE] Saved post to collection $collectionId');
     } catch (e) {
       print('[SAVE TO COLLECTION ERROR] $e');
     } finally {

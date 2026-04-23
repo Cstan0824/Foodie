@@ -86,10 +86,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
           final fallbackUsername = await _buildUniqueUsername(fallbackName);
 
+          // Google stores avatar under 'avatar_url' or 'picture'
+          final avatarUrl =
+              (rawMeta?['avatar_url'] as String?) ??
+              (rawMeta?['picture'] as String?);
+
           await Supabase.instance.client.from('User').insert({
             'user_Id': user.id,
             'name': fallbackName,
             'username': fallbackUsername,
+            if (avatarUrl != null && avatarUrl.isNotEmpty)
+              'avatar_url': avatarUrl,
           });
           return true; // Is a new user needing profile completion
         }

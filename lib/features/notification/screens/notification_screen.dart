@@ -1,60 +1,141 @@
 import 'package:flutter/cupertino.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 
-class NotificationScreen extends StatelessWidget {
+// ─────────────────────────────────────────────
+// Lightweight notification model (matches DB schema)
+// ─────────────────────────────────────────────
+class _NotifItem {
+  final String id;
+  final String content;
+  final String? redirectTo;
+  final DateTime createdAt;
+  bool isRead;
+
+  _NotifItem({
+    required this.id,
+    required this.content,
+    this.redirectTo,
+    required this.createdAt,
+    required this.isRead,
+  });
+
+  factory _NotifItem.fromJson(Map<String, dynamic> j) => _NotifItem(
+        id: j['id'] as String,
+        content: (j['content'] as String?) ?? '',
+        redirectTo: j['redirect_To'] as String?,
+        createdAt: DateTime.parse(j['created_At'] as String),
+        isRead: (j['isRead'] as bool?) ?? false,
+      );
+
+  /// Infers notification type from the content text for badge icon.
+  String get inferredType {
+    final c = content.toLowerCase();
+    if (c.contains('liked') || c.contains('like')) return 'like';
+    if (c.contains('comment')) return 'comment';
+    if (c.contains('follow')) return 'follow';
+    return 'system';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────
+class NotificationScreen extends StatefulWidget {
   const NotificationScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Dummy notification data
-    final notifications = [
-      {
-        'type': 'like',
-        'user': 'Sarah Chen',
-        'avatar': 'https://i.pravatar.cc/150?img=1',
-        'time': '2h ago',
-        'content': 'liked your post "Best matcha in KL"',
-        'postImage': 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=200&auto=format&fit=crop',
-        'isRead': false,
-      },
-      {
-        'type': 'comment',
-        'user': 'Mike Wong',
-        'avatar': 'https://i.pravatar.cc/150?img=11',
-        'time': '5h ago',
-        'content': 'commented: "I need to try this place!"',
-        'postImage': 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=200&auto=format&fit=crop',
-        'isRead': false,
-      },
-      {
-        'type': 'follow',
-        'user': 'Emma Davis',
-        'avatar': 'https://i.pravatar.cc/150?img=5',
-        'time': '1d ago',
-        'content': 'started following you',
-        'postImage': null,
-        'isRead': true,
-      },
-      {
-        'type': 'like',
-        'user': 'Alex K.',
-        'avatar': 'https://i.pravatar.cc/150?img=8',
-        'time': '2d ago',
-        'content': 'liked your post "Hidden gem in PJ"',
-        'postImage': 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?q=80&w=200&auto=format&fit=crop',
-        'isRead': true,
-      },
-      {
-        'type': 'system',
-        'user': 'Taste Spot',
-        'avatar': null, // System icon
-        'time': '1w ago',
-        'content': 'Welcome to Taste Spot! Start discovering great food today.',
-        'postImage': null,
-        'isRead': true,
-      },
-    ];
+  State<NotificationScreen> createState() => _NotificationScreenState();
+}
 
+class _NotificationScreenState extends State<NotificationScreen> {
+  List<_NotifItem> _notifications = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
+      final response = await Supabase.instance.client
+          .from('Notification')
+          .select('id, content, redirect_To, created_At, isRead')
+          .eq('user_id', userId)
+          .order('created_At', ascending: false)
+          .limit(50);
+
+      final items = (response as List<dynamic>)
+          .map((e) => _NotifItem.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _notifications = items;
+          _isLoading = false;
+        });
+        // Mark all unread as read in the background
+        _markAllRead(userId);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _markAllRead(String userId) async {
+    try {
+      await Supabase.instance.client
+          .from('Notification')
+          .update({'isRead': true})
+          .eq('user_id', userId)
+          .eq('isRead', false);
+
+      // Reflect change locally without a reload
+      if (mounted) {
+        setState(() {
+          for (final n in _notifications) {
+            n.isRead = true;
+          }
+        });
+      }
+    } catch (_) {
+      // Non-critical — silently ignore
+    }
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().toUtc().difference(dt.toUtc());
+    if (diff.inSeconds < 60) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
+    if (diff.inDays < 365) return '${(diff.inDays / 30).floor()}mo ago';
+    return '${(diff.inDays / 365).floor()}y ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppColors.background,
       navigationBar: CupertinoNavigationBar(
@@ -73,24 +154,81 @@ class NotificationScreen extends StatelessWidget {
           color: AppColors.textPrimary,
           onPressed: () => Navigator.of(context).pop(),
         ),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: _loadNotifications,
+          child: const Icon(
+            CupertinoIcons.arrow_clockwise,
+            size: 20,
+            color: AppColors.textPrimary,
+          ),
+        ),
       ),
       child: SafeArea(
-        child: notifications.isEmpty
-            ? _buildEmptyState()
-            : ListView.separated(
-                physics: const BouncingScrollPhysics(),
-                itemCount: notifications.length,
-                separatorBuilder: (context, index) => Container(
-                  height: 0.5,
-                  color: AppColors.divider,
-                  margin: const EdgeInsets.only(left: 72), // Indent after avatar
-                ),
-                itemBuilder: (context, index) {
-                  final notif = notifications[index];
-                  return _buildNotificationTile(notif);
-                },
-              ),
+        child: _buildBody(),
       ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                CupertinoIcons.exclamationmark_circle,
+                size: 40,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Failed to load notifications',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              CupertinoButton(
+                onPressed: _loadNotifications,
+                child: const Text('Try again'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_notifications.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return ListView.separated(
+      physics: const BouncingScrollPhysics(),
+      itemCount: _notifications.length,
+      separatorBuilder: (_, __) => Container(
+        height: 0.5,
+        color: AppColors.divider,
+        margin: const EdgeInsets.only(left: 72),
+      ),
+      itemBuilder: (_, i) => _buildTile(_notifications[i]),
     );
   }
 
@@ -102,7 +240,7 @@ class NotificationScreen extends StatelessWidget {
           Container(
             width: 80,
             height: 80,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.surface,
               shape: BoxShape.circle,
             ),
@@ -136,41 +274,35 @@ class NotificationScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildNotificationTile(Map<String, dynamic> notif) {
-    final bool isRead = notif['isRead'] as bool;
-    final String type = notif['type'] as String;
-
+  Widget _buildTile(_NotifItem notif) {
     return Container(
-      color: isRead ? CupertinoColors.white : AppColors.primary.withAlpha(10),
+      color: notif.isRead
+          ? CupertinoColors.white
+          : AppColors.primary.withAlpha(10),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Avatar ──
+          // ── Icon badge ──
           Stack(
             children: [
               Container(
                 width: 44,
                 height: 44,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: AppColors.surface,
                   shape: BoxShape.circle,
-                  image: notif['avatar'] != null
-                      ? DecorationImage(
-                          image: NetworkImage(notif['avatar'] as String),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
                 ),
-                child: notif['avatar'] == null
-                    ? const Icon(CupertinoIcons.flame_fill, color: AppColors.primary)
-                    : null,
+                child: const Icon(
+                  CupertinoIcons.flame_fill,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
               ),
-              // Tiny badge icon for type
               Positioned(
                 bottom: -2,
                 right: -2,
-                child: _buildTypeBadge(type),
+                child: _buildTypeBadge(notif.inferredType),
               ),
             ],
           ),
@@ -181,28 +313,20 @@ class NotificationScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                      height: 1.3,
-                    ),
-                    children: [
-                      TextSpan(
-                        text: '${notif['user']} ',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      TextSpan(
-                        text: notif['content'] as String,
-                        style: const TextStyle(color: AppColors.textSecondary),
-                      ),
-                    ],
+                Text(
+                  notif.content,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                    fontWeight: notif.isRead
+                        ? FontWeight.normal
+                        : FontWeight.w600,
+                    height: 1.3,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  notif['time'] as String,
+                  _timeAgo(notif.createdAt),
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.textLight,
@@ -211,35 +335,20 @@ class NotificationScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 12),
 
-          // ── Right Side (Post Image or Follow Button) ──
-          if (notif['postImage'] != null)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.network(
-                notif['postImage'] as String,
-                width: 44,
-                height: 44,
-                fit: BoxFit.cover,
-              ),
-            )
-          else if (type == 'follow')
+          // ── Unread dot ──
+          if (!notif.isRead) ...[
+            const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(top: 4),
+              decoration: const BoxDecoration(
                 color: AppColors.primary,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Text(
-                'Follow',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: CupertinoColors.white,
-                ),
+                shape: BoxShape.circle,
               ),
             ),
+          ],
         ],
       ),
     );
@@ -253,15 +362,12 @@ class NotificationScreen extends StatelessWidget {
       case 'like':
         icon = CupertinoIcons.heart_fill;
         color = AppColors.primary;
-        break;
       case 'comment':
         icon = CupertinoIcons.chat_bubble_fill;
         color = CupertinoColors.activeBlue;
-        break;
       case 'follow':
         icon = CupertinoIcons.person_fill;
         color = CupertinoColors.activeGreen;
-        break;
       default:
         return const SizedBox.shrink();
     }

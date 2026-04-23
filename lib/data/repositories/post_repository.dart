@@ -88,6 +88,22 @@ class PostRepository {
         .toList();
   }
 
+  /// Fetches posts the user has archived (soft-deleted) — isRemoved = true.
+  Future<List<PostModel>> fetchArchivedPosts({
+    required String userId,
+  }) async {
+    final response = await SupabaseService.client
+        .from('Post')
+        .select(publicPostSelect)
+        .eq('user_Id', userId)
+        .eq('isRemoved', true)
+        .order('created_At', ascending: false);
+
+    return (response as List<dynamic>)
+        .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
   /// Fetches public posts liked by a specific user.
   Future<List<PostModel>> fetchLikedPosts({
     required String userId,

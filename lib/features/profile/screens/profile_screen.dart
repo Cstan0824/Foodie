@@ -26,6 +26,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   Profile? _userProfile;
   List<PostModel> _myPosts = [];
   List<PostModel> _likedPosts = [];
+  List<PostModel> _archivedPosts = [];
   int _followersCount = 0;
   int _followingCount = 0;
 
@@ -33,7 +34,8 @@ class ProfileScreenState extends State<ProfileScreen> {
   bool _isFollowingUser = false;
   bool _isFollowUpdating = false;
 
-  static const _tabs = ['Notes', 'Liked'];
+  List<String> get _tabs =>
+      _isCurrentUser ? ['Posts', 'Archive', 'Liked'] : ['Posts', 'Liked'];
   String get _avatarUrl =>
       'https://i.pravatar.cc/200?u=${_userProfile?.userId ?? "guest"}';
 
@@ -89,6 +91,12 @@ class ProfileScreenState extends State<ProfileScreen> {
       _likedPosts = await PostRepository.instance.fetchLikedPosts(
         userId: targetUserId,
       );
+
+      if (_isCurrentUser) {
+        _archivedPosts = await PostRepository.instance.fetchArchivedPosts(
+          userId: targetUserId,
+        );
+      }
     } catch (e) {
       print('Error fetching profile data: $e');
     } finally {
@@ -162,11 +170,22 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   List<PostModel> get _currentPosts {
-    switch (_selectedTab) {
-      case 1:
-        return _likedPosts;
-      default:
-        return _myPosts;
+    if (_isCurrentUser) {
+      switch (_selectedTab) {
+        case 1:
+          return _archivedPosts;
+        case 2:
+          return _likedPosts;
+        default:
+          return _myPosts;
+      }
+    } else {
+      switch (_selectedTab) {
+        case 1:
+          return _likedPosts;
+        default:
+          return _myPosts;
+      }
     }
   }
 
@@ -180,35 +199,42 @@ class ProfileScreenState extends State<ProfileScreen> {
         transitionBetweenRoutes: false,
         backgroundColor: AppColors.background,
         border: null, // Removes bottom border to flow smoothly into header
-        leading: _isCurrentUser
-            ? CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () => _showAccountsSheet(context),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _userProfile?.username ?? 'user',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.4,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      CupertinoIcons.chevron_down,
-                      size: 14,
-                      color: AppColors.textPrimary,
-                    ),
-                  ],
-                ),
-              )
-            : CupertinoNavigationBarBackButton(
+        leading: ModalRoute.of(context)?.canPop == true
+            // Pushed on stack (from post detail, comment, etc.) → always show back
+            ? CupertinoNavigationBarBackButton(
                 color: AppColors.textPrimary,
                 onPressed: () => Navigator.of(context).pop(),
-              ),
+              )
+            // Root profile tab → show username dropdown for own, back for others
+            : _isCurrentUser
+                ? CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () => _showAccountsSheet(context),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _userProfile?.username ?? 'user',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.4,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          CupertinoIcons.chevron_down,
+                          size: 14,
+                          color: AppColors.textPrimary,
+                        ),
+                      ],
+                    ),
+                  )
+                : CupertinoNavigationBarBackButton(
+                    color: AppColors.textPrimary,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
         trailing: _isCurrentUser
             ? CupertinoButton(
                 padding: EdgeInsets.zero,
@@ -454,9 +480,21 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
 
     final posts = _currentPosts;
-    final emptyMessage = _selectedTab == 1
-        ? 'No Liked Post yet'
-        : 'No notes yet';
+    final String emptyMessage;
+    if (_isCurrentUser) {
+      switch (_selectedTab) {
+        case 1:
+          emptyMessage = 'No archived posts';
+          break;
+        case 2:
+          emptyMessage = 'No liked posts yet';
+          break;
+        default:
+          emptyMessage = 'No posts yet';
+      }
+    } else {
+      emptyMessage = _selectedTab == 1 ? 'No liked posts yet' : 'No posts yet';
+    }
 
     if (posts.isEmpty) {
       return SliverFillRemaining(
