@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/material.dart' show Icons, Colors;
 import 'package:flutter/gestures.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
@@ -8,7 +8,7 @@ import 'package:taste_spot/features/auth/screens/complete_profile_screen.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:taste_spot/main.dart'; // To navigate to home for testing
+import 'package:taste_spot/main.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -21,11 +21,18 @@ class _SignupScreenState extends State<SignupScreen> {
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _usernameFocus = FocusNode();
+  final _emailFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  
   bool _agreeToTerms = false;
   bool _isLoading = false;
   bool _isCheckingUsername = false;
   bool? _isUsernameAvailable;
   Timer? _usernameDebounce;
+  bool _isCheckingEmail = false;
+  bool? _isEmailTaken;
+  Timer? _emailDebounce;
   late final StreamSubscription<AuthState> _authStateSubscription;
 
   late final AuthRepository _authRepo = AuthRepository(
@@ -35,7 +42,10 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   void initState() {
     super.initState();
-    // Listen to authentication state changes (e.g. returning from deep link)
+    _usernameFocus.addListener(() => setState(() {}));
+    _emailFocus.addListener(() => setState(() {}));
+    _passwordFocus.addListener(() => setState(() {}));
+    
     _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange
         .listen((data) async {
           final session = data.session;
@@ -44,7 +54,6 @@ class _SignupScreenState extends State<SignupScreen> {
           if (session != null &&
               (event == AuthChangeEvent.signedIn ||
                   event == AuthChangeEvent.initialSession)) {
-            // Ensure profile exists for OAuth users
             final isNewUser = await _ensureProfileExists(session.user);
 
             if (!mounted) return;
@@ -77,7 +86,6 @@ class _SignupScreenState extends State<SignupScreen> {
         final provider = user.appMetadata['provider'];
 
         if (provider == 'google' || provider == 'apple') {
-          // Create an empty or partial profile for OAuth, user must complete it
           final rawMeta = user.userMetadata;
 
           final fallbackName =
@@ -89,15 +97,21 @@ class _SignupScreenState extends State<SignupScreen> {
 
           final fallbackUsername = await _buildUniqueUsername(fallbackName);
 
+          final avatarUrl =
+              (rawMeta?['avatar_url'] as String?) ??
+              (rawMeta?['picture'] as String?);
+
           await Supabase.instance.client.from('User').insert({
             'user_Id': user.id,
             'name': fallbackName,
             'username': fallbackUsername,
+            if (avatarUrl != null && avatarUrl.isNotEmpty)
+              'avatar_url': avatarUrl,
           });
-          return true; // Is a new user needing profile completion
+          return true;
         }
       }
-      return false; // Existing user
+      return false;
     } catch (e) {
       print('Error ensuring OAuth profile exists: $e');
       return false;
@@ -108,9 +122,13 @@ class _SignupScreenState extends State<SignupScreen> {
   void dispose() {
     _authStateSubscription.cancel();
     _usernameDebounce?.cancel();
+    _emailDebounce?.cancel();
     _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _usernameFocus.dispose();
+    _emailFocus.dispose();
+    _passwordFocus.dispose();
     super.dispose();
   }
 
@@ -164,6 +182,47 @@ class _SignupScreenState extends State<SignupScreen> {
         setState(() {
           _isCheckingUsername = false;
           _isUsernameAvailable = null;
+        });
+      }
+    });
+  }
+
+  void _onEmailChanged(String value) {
+    _emailDebounce?.cancel();
+
+    final email = value.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      if (mounted) {
+        setState(() {
+          _isCheckingEmail = false;
+          _isEmailTaken = null;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isCheckingEmail = true;
+        _isEmailTaken = null;
+      });
+    }
+
+    _emailDebounce = Timer(const Duration(milliseconds: 700), () async {
+      try {
+        final taken = await _authRepo.isEmailRegistered(email);
+        if (!mounted) return;
+        if (_emailController.text.trim() != email) return;
+        setState(() {
+          _isCheckingEmail = false;
+          _isEmailTaken = taken;
+        });
+      } catch (_) {
+        if (!mounted) return;
+        if (_emailController.text.trim() != email) return;
+        setState(() {
+          _isCheckingEmail = false;
+          _isEmailTaken = null;
         });
       }
     });
@@ -229,22 +288,29 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
+    try {
+      final emailTaken = await _authRepo.isEmailRegistered(email);
+      if (emailTaken) {
+        if (mounted) setState(() => _isEmailTaken = true);
+        _showAlert(
+          'Email Already Registered',
+          'This email is already linked to an account. Please log in or use a different email.',
+        );
+        return;
+      }
+    } catch (_) {}
+
     setState(() => _isLoading = true);
 
     try {
       final response = await _authRepo.signUp(email: email, password: password, name: name);
-      
-      // Check if we should skip OTP verification.
-      // 1. If response.session != null, Supabase already logged them in (Confirm Email is OFF).
-      // 2. Or if the environment variable overrides it.
       final bool disableAuth = dotenv.env['disableAuthForSignUp'] == 'true';
-      
+
       if (response.session == null && !disableAuth) {
         if (mounted) {
           _showOtpDialog(email);
         }
       } else if (disableAuth) {
-        // Just quietly finish. The user is created in Supabase.
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             CupertinoPageRoute(builder: (_) => const MainShell()),
@@ -313,14 +379,13 @@ class _SignupScreenState extends State<SignupScreen> {
                     : () async {
                         final token = otpController.text.trim();
                         if (token.length != 6) return;
-                        
+
                         setStateDialog(() => isVerifying = true);
                         try {
                           await _authRepo.verifySignUpOtp(
                             email: email,
                             token: token,
                           );
-                          // Success! The auth state listener will trigger and navigate automatically.
                           if (mounted) {
                             Navigator.pop(context);
                           }
@@ -348,8 +413,7 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _signUpWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      await _authRepo
-          .signInWithGoogle(); // Sign in handles sign up automatically for OAuth
+      await _authRepo.signInWithGoogle();
     } catch (e) {
       if (!mounted) return;
       _showAlert('Error', 'An error occurred during Google Sign Up.');
@@ -361,8 +425,7 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _signUpWithApple() async {
     setState(() => _isLoading = true);
     try {
-      await _authRepo
-          .signInWithApple(); // Sign in handles sign up automatically for OAuth
+      await _authRepo.signInWithApple();
     } catch (e) {
       if (!mounted) return;
       _showAlert('Error', 'An error occurred during Apple Sign Up.');
@@ -390,343 +453,331 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      backgroundColor: AppColors.cardBackground,
+      backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: AppColors.cardBackground,
+        backgroundColor: CupertinoColors.white,
         border: null,
         leading: CupertinoNavigationBarBackButton(
           color: AppColors.textPrimary,
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
+      child: Stack(
+        children: [
+          // Background accents
+          Positioned(
+            top: -50,
+            left: -50,
+            child: Container(
+              width: 180, height: 180,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.primary.withAlpha(10)),
+            ),
+          ),
 
-              // ── Header ──
-              const Text(
-                'Create Account',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Join the community and share your taste!',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textSecondary,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 48),
-
-              // ── Input Fields ──
-              _buildModernTextField(
-                controller: _usernameController,
-                placeholder: 'Username',
-                icon: CupertinoIcons.person_crop_circle,
-                onChanged: _onUsernameChanged,
-              ),
-              if (_isCheckingUsername)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8, left: 4),
-                  child: Text(
-                    'Checking username...',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                )
-              else if (_isUsernameAvailable == false)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8, left: 4),
-                  child: Text(
-                    'Username is already taken',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoColors.systemRed,
-                    ),
-                  ),
-                )
-              else if (_isUsernameAvailable == true)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8, left: 4),
-                  child: Text(
-                    'Username is available',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: CupertinoColors.activeGreen,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              _buildModernTextField(
-                controller: _emailController,
-                placeholder: 'Email',
-                icon: CupertinoIcons.mail,
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 16),
-              _buildModernTextField(
-                controller: _passwordController,
-                placeholder: 'Password',
-                icon: CupertinoIcons.lock,
-                obscureText: true,
-              ),
-              const SizedBox(height: 40),
-
-              // ── Sign Up Button ──
-              GestureDetector(
-                onTap: _isLoading ? null : _signup,
-                child: Container(
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(25),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withAlpha(51),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: _isLoading
-                        ? const CupertinoActivityIndicator(
-                            color: CupertinoColors.white,
-                          )
-                        : const Text(
-                            'Sign Up',
-                            style: TextStyle(
-                              color: CupertinoColors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 40),
-
-              // ── Terms & Conditions Checkbox ──
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 28.0),
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const SizedBox(height: 10),
+                  
+                  const Text(
+                    'Join Taste Spot',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Start your flavor journey today.',
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 48),
+
+                  // Input Fields
+                  _buildModernTextField(
+                    controller: _usernameController,
+                    focusNode: _usernameFocus,
+                    placeholder: 'Username',
+                    icon: CupertinoIcons.person_crop_circle_fill,
+                    onChanged: _onUsernameChanged,
+                  ),
+                  _buildValidationLabel(
+                    isChecking: _isCheckingUsername,
+                    available: _isUsernameAvailable,
+                    takenMsg: 'Username is taken',
+                    availMsg: 'Username is available',
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  _buildModernTextField(
+                    controller: _emailController,
+                    focusNode: _emailFocus,
+                    placeholder: 'Email address',
+                    icon: CupertinoIcons.mail_solid,
+                    keyboardType: TextInputType.emailAddress,
+                    onChanged: _onEmailChanged,
+                  ),
+                  _buildValidationLabel(
+                    isChecking: _isCheckingEmail,
+                    available: _isEmailTaken == null ? null : !_isEmailTaken!,
+                    takenMsg: 'Email is already registered',
+                    availMsg: 'Email is valid',
+                  ),
+
+                  const SizedBox(height: 16),
+                  _buildModernTextField(
+                    controller: _passwordController,
+                    focusNode: _passwordFocus,
+                    placeholder: 'Password',
+                    icon: CupertinoIcons.lock_fill,
+                    obscureText: true,
+                  ),
+                  
+                  const SizedBox(height: 32),
+
+                  // Terms row
                   GestureDetector(
                     onTap: () => setState(() => _agreeToTerms = !_agreeToTerms),
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 2, right: 10),
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: _agreeToTerms ? AppColors.primary : null,
-                        border: Border.all(
-                          color: _agreeToTerms
-                              ? AppColors.primary
-                              : AppColors.textLight,
-                          width: 1.5,
-                        ),
-                        shape: BoxShape.circle,
-                      ),
-                      child: _agreeToTerms
-                          ? const Icon(
-                              CupertinoIcons.checkmark_alt,
-                              size: 12,
-                              color: CupertinoColors.white,
-                            )
-                          : null,
-                    ),
-                  ),
-                  Expanded(
-                    child: RichText(
-                      text: TextSpan(
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          height: 1.4,
-                        ),
-                        children: [
-                          const TextSpan(
-                            text: 'By signing up, you agree to our ',
-                          ),
-                          TextSpan(
-                            text: 'Terms of Service',
-                            style: const TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            recognizer: TapGestureRecognizer()..onTap = () {},
-                          ),
-                          const TextSpan(text: ' and '),
-                          TextSpan(
-                            text: 'Privacy Policy',
-                            style: const TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            recognizer: TapGestureRecognizer()..onTap = () {},
-                          ),
-                          const TextSpan(text: '.'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 40),
-
-              // ── Social Login Section ──
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(height: 1, color: AppColors.divider),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'Or sign up with',
-                      style: TextStyle(
-                        color: AppColors.textLight,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Container(height: 1, color: AppColors.divider),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildSocialIconButton(
-                    child: const Text(
-                      'G',
-                      style: TextStyle(
-                        color: Color(0xFF4285F4),
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    onTap: _isLoading ? () {} : _signUpWithGoogle,
-                  ),
-                  const SizedBox(width: 24),
-                  _buildSocialIconButton(
-                    child: const Icon(
-                      Icons.apple,
-                      color: CupertinoColors.black,
-                      size: 28,
-                    ),
-                    onTap: _isLoading ? () {} : _signUpWithApple,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 40),
-
-              // ── Have an account? ──
-              Center(
-                child: GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: RichText(
-                    text: const TextSpan(
-                      text: "Already have an account? ",
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
+                    behavior: HitTestBehavior.opaque,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextSpan(
-                          text: 'Log In',
-                          style: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
+                        Container(
+                          margin: const EdgeInsets.only(top: 2, right: 12),
+                          width: 20, height: 20,
+                          decoration: BoxDecoration(
+                            color: _agreeToTerms ? AppColors.primary : AppColors.surface,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: _agreeToTerms ? AppColors.primary : AppColors.divider, width: 1.5),
+                          ),
+                          child: _agreeToTerms
+                              ? const Icon(CupertinoIcons.checkmark_alt, size: 14, color: CupertinoColors.white)
+                              : null,
+                        ),
+                        Expanded(
+                          child: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
+                              children: [
+                                const TextSpan(text: 'I agree to the '),
+                                TextSpan(
+                                  text: 'Terms of Service',
+                                  style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+                                  recognizer: TapGestureRecognizer()..onTap = () {},
+                                ),
+                                const TextSpan(text: ' & '),
+                                TextSpan(
+                                  text: 'Privacy Policy',
+                                  style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+                                  recognizer: TapGestureRecognizer()..onTap = () {},
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
+
+                  const SizedBox(height: 32),
+
+                  // Signup Button
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: _isLoading ? null : _signup,
+                    child: Container(
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(27),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.primary.withAlpha(60),
+                            blurRadius: 15,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: _isLoading
+                            ? const CupertinoActivityIndicator(color: CupertinoColors.white)
+                            : const Text(
+                                'Create Account',
+                                style: TextStyle(
+                                  color: CupertinoColors.white,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 48),
+
+                  // Social Login
+                  Row(
+                    children: [
+                      Expanded(child: Container(height: 1, color: AppColors.divider)),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: Text('Sign up with', style: TextStyle(color: AppColors.textLight, fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                      Expanded(child: Container(height: 1, color: AppColors.divider)),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildSocialButton(
+                        icon: Icons.g_mobiledata,
+                        color: const Color(0xFF4285F4),
+                        size: 40,
+                        onTap: _isLoading ? () {} : _signUpWithGoogle,
+                      ),
+                      const SizedBox(width: 24),
+                      _buildSocialButton(
+                        icon: Icons.apple,
+                        color: CupertinoColors.black,
+                        size: 28,
+                        onTap: _isLoading ? () {} : _signUpWithApple,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 48),
+                  
+                  Center(
+                    child: CupertinoButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: RichText(
+                        text: const TextSpan(
+                          text: "Already a member? ",
+                          style: TextStyle(fontSize: 15, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                          children: [
+                            TextSpan(
+                              text: 'Sign in',
+                              style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
               ),
-              const SizedBox(height: 40),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  // ── Helper UI Widgets ──
-
   Widget _buildModernTextField({
     required TextEditingController controller,
+    required FocusNode focusNode,
     required String placeholder,
     required IconData icon,
     bool obscureText = false,
     TextInputType? keyboardType,
     ValueChanged<String>? onChanged,
   }) {
-    return Container(
-      height: 50,
+    final bool hasFocus = focusNode.hasFocus;
+    
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      height: 56,
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F7F9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider, width: 0.5),
+        color: hasFocus ? CupertinoColors.white : AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasFocus ? AppColors.primary : Colors.transparent,
+          width: 1.5,
+        ),
+        boxShadow: hasFocus ? [
+          BoxShadow(color: AppColors.primary.withAlpha(15), blurRadius: 10, offset: const Offset(0, 4)),
+        ] : [],
       ),
       child: CupertinoTextField(
         controller: controller,
+        focusNode: focusNode,
         placeholder: placeholder,
         obscureText: obscureText,
         keyboardType: keyboardType,
         onChanged: onChanged,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
-        placeholderStyle: const TextStyle(
-          fontSize: 15,
-          color: AppColors.textLight,
-        ),
+        style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+        placeholderStyle: const TextStyle(fontSize: 16, color: AppColors.textLight, fontWeight: FontWeight.w500),
         prefix: Padding(
-          padding: const EdgeInsets.only(left: 16.0),
-          child: Icon(icon, color: AppColors.textLight, size: 20),
+          padding: const EdgeInsets.only(left: 18.0),
+          child: Icon(icon, color: hasFocus ? AppColors.primary : AppColors.textLight, size: 20),
         ),
-        decoration: null, // Clear internal decoration
+        decoration: null,
       ),
     );
   }
 
-  Widget _buildSocialIconButton({
-    required Widget child,
+  Widget _buildValidationLabel({
+    required bool isChecking,
+    required bool? available,
+    required String takenMsg,
+    required String availMsg,
+  }) {
+    if (isChecking) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 6, left: 16),
+        child: Text('Checking availability...', style: TextStyle(fontSize: 11, color: AppColors.textLight, fontWeight: FontWeight.w500)),
+      );
+    }
+    if (available == false) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 6, left: 16),
+        child: Text(takenMsg, style: const TextStyle(fontSize: 11, color: CupertinoColors.systemRed, fontWeight: FontWeight.w600)),
+      );
+    }
+    if (available == true) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 6, left: 16),
+        child: Text(availMsg, style: const TextStyle(fontSize: 11, color: CupertinoColors.activeGreen, fontWeight: FontWeight.w600)),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildSocialButton({
+    required IconData icon,
+    required Color color,
+    double size = 30,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 50,
-        height: 50,
+        width: 64,
+        height: 64,
         decoration: BoxDecoration(
           color: CupertinoColors.white,
           shape: BoxShape.circle,
           boxShadow: [
-            BoxShadow(
-              color: AppColors.textLight.withAlpha(25),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
+            BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 15, offset: const Offset(0, 5)),
           ],
           border: Border.all(color: AppColors.divider, width: 0.5),
         ),
-        child: Center(child: child),
+        child: Center(child: Icon(icon, color: color, size: size)),
       ),
     );
   }

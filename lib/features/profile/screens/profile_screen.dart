@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Colors;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/profile_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
@@ -10,6 +12,8 @@ import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/profile/screens/connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:flutter/services.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
@@ -22,18 +26,22 @@ class ProfileScreen extends StatefulWidget {
 class ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
   bool _isLoading = true;
+  bool _isAccountsMenuOpen = false;
+  bool _isSettingsMenuOpen = false;
 
   Profile? _userProfile;
   List<PostModel> _myPosts = [];
   List<PostModel> _likedPosts = [];
+  List<PostModel> _archivedPosts = [];
   int _followersCount = 0;
   int _followingCount = 0;
 
-  // Follow state for viewing another user's profile
   bool _isFollowingUser = false;
   bool _isFollowUpdating = false;
 
-  static const _tabs = ['Notes', 'Liked'];
+  List<String> get _tabs =>
+      _isCurrentUser ? ['Posts', 'Archived', 'Liked'] : ['Posts', 'Liked'];
+
   String get _avatarUrl =>
       'https://i.pravatar.cc/200?u=${_userProfile?.userId ?? "guest"}';
 
@@ -41,6 +49,15 @@ class ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _fetchProfileData();
+  }
+
+  @override
+  void dispose() {
+    _myPosts.clear();
+    _likedPosts.clear();
+    _archivedPosts.clear();
+    _userProfile = null;
+    super.dispose();
   }
 
   bool get _isCurrentUser {
@@ -75,7 +92,6 @@ class ProfileScreenState extends State<ProfileScreen> {
       _followersCount = await profileRepo.getFollowersCount(targetUserId);
       _followingCount = await profileRepo.getFollowingCount(targetUserId);
 
-      // Check follow status when viewing another user's profile
       if (!_isCurrentUser) {
         final currentUserId = currentUser?.id;
         if (currentUserId != null) {
@@ -89,6 +105,12 @@ class ProfileScreenState extends State<ProfileScreen> {
       _likedPosts = await PostRepository.instance.fetchLikedPosts(
         userId: targetUserId,
       );
+
+      if (_isCurrentUser) {
+        _archivedPosts = await PostRepository.instance.fetchArchivedPosts(
+          userId: targetUserId,
+        );
+      }
     } catch (e) {
       print('Error fetching profile data: $e');
     } finally {
@@ -112,7 +134,6 @@ class ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _isFollowUpdating = true;
       _isFollowingUser = nextState;
-      // Optimistically update the follower count shown on this profile
       _followersCount = (_followersCount + (nextState ? 1 : -1)).clamp(0, 99999999);
     });
 
@@ -124,30 +145,41 @@ class ProfileScreenState extends State<ProfileScreen> {
         isFollowing: nextState,
       );
     } catch (e) {
-      print('[PROFILE FOLLOW ERROR] $e');
-      // Revert optimistic updates on failure
       if (mounted) {
         setState(() {
           _isFollowingUser = !nextState;
           _followersCount = (_followersCount + (nextState ? -1 : 1)).clamp(0, 99999999);
         });
-        showCupertinoDialog(
-          context: context,
-          builder: (_) => CupertinoAlertDialog(
-            title: const Text('Could not update follow'),
-            content: const Text('Something went wrong. Please try again.'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('OK'),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
       }
     } finally {
       if (mounted) setState(() => _isFollowUpdating = false);
     }
+  }
+
+  void _shareProfile() {
+    final userId = _userProfile?.userId;
+    if (userId == null) return;
+    
+    final String deepLink = 'io.supabase.tastespot://profile/$userId';
+    
+    Share.share(
+      'Check out my food journey on Taste Spot!\n$deepLink',
+      subject: 'Taste Spot Profile',
+    );
+  }
+
+  void _copyProfileLink() {
+    final userId = _userProfile?.userId;
+    if (userId == null) return;
+    
+    final String deepLink = 'io.supabase.tastespot://profile/$userId';
+    
+    Clipboard.setData(ClipboardData(text: deepLink));
+    
+    // Close the menu.
+    setState(() {
+      _isSettingsMenuOpen = false;
+    });
   }
 
   String _formatCount(int count) {
@@ -156,462 +188,656 @@ class ProfileScreenState extends State<ProfileScreen> {
     return count.toString();
   }
 
-  String? get _profileEmail {
-    if (!_isCurrentUser) return null;
-    return Supabase.instance.client.auth.currentUser?.email;
-  }
-
   List<PostModel> get _currentPosts {
-    switch (_selectedTab) {
-      case 1:
-        return _likedPosts;
-      default:
-        return _myPosts;
+    if (_isCurrentUser) {
+      switch (_selectedTab) {
+        case 1:
+          return _archivedPosts;
+        case 2:
+          return _likedPosts;
+        default:
+          return _myPosts;
+      }
+    } else {
+      switch (_selectedTab) {
+        case 1:
+          return _likedPosts;
+        default:
+          return _myPosts;
+      }
     }
   }
 
-  int get _notesCount => _myPosts.length;
-
   @override
   Widget build(BuildContext context) {
+    final bool anyMenuOpen = _isAccountsMenuOpen || _isSettingsMenuOpen;
+
     return CupertinoPageScaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
-        backgroundColor: AppColors.background,
-        border: null, // Removes bottom border to flow smoothly into header
-        leading: _isCurrentUser
-            ? CupertinoButton(
+        backgroundColor: CupertinoColors.white,
+        border: null,
+        middle: _buildUsernameHeader(),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _shareProfile,
+              child: const Icon(CupertinoIcons.share, color: AppColors.textPrimary, size: 22),
+            ),
+            if (_isCurrentUser)
+              CupertinoButton(
                 padding: EdgeInsets.zero,
-                onPressed: () => _showAccountsSheet(context),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _userProfile?.username ?? 'user',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.4,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      CupertinoIcons.chevron_down,
-                      size: 14,
-                      color: AppColors.textPrimary,
-                    ),
-                  ],
+                onPressed: () => setState(() => _isSettingsMenuOpen = !_isSettingsMenuOpen),
+                child: Icon(
+                  _isSettingsMenuOpen ? CupertinoIcons.xmark : CupertinoIcons.bars, 
+                  color: AppColors.textPrimary, 
+                  size: 24
                 ),
               )
-            : CupertinoNavigationBarBackButton(
-                color: AppColors.textPrimary,
-                onPressed: () => Navigator.of(context).pop(),
+            else
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () {},
+                child: const Icon(CupertinoIcons.ellipsis, color: AppColors.textPrimary, size: 24),
               ),
-        trailing: _isCurrentUser
-            ? CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () => _showSettingsSheet(context),
-                child: const Icon(
-                  CupertinoIcons.gear,
-                  color: AppColors.textPrimary,
-                  size: 24,
-                ),
-              )
-            : null,
+          ],
+        ),
       ),
       child: SafeArea(
         bottom: false,
-        child: _isLoading
-            ? const Center(child: CupertinoActivityIndicator())
-            : CustomScrollView(
-                physics: const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
-                slivers: [
-                  SliverToBoxAdapter(child: _buildProfileSection(context)),
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _TextTabBarDelegate(
-                      selectedTab: _selectedTab,
-                      onTabChanged: (i) => setState(() => _selectedTab = i),
-                      tabs: _tabs,
-                    ),
-                  ),
-                  _buildSliverGrid(context),
-                  const SliverToBoxAdapter(child: SizedBox(height: 90)),
-                ],
+        child: Stack(
+          children: [
+            CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
               ),
+              slivers: [
+                SliverToBoxAdapter(child: _buildProfileSection(context)),
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _TextTabBarDelegate(
+                    selectedTab: _selectedTab,
+                    onTabChanged: (i) => setState(() => _selectedTab = i),
+                    tabs: _tabs,
+                  ),
+                ),
+                _buildSliverGrid(context),
+                const SliverToBoxAdapter(child: SizedBox(height: 90)),
+              ],
+            ),
+
+            // Background dim overlay when any menu is open
+            if (anyMenuOpen)
+              GestureDetector(
+                onTap: () => setState(() {
+                  _isAccountsMenuOpen = false;
+                  _isSettingsMenuOpen = false;
+                }),
+                child: Container(
+                  color: Colors.black.withAlpha(20),
+                ),
+              ),
+
+            // ── Switch Account Dropdown ──
+            _buildAccountsDropdown(),
+
+            // ── More/Settings Dropdown ──
+            _buildSettingsDropdown(),
+          ],
+        ),
       ),
     );
   }
 
-  // ===================================================
-  // PROFILE SECTION — Clean Row-based Header
-  // ===================================================
-  Widget _buildProfileSection(BuildContext context) {
-    return Container(
-      color: AppColors.background,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildUsernameHeader() {
+    return GestureDetector(
+      onTap: _isCurrentUser ? () => setState(() => _isAccountsMenuOpen = !_isAccountsMenuOpen) : null,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(height: 8),
-          // Avatar + Stats Row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildAvatar(),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _StatItem(
-                          value: _formatCount(_notesCount),
-                          label: 'Notes',
-                          onTap: () => setState(() => _selectedTab = 0),
-                        ),
-                      ),
-                      Expanded(
-                        child: _StatItem(
-                          value: _formatCount(_followersCount),
-                          label: 'Followers',
-                          onTap: () {
-                            final targetUserId =
-                                widget.userId ??
-                                Supabase.instance.client.auth.currentUser?.id;
-                            if (targetUserId == null) return;
-                            Navigator.of(context).push(
-                              CupertinoPageRoute(
-                                builder: (_) => ConnectionsScreen(
-                                  initialTabIndex: 1,
-                                  userId: targetUserId,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: _StatItem(
-                          value: _formatCount(_followingCount),
-                          label: 'Following',
-                          onTap: () {
-                            final targetUserId =
-                                widget.userId ??
-                                Supabase.instance.client.auth.currentUser?.id;
-                            if (targetUserId == null) return;
-                            Navigator.of(context).push(
-                              CupertinoPageRoute(
-                                builder: (_) => ConnectionsScreen(
-                                  initialTabIndex: 0,
-                                  userId: targetUserId,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Name
           Text(
-            _userProfile?.name ?? 'User',
+            _userProfile?.username ?? 'user',
             style: const TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
               color: AppColors.textPrimary,
               letterSpacing: -0.3,
             ),
           ),
-          if ((_profileEmail ?? '').isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              _profileEmail!,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-                height: 1.25,
-              ),
+          if (_isCurrentUser) ...[
+            const SizedBox(width: 2),
+            Icon(
+              _isAccountsMenuOpen ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down, 
+              size: 12, 
+              color: AppColors.textPrimary
             ),
           ],
-          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
 
-          // Bio
-          Text(
-            _userProfile?.bio ?? 'No bio yet.',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-              height: 1.3,
+  Widget _buildAccountsDropdown() {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutBack,
+      top: _isAccountsMenuOpen ? 0 : -20,
+      left: 0, right: 0,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: _isAccountsMenuOpen ? 1.0 : 0.0,
+        child: IgnorePointer(
+          ignoring: !_isAccountsMenuOpen,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: CupertinoColors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 25, offset: const Offset(0, 10)),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildAccountOption(
+                  _userProfile?.username ?? 'user', 
+                  'https://i.pravatar.cc/200?u=1', 
+                  isSelected: true
+                ),
+                _buildAccountOption('foodie_master', 'https://i.pravatar.cc/200?u=2'),
+                _buildAccountOption('taste_tester', 'https://i.pravatar.cc/200?u=3'),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 0.5, color: AppColors.divider),
+                ),
+                _buildMenuAction(
+                  'Add Account', 
+                  CupertinoIcons.plus_circle, 
+                  onTap: () => setState(() => _isAccountsMenuOpen = false)
+                ),
+                _buildMenuAction(
+                  'Log Out', 
+                  CupertinoIcons.square_arrow_right, 
+                  isDestructive: true,
+                  onTap: () async {
+                    setState(() => _isAccountsMenuOpen = false);
+                    await Supabase.instance.client.auth.signOut();
+                    if (mounted) {
+                      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                        CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                        (route) => false,
+                      );
+                    }
+                  }
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
+        ),
+      ),
+    );
+  }
 
-          // Action buttons
+  Widget _buildAccountOption(String username, String avatar, {bool isSelected = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: isSelected ? AppColors.primary.withAlpha(15) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32, height: 32,
+            decoration: const BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+            child: ClipOval(child: Image.network(avatar, fit: BoxFit.cover)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              username, 
+              style: TextStyle(
+                fontSize: 14, 
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? AppColors.primary : AppColors.textPrimary
+              )
+            ),
+          ),
+          if (isSelected)
+            const Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppColors.primary),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsDropdown() {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutBack,
+      top: _isSettingsMenuOpen ? 0 : -20,
+      right: 16,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: _isSettingsMenuOpen ? 1.0 : 0.0,
+        child: IgnorePointer(
+          ignoring: !_isSettingsMenuOpen,
+          child: Container(
+            width: 200,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: CupertinoColors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 25, offset: const Offset(0, 10)),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {}),
+                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {}),
+                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {}),
+                _buildMenuAction('Copy Profile Link', CupertinoIcons.link, onTap: _copyProfileLink),
+                _buildMenuAction('Share Profile', CupertinoIcons.share, onTap: _shareProfile),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 0.5, color: AppColors.divider),
+                ),
+                _buildMenuAction('Logout', CupertinoIcons.power, isDestructive: true, onTap: () async {
+                   setState(() => _isSettingsMenuOpen = false);
+                   await Supabase.instance.client.auth.signOut();
+                   if (mounted) {
+                     Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                       CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                       (route) => false,
+                     );
+                   }
+                }),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuAction(String label, IconData icon, {bool isDestructive = false, required VoidCallback onTap}) {
+    final Color color = isDestructive ? CupertinoColors.systemRed : AppColors.textPrimary;
+    return GestureDetector(
+      onTap: () {
+        setState(() { _isAccountsMenuOpen = false; _isSettingsMenuOpen = false; });
+        onTap();
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color.withAlpha(200)),
+            const SizedBox(width: 12),
+            Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileSection(BuildContext context) {
+    if (_isLoading) return const _ProfileHeaderSkeleton();
+
+    return Container(
+      color: CupertinoColors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: Avatar & Identity Column
           Row(
             children: [
-              if (_isCurrentUser) ...[
-                Expanded(
-                  child: _PillButton(
-                    label: 'Edit Profile',
-                    filled: false,
-                    onTap: () async {
-                      if (_userProfile == null) return;
-                      await Navigator.of(context).push(
-                        CupertinoPageRoute(
-                          builder: (_) =>
-                              EditProfileScreen(profile: _userProfile!),
-                        ),
-                      );
-                      _fetchProfileData();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ] else ...[
-                Expanded(
-                  child: _PillButton(
-                    label: _isFollowUpdating
-                        ? '...'
-                        : (_isFollowingUser ? 'Following' : 'Follow'),
-                    filled: !_isFollowingUser,
-                    onTap: _toggleFollowUser,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
+              _buildAvatar(),
+              const SizedBox(width: 20),
               Expanded(
-                child: _PillButton(
-                  label: 'Share Profile',
-                  filled: false,
-                  onTap: () {},
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _userProfile?.name ?? 'User',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '@${_userProfile?.username ?? "user"}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textLight,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              _PillIconButton(
-                icon: CupertinoIcons.person_badge_plus,
-                onTap: () {},
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          
+          const SizedBox(height: 24),
+          
+          // Stats Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _StatItem(
+                value: _formatCount(_myPosts.length),
+                label: 'Posts',
+                onTap: () => setState(() => _selectedTab = 0),
+              ),
+              Container(width: 1, height: 16, color: AppColors.divider),
+              _StatItem(
+                value: _formatCount(_followersCount),
+                label: 'Followers',
+                onTap: () => _navigateToConnections(1),
+              ),
+              Container(width: 1, height: 16, color: AppColors.divider),
+              _StatItem(
+                value: _formatCount(_followingCount),
+                label: 'Following',
+                onTap: () => _navigateToConnections(0),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // Bio Section (Always Left Aligned)
+          Text(
+            _userProfile?.bio ?? 'Tap Edit Profile to add a bio.',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textPrimary,
+              height: 1.5,
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          _buildActionButtons(),
         ],
       ),
+    );
+  }
+
+  void _navigateToConnections(int initialTab) {
+    final targetUserId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+    if (targetUserId == null) return;
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ConnectionsScreen(
+          initialTabIndex: initialTab,
+          userId: targetUserId,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    return Row(
+      children: [
+        if (_isCurrentUser)
+          Expanded(
+            child: _ActionPill(
+              label: 'Edit Profile',
+              onTap: () async {
+                if (_userProfile == null) return;
+                await Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => EditProfileScreen(profile: _userProfile!),
+                  ),
+                );
+                _fetchProfileData(silent: true);
+              },
+            ),
+          )
+        else
+          Expanded(
+            child: _ActionPill(
+              label: _isFollowingUser ? 'Following' : 'Follow',
+              isPrimary: !_isFollowingUser,
+              isLoading: _isFollowUpdating,
+              onTap: _toggleFollowUser,
+            ),
+          ),
+      ],
     );
   }
 
   Widget _buildAvatar() {
     return Container(
-      width: 90,
-      height: 90,
-      decoration: const BoxDecoration(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.accent],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
       ),
-      padding: const EdgeInsets.all(2.5),
-      child: ClipOval(
-        child: Image.network(
-          _avatarUrl,
-          width: 85,
-          height: 85,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Container(
-            color: AppColors.surface,
-            child: const Icon(
-              CupertinoIcons.person_fill,
-              size: 44,
-              color: AppColors.textLight,
-            ),
+      child: Container(
+        width: 76,
+        height: 76,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.surface,
+        ),
+        child: ClipOval(
+          child: Image.network(
+            _avatarUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
           ),
         ),
       ),
     );
   }
 
-  // ===================================================
-  // 2-COLUMN CARD GRID — XHS style
-  // ===================================================
   Widget _buildSliverGrid(BuildContext context) {
-    if (_isLoading) {
-      return const SliverFillRemaining(
-        child: Center(child: CupertinoActivityIndicator()),
-      );
-    }
+    if (_isLoading) return const _GridSkeleton();
 
     final posts = _currentPosts;
-    final emptyMessage = _selectedTab == 1
-        ? 'No Liked Post yet'
-        : 'No notes yet';
-
     if (posts.isEmpty) {
       return SliverFillRemaining(
+        hasScrollBody: false,
         child: Center(
-          child: Text(
-            emptyMessage,
-            style: const TextStyle(
-              fontSize: 15,
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(CupertinoIcons.doc_text, size: 48, color: AppColors.surface),
+              const SizedBox(height: 12),
+              Text(
+                _selectedTab == 0 ? 'No posts yet' : 'No posts found',
+                style: const TextStyle(color: AppColors.textLight, fontSize: 14),
+              ),
+            ],
           ),
         ),
       );
     }
 
-    final leftCol = <PostModel>[];
-    final rightCol = <PostModel>[];
-    for (int i = 0; i < posts.length; i++) {
-      (i.isEven ? leftCol : rightCol).add(posts[i]);
-    }
-
-    PostCard _card(PostModel post) => PostCard(
-          post: post,
-          onTap: () async {
-            final result = await Navigator.of(context).push(
-              CupertinoPageRoute(
-                builder: (_) => PostDetailScreen(post: post),
-              ),
-            );
-            if (result == true) {
-              _fetchProfileData();
-            }
-          },
-        );
-
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+      padding: const EdgeInsets.all(10),
       sliver: SliverToBoxAdapter(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                children: leftCol
-                    .map((p) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _card(p),
-                        ))
-                    .toList(),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                children: rightCol
-                    .map((p) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _card(p),
-                        ))
-                    .toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ===================================================
-  // SHEETS
-  // ===================================================
-
-  void _showAccountsSheet(BuildContext context) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (BuildContext sheetContext) => CupertinoActionSheet(
-        title: const Text('Switch Account'),
-        actions: <CupertinoActionSheetAction>[
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(sheetContext);
-            },
-            child: Text('${_userProfile?.name ?? "User"} (Current)'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(sheetContext);
-            },
-            child: const Text('Add Account...'),
-          ),
-          CupertinoActionSheetAction(
-            isDestructiveAction: true,
-            onPressed: () async {
-              Navigator.pop(sheetContext); // Close the action sheet
-              try {
-                await Supabase.instance.client.auth.signOut();
-                if (mounted) {
-                  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                    CupertinoPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
-                  );
-                }
-              } catch (e) {
-                print('Error logging out: $e');
-              }
-            },
-            child: const Text('Log Out'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          isDefaultAction: true,
-          onPressed: () {
-            Navigator.pop(sheetContext);
+        child: _ProfileMasonryGrid(
+          posts: posts,
+          onPostTap: (post) async {
+            final result = await Navigator.of(context).push(
+              CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
+            );
+            if (result == true) _fetchProfileData(silent: true);
           },
-          child: const Text('Cancel'),
-        ),
-      ),
-    );
-  }
-
-  void _showSettingsSheet(BuildContext context) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (BuildContext context) => CupertinoActionSheet(
-        actions: <CupertinoActionSheetAction>[
-          CupertinoActionSheetAction(
-            onPressed: () {
-              // TODO: Open full settings page
-              Navigator.pop(context);
-            },
-            child: const Text('Settings'),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: const Text('Help & Support'),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          isDefaultAction: true,
-          onPressed: () {
-            Navigator.pop(context);
-          },
-          child: const Text('Cancel'),
         ),
       ),
     );
   }
 }
 
-// ===================================================
-// NATIVE MASONRY GRID (Mirrors home feed logic)
-// ===================================================
+class _ProfileHeaderSkeleton extends StatelessWidget {
+  const _ProfileHeaderSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SkeletonCircle(size: 80),
+              const SizedBox(width: 20),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Skeleton(width: 140, height: 22),
+                    SizedBox(height: 8),
+                    Skeleton(width: 80, height: 14),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(3, (index) => const Column(
+              children: [
+                Skeleton(width: 36, height: 20),
+                SizedBox(height: 6),
+                Skeleton(width: 54, height: 12),
+              ],
+            )),
+          ),
+          const SizedBox(height: 24),
+          const Skeleton(width: double.infinity, height: 14),
+          const SizedBox(height: 6),
+          const Skeleton(width: 220, height: 14),
+          const SizedBox(height: 24),
+          const Skeleton(height: 40, borderRadius: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _GridSkeleton extends StatelessWidget {
+  const _GridSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverPadding(
+      padding: const EdgeInsets.all(10),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 0.7,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(child: Skeleton(borderRadius: 12)),
+              const SizedBox(height: 8),
+              const Skeleton(width: 100, height: 14),
+              const SizedBox(height: 4),
+              Skeleton(width: 60, height: 12, borderRadius: 4),
+            ],
+          ),
+          childCount: 4,
+        ),
+      ),
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final String value;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _StatItem({required this.value, required this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionPill extends StatelessWidget {
+  final String label;
+  final bool isPrimary;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const _ActionPill({
+    required this.label,
+    this.isPrimary = false,
+    this.isLoading = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: isPrimary ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        alignment: Alignment.center,
+        child: isLoading
+            ? const CupertinoActivityIndicator(radius: 8)
+            : Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isPrimary ? CupertinoColors.white : AppColors.textPrimary,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
 class _ProfileMasonryGrid extends StatelessWidget {
   final List<PostModel> posts;
   final void Function(PostModel post) onPostTap;
@@ -622,7 +848,6 @@ class _ProfileMasonryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final leftCol = <PostModel>[];
     final rightCol = <PostModel>[];
-
     for (int i = 0; i < posts.length; i++) {
       (i.isEven ? leftCol : rightCol).add(posts[i]);
     }
@@ -632,27 +857,19 @@ class _ProfileMasonryGrid extends StatelessWidget {
       children: [
         Expanded(
           child: Column(
-            children: leftCol
-                .map(
-                  (p) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: PostCard(post: p, onTap: () => onPostTap(p)),
-                  ),
-                )
-                .toList(),
+            children: leftCol.map((p) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: PostCard(post: p, onTap: () => onPostTap(p)),
+            )).toList(),
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
-            children: rightCol
-                .map(
-                  (p) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: PostCard(post: p, onTap: () => onPostTap(p)),
-                  ),
-                )
-                .toList(),
+            children: rightCol.map((p) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: PostCard(post: p, onTap: () => onPostTap(p)),
+            )).toList(),
           ),
         ),
       ],
@@ -660,9 +877,6 @@ class _ProfileMasonryGrid extends StatelessWidget {
   }
 }
 
-// ===================================================
-// TEXT TAB BAR — XHS style with animated underline dot
-// ===================================================
 class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
   final int selectedTab;
   final ValueChanged<int> onTabChanged;
@@ -675,176 +889,67 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
   });
 
   @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       color: CupertinoColors.white,
       child: Column(
         children: [
-          Container(height: 0.5, color: AppColors.divider),
           Expanded(
             child: Row(
               children: List.generate(tabs.length, (i) {
                 final active = i == selectedTab;
                 return Expanded(
                   child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
                     onTap: () => onTabChanged(i),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          tabs[i],
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: active
-                                ? FontWeight.w700
-                                : FontWeight.w400,
-                            color: active
-                                ? AppColors.textPrimary
-                                : AppColors.textSecondary,
+                    behavior: HitTestBehavior.opaque,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            tabs[i],
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                              color: active ? AppColors.textPrimary : AppColors.textSecondary,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 5),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: active ? 20 : 0,
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(2),
+                          const SizedBox(height: 12),
+                          // The red indicator sits on the border
+                          Opacity(
+                            opacity: active ? 1.0 : 0.0,
+                            child: Container(
+                              width: 24,
+                              height: 2.5,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 );
               }),
             ),
           ),
+          Container(height: 1, color: AppColors.divider),
         ],
       ),
     );
   }
 
-  @override
-  double get maxExtent => 46;
-
-  @override
-  double get minExtent => 46;
-
-  @override
-  bool shouldRebuild(covariant _TextTabBarDelegate old) =>
-      old.selectedTab != selectedTab || old.tabs != tabs;
+  @override double get maxExtent => 44;
+  @override double get minExtent => 44;
+  @override bool shouldRebuild(covariant _TextTabBarDelegate old) => old.selectedTab != selectedTab || old.tabs != tabs;
 }
 
-// ===================================================
-// HELPER WIDGETS
-// ===================================================
-
-class _StatItem extends StatelessWidget {
-  final String value;
-  final String label;
-  final VoidCallback? onTap;
-
-  const _StatItem({required this.value, required this.label, this.onTap});
-
+class Divider extends StatelessWidget {
+  final double height;
+  final Color color;
+  const Divider({super.key, required this.height, required this.color});
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textPrimary,
-                letterSpacing: -0.4,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PillButton extends StatelessWidget {
-  final String label;
-  final bool filled;
-  final VoidCallback onTap;
-
-  const _PillButton({
-    required this.label,
-    required this.filled,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 36,
-        decoration: BoxDecoration(
-          color: filled ? AppColors.primary : CupertinoColors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: filled
-              ? null
-              : Border.all(color: AppColors.tabBarBorder, width: 1),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: filled ? CupertinoColors.white : AppColors.textPrimary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PillIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _PillIconButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: CupertinoColors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.tabBarBorder, width: 1),
-        ),
-        alignment: Alignment.center,
-        child: Icon(icon, size: 16, color: AppColors.textPrimary),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(height: height, color: color);
 }

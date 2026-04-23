@@ -35,6 +35,15 @@
                 <!-- Accepts URIs that begin with "io.supabase.tastespot://login-callback/" -->
                 <data android:scheme="io.supabase.tastespot" android:host="login-callback" />
             </intent-filter>
+
+            <!-- Deep linking for Profile sharing -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <!-- Accepts URIs that begin with "io.supabase.tastespot://profile/" -->
+                <data android:scheme="io.supabase.tastespot" android:host="profile" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

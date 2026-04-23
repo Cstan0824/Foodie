@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show Colors;
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/utils/hashtag_utils.dart';
+import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/comment_repository.dart';
@@ -11,7 +12,7 @@ import 'package:taste_spot/data/repositories/collection_repository.dart';
 import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/data/models/collection_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
+import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 import 'package:taste_spot/features/post/screens/report_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -31,6 +32,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isSaved = false;
   bool _isFollowing = false;
   bool _isFollowUpdating = false;
+
   int _currentImageIndex = 0;
   final _commentController = TextEditingController();
   final _scrollController = ScrollController();
@@ -112,7 +114,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) setState(() => _isFollowing = isFollowing);
     } catch (e) {
       print('[FOLLOW CHECK ERROR] $e');
-      // Leave _isFollowing = false (default) so the button is safe to tap
     }
   }
 
@@ -137,23 +138,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
       _wasEdited = true;
     } catch (e) {
-      print('[FOLLOW ERROR] $e');
-      // Revert the optimistic update
       if (mounted) {
         setState(() => _isFollowing = !nextState);
-        showCupertinoDialog(
-          context: context,
-          builder: (_) => CupertinoAlertDialog(
-            title: const Text('Could not update follow'),
-            content: const Text('Something went wrong. Please try again.'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('OK'),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
       }
     } finally {
       if (mounted) {
@@ -204,7 +190,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _currentPost.id,
         currentUserId,
       );
-      // Wait, if it's currently incorrectly showing '+1' locally due to initial DB sum plus the true literal, updating the model avoids this
       if (mounted) setState(() => _isLiked = isLiked);
     } catch (_) {}
   }
@@ -237,8 +222,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         newIsLiked,
       );
     } catch (e) {
-      print('[LIKE ERROR] $e');
-      // Revert on failure
       if (mounted) {
         setState(() {
           _isLiked = !_isLiked;
@@ -250,6 +233,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } finally {
       if (mounted) setState(() => _isLiking = false);
     }
+  }
+
+  void _navigateToProfile(String userId) {
+    if (userId.isEmpty) return;
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ProfileScreen(userId: userId),
+      ),
+    );
   }
 
   @override
@@ -267,7 +259,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
       if (mounted) setState(() => _comments = comments);
     } catch (_) {
-      // silently keep empty list on error
     } finally {
       if (mounted) setState(() => _isLoadingComments = false);
     }
@@ -343,19 +334,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Use a local variable so we can wrap with PopScope without shifting
-    // all indentation inside the scaffold.
     final scaffold = CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
       child: Stack(
         children: [
-          // ── Main scrollable content ──
           CustomScrollView(
             controller: _scrollController,
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // Moved profile section to the top (above image)
-              // Removed fixed top spacing since we're handling it in the header now
               SliverToBoxAdapter(child: _buildAuthorHeader()),
               SliverToBoxAdapter(child: _buildImageSection()),
               SliverToBoxAdapter(child: _buildCaption()),
@@ -369,17 +355,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ),
               SliverToBoxAdapter(child: _buildCommentsHeader()),
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (_, i) => _buildCommentTile(_comments[i]),
-                  childCount: _comments.length,
-                ),
-              ),
+              _isLoadingComments
+                  ? SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) => const _CommentSkeleton(),
+                        childCount: 3,
+                      ),
+                    )
+                  : SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) => _buildCommentTile(_comments[i]),
+                        childCount: _comments.length,
+                      ),
+                    ),
               const SliverToBoxAdapter(child: SizedBox(height: 80)),
             ],
           ),
-
-          // ── Fixed bottom action bar ──
           Positioned(
             bottom: 0,
             left: 0,
@@ -390,7 +381,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
     );
 
-    // PopScope ensures _wasEdited is forwarded even on iOS swipe-back gesture.
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -401,11 +391,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // AUTHOR HEADER (Moved from Image Overlay)
-  // ══════════════════════════════════════════
   Widget _buildAuthorHeader() {
-    // Add top padding to account for status bar since we moved it out of overlay
     return SafeArea(
       bottom: false,
       child: Padding(
@@ -422,54 +408,57 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 size: 26,
               ),
             ),
-            const SizedBox(width: 8), // Spacing between back button and avatar
-            // Avatar
-            ClipOval(
-              child: Image.network(
-                _currentPost.authorAvatar,
-                width: 36,
-                height: 36,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => Container(
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _navigateToProfile(_currentPost.userId),
+              child: ClipOval(
+                child: Image.network(
+                  _currentPost.authorAvatar,
                   width: 36,
                   height: 36,
-                  color: AppColors.surface,
-                  child: const Icon(
-                    CupertinoIcons.person_fill,
-                    color: AppColors.textLight,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    width: 36,
+                    height: 36,
+                    color: AppColors.surface,
+                    child: const Icon(
+                      CupertinoIcons.person_fill,
+                      color: AppColors.textLight,
+                    ),
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 10),
-            // Name + subtitle
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _currentPost.authorName,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+              child: GestureDetector(
+                onTap: () => _navigateToProfile(_currentPost.userId),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _currentPost.authorName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
-                  ),
-                  const Text(
-                    'Food Explorer 🍜',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textLight,
-                      fontWeight: FontWeight.w400,
+                    const Text(
+                      'Food Explorer 🍜',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textLight,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             if (_currentPost.userId !=
                 Supabase.instance.client.auth.currentUser?.id) ...[
-              // Follow button
               GestureDetector(
                 onTap: _toggleFollow,
                 child: AnimatedContainer(
@@ -520,9 +509,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // IMAGE CAROUSEL
-  // ══════════════════════════════════════════
   Widget _buildImageSection() {
     return Stack(
       children: [
@@ -535,7 +521,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               _images[i],
               fit: BoxFit.cover,
               width: double.infinity,
-              errorBuilder: (_, _, _) => Container(
+              errorBuilder: (context, error, stackTrace) => Container(
                 color: AppColors.surface,
                 child: const Center(
                   child: Icon(
@@ -548,8 +534,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         ),
-
-        // Image counter badge — only shown when there are multiple images
         if (_images.length > 1)
           Positioned(
             bottom: 12,
@@ -557,7 +541,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
+                color: Colors.black.withAlpha(115),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -570,10 +554,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
           ),
-
-        // Page dots
         Positioned(
-          bottom: 16, // Adjusted bottom padding since author row is gone
+          bottom: 16,
           left: 0,
           right: 0,
           child: Row(
@@ -588,7 +570,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 decoration: BoxDecoration(
                   color: _currentImageIndex == i
                       ? AppColors.primary
-                      : Colors.white.withValues(alpha: 0.6),
+                      : Colors.white.withAlpha(150),
                   borderRadius: BorderRadius.circular(3),
                 ),
               ),
@@ -599,9 +581,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // CAPTION
-  // ══════════════════════════════════════════
   Widget _buildCaption() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
@@ -651,7 +630,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.08),
+              color: AppColors.primary.withAlpha(20),
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
@@ -668,9 +647,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // RESTAURANT TAG
-  // ══════════════════════════════════════════
   Widget _buildRestaurantTag() {
     if (_currentPost.restaurantName.isEmpty) return const SizedBox.shrink();
     return Padding(
@@ -685,9 +661,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             if (await canLaunchUrl(url)) {
               await launchUrl(url, mode: LaunchMode.externalApplication);
             }
-          } catch (_) {
-            // Silently fail if unable to launch
-          }
+          } catch (_) {}
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -725,9 +699,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // TIMESTAMP
-  // ══════════════════════════════════════════
   Widget _buildTimestamp() {
     final timeStr = _timeAgo(_currentPost.createdAt);
     final label = _currentPost.location != null
@@ -742,36 +713,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // COMMENTS HEADER
-  // ══════════════════════════════════════════
   Widget _buildCommentsHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
-      child: Row(
-        children: [
-          Text(
-            _isLoadingComments
-                ? 'Loading comments…'
-                : '${_comments.length} Comments',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          if (_isLoadingComments) ...const [
-            SizedBox(width: 8),
-            CupertinoActivityIndicator(radius: 8),
-          ],
-        ],
+      child: Text(
+        _isLoadingComments
+            ? 'Loading comments…'
+            : '${_comments.length} Comments',
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary,
+        ),
       ),
     );
   }
 
-  // ══════════════════════════════════════════
-  // COMMENT TILE
-  // ══════════════════════════════════════════
   Widget _buildCommentTile(CommentModel comment) {
     return GestureDetector(
       onLongPress: () => _showCommentOptions(context, comment),
@@ -781,21 +738,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Initials avatar (no image URL available from DB)
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary.withValues(alpha: 0.12),
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                comment.initials,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+            GestureDetector(
+              onTap: () => _navigateToProfile(comment.userId),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.primary.withAlpha(30),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  comment.initials,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
             ),
@@ -804,12 +763,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    comment.authorName,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                  GestureDetector(
+                    onTap: () => _navigateToProfile(comment.userId),
+                    child: Text(
+                      comment.authorName,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -838,13 +800,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  // ══════════════════════════════════════════
-  // BOTTOM ACTION BAR
-  // ══════════════════════════════════════════
   Widget _buildBottomBar(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     return Container(
-      // Add SafeArea bottom padding if needed, or handle manually
       padding: EdgeInsets.fromLTRB(
         14,
         10,
@@ -858,7 +816,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: CupertinoColors.black.withAlpha(12),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),
@@ -866,7 +824,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
       child: Row(
         children: [
-          // Comment input — Takes available space
           Expanded(
             child: GestureDetector(
               onTap: () => _showCommentSheet(context),
@@ -885,10 +842,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
             ),
           ),
-
           const SizedBox(width: 16),
-
-          // Action icons - Grouped tighter
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -905,8 +859,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 icon: _isSaved
                     ? CupertinoIcons.bookmark_fill
                     : CupertinoIcons.bookmark,
-                // Show the DB saveCount directly — no local +1 offset,
-                // since _isSaved is not yet backed by a real Supabase check.
                 label: _formatCount(_currentPost.saveCount),
                 color: _isSaved ? AppColors.primary : AppColors.textSecondary,
                 onTap: _toggleSave,
@@ -942,7 +894,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // Current user avatar placeholder
                 ClipOval(
                   child: Image.network(
                     'https://i.pravatar.cc/200?img=12',
@@ -1019,7 +970,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Grab handle
               Container(
                 width: 40,
                 height: 5,
@@ -1034,78 +984,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: isOwner
-                      ? [
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.pencil,
-                            label: 'Edit',
-                            onTap: () async {
-                              Navigator.pop(context);
-                              final updatedPost = await Navigator.of(context)
-                                  .push<PostModel>(
-                                    CupertinoPageRoute(
-                                      builder: (_) =>
-                                          EditPostScreen(post: _currentPost),
-                                    ),
-                                  );
-                              if (updatedPost != null && mounted) {
-                                setState(() {
-                                  _currentPost = updatedPost;
-                                  _wasEdited = true;
-                                });
-                              }
-                            },
+                  children: [
+                    _buildHorizontalOption(
+                      icon: CupertinoIcons.share,
+                      label: 'Share',
+                      onTap: () => Navigator.pop(context),
+                    ),
+                    _buildHorizontalOption(
+                      icon: CupertinoIcons.link,
+                      label: 'Link',
+                      onTap: () => Navigator.pop(context),
+                    ),
+                    _buildHorizontalOption(
+                      icon: CupertinoIcons.flag,
+                      label: 'Report',
+                      isDestructive: true,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.of(context).push(
+                          CupertinoPageRoute(
+                            fullscreenDialog: true,
+                            builder: (_) =>
+                                ReportFormScreen(post: _currentPost),
                           ),
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.share,
-                            label: 'Share',
-                            onTap: () => Navigator.pop(context),
-                          ),
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.delete,
-                            label: 'Delete',
-                            isDestructive: true,
-                            onTap: () async {
-                              Navigator.pop(context);
-                              await _deletePost();
-                            },
-                          ),
-                        ]
-                      : [
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.bookmark,
-                            label: 'Save',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _showSaveSheet(context);
-                            },
-                          ),
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.share,
-                            label: 'Share',
-                            onTap: () => Navigator.pop(context),
-                          ),
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.link,
-                            label: 'Link',
-                            onTap: () => Navigator.pop(context),
-                          ),
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.flag,
-                            label: 'Report',
-                            isDestructive: true,
-                            onTap: () {
-                              Navigator.pop(context);
-                              Navigator.of(context).push(
-                                CupertinoPageRoute(
-                                  fullscreenDialog: true,
-                                  builder: (_) =>
-                                      ReportFormScreen(post: _currentPost),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1157,14 +1062,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       return const Center(child: CupertinoActivityIndicator());
                     }
                     if (snapshot.hasError) {
-                      return Center(
-                        child: Text(
-                          'Error loading collections',
-                          style: const TextStyle(
-                            color: CupertinoColors.systemRed,
-                          ),
-                        ),
-                      );
+                      return const Center(child: Text('Error loading collections'));
                     }
 
                     final collections =
@@ -1242,9 +1140,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _wasEdited = true;
         });
       }
-      print('[SAVE] Saved post to collection $collectionId');
     } catch (e) {
-      print('[SAVE TO COLLECTION ERROR] $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -1372,53 +1268,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  Future<void> _deletePost() async {
-    // Show confirming dialog
-    final confirm = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Delete Post?'),
-        content: const Text('This action cannot be undone.'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    try {
-      await PostRepository.instance.deletePost(_currentPost.id);
-      if (mounted) {
-        Navigator.pop(context, true); // true = returning from delete
-      }
-    } catch (e) {
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('Failed to delete'),
-            content: Text(e.toString()),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('OK'),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ],
-          ),
-        );
-      }
-    }
-  }
-
   Future<void> _deleteComment(CommentModel comment) async {
     final confirm = await showCupertinoDialog<bool>(
       context: context,
@@ -1449,24 +1298,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('Failed to delete'),
-            content: Text(e.toString()),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('OK'),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ],
-          ),
-        );
-      }
     }
   }
 }
+
 // ══════════════════════════════════════════
 // HELPER WIDGETS
 // ══════════════════════════════════════════
@@ -1494,6 +1329,91 @@ class _ActionButton extends StatelessWidget {
           Icon(icon, size: 24, color: color),
           const SizedBox(height: 2),
           Text(label, style: TextStyle(fontSize: 11, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════
+// SKELETONS
+// ══════════════════════════════════════════
+
+class _CommentSkeleton extends StatelessWidget {
+  const _CommentSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SkeletonCircle(size: 32),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Skeleton(width: 80, height: 12),
+                const SizedBox(height: 6),
+                const Skeleton(width: double.infinity, height: 14),
+                const SizedBox(height: 4),
+                const Skeleton(width: 150, height: 14),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PostDetailSkeleton extends StatelessWidget {
+  const _PostDetailSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                const SkeletonCircle(size: 36),
+                const SizedBox(width: 10),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Skeleton(width: 100, height: 14),
+                    SizedBox(height: 4),
+                    Skeleton(width: 60, height: 10),
+                  ],
+                ),
+                const Spacer(),
+                Skeleton(width: 70, height: 30, borderRadius: 15),
+              ],
+            ),
+          ),
+          const Skeleton(width: double.infinity, height: 460, borderRadius: 0),
+          const Padding(
+            padding: EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Skeleton(width: 200, height: 18),
+                SizedBox(height: 12),
+                Skeleton(width: double.infinity, height: 14),
+                SizedBox(height: 6),
+                Skeleton(width: double.infinity, height: 14),
+                SizedBox(height: 6),
+                Skeleton(width: 250, height: 14),
+              ],
+            ),
+          ),
         ],
       ),
     );

@@ -154,6 +154,8 @@ CREATE TABLE public.User (
   password text NOT NULL DEFAULT ''::text,
   role character varying NOT NULL DEFAULT 'user'::character varying CHECK (role::text = ANY (ARRAY['user'::character varying, 'admin'::character varying]::text[])),
   username text NOT NULL DEFAULT ''::text UNIQUE,
+  avatar_url text,
+  email text,
   CONSTRAINT User_pkey PRIMARY KEY (user_Id)
 );
 CREATE TABLE public.UserImage (

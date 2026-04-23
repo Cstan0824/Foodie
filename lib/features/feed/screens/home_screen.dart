@@ -2,11 +2,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
+import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/features/notification/screens/notification_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/search/screens/explore_screen.dart';
+import 'package:taste_spot/core/services/supabase_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -24,9 +26,9 @@ class HomeScreenState extends State<HomeScreen> {
   static const _paginationThreshold = 300.0;
 
   List<PostModel> _posts = [];
-  bool _isLoading = true; // true only on initial load
-  bool _isLoadingMore = false; // true when fetching the next page
-  bool _hasMore = true; // false when we've reached the last page
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
   String? _error;
   int _offset = 0;
 
@@ -57,6 +59,8 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   bool get _isFollowingTab => _topNavIndex == 0;
+
+  String _getUserId() => SupabaseService.client.auth.currentUser?.id ?? '00000000-0000-0000-0000-000000000001';
 
   Future<List<PostModel>> _fetchFeedPage({required int offset}) {
     if (_isFollowingTab) {
@@ -93,14 +97,13 @@ class HomeScreenState extends State<HomeScreen> {
     loadPosts();
   }
 
-  // ── Initial load (or pull-to-refresh) ────────────────────────────────────
   Future<void> loadPosts({bool silent = false}) async {
     if (!silent && mounted) setState(() => _isLoading = true);
     setState(() {
       _error = null;
       _offset = 0;
       _hasMore = true;
-      _posts = [];
+      if (!silent) _posts = [];
     });
     try {
       final posts = await _fetchFeedPage(offset: 0);
@@ -121,7 +124,6 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ── Load next page and append ─────────────────────────────────────────────
   Future<void> _loadMorePosts() async {
     if (_isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
@@ -135,7 +137,6 @@ class HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (_) {
-      // Silently fail on pagination errors — user can scroll again to retry
     } finally {
       if (mounted) {
         setState(() => _isLoadingMore = false);
@@ -147,17 +148,14 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: CupertinoColors.white,
       child: Column(
         children: [
-          // ── Top Navigation Bar ──
           _TopNavBar(
             selectedIndex: _topNavIndex,
             items: _topNavItems,
             onTap: _handleTopNavTap,
           ),
-
-          // ── Feed ──
           Expanded(child: _buildFeed()),
         ],
       ),
@@ -165,12 +163,11 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFeed() {
-    // ── Initial loading spinner ──
-    if (_isLoading) {
-      return const Center(child: CupertinoActivityIndicator());
+    // Show skeletons while loading initial data
+    if (_isLoading && _posts.isEmpty) {
+      return const _HomeSkeleton();
     }
 
-    // ── Error with retry ──
     if (_error != null) {
       return Center(
         child: Padding(
@@ -178,25 +175,9 @@ class HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                CupertinoIcons.exclamationmark_circle,
-                size: 40,
-                color: AppColors.textSecondary,
-              ),
+              const Icon(CupertinoIcons.wifi_exclamationmark, size: 40, color: AppColors.textLight),
               const SizedBox(height: 12),
-              const Text(
-                'Failed to load posts',
-                style: TextStyle(fontSize: 16, color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _error!,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                ),
-                textAlign: TextAlign.center,
-              ),
+              const Text('Failed to load posts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               const SizedBox(height: 16),
               CupertinoButton(
                 onPressed: loadPosts,
@@ -208,17 +189,15 @@ class HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    // ── Empty state ──
-    if (_posts.isEmpty) {
+    if (_posts.isEmpty && !_isLoading) {
       return Center(
         child: Text(
           _emptyFeedMessage,
-          style: const TextStyle(color: AppColors.textSecondary),
+          style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
         ),
       );
     }
 
-    // ── Feed with infinite scroll ──
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification.metrics.axis == Axis.vertical) {
@@ -228,75 +207,54 @@ class HomeScreenState extends State<HomeScreen> {
       },
       child: CustomScrollView(
         controller: _scrollController,
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
-          // Pull-to-refresh
           CupertinoSliverRefreshControl(onRefresh: loadPosts),
-
-          // Posts grid
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(5, 8, 5, 0),
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
             sliver: SliverToBoxAdapter(
               child: _MasonryGrid(
                 posts: _posts,
                 onPostTap: (post) async {
                   final result = await Navigator.of(context).push(
                     CupertinoPageRoute(
-                      builder: (_) => HeroMode(
-                        enabled: false,
-                        child: PostDetailScreen(post: post),
-                      ),
+                      builder: (_) => PostDetailScreen(post: post),
                     ),
                   );
-                  if (result == true && mounted) {
-                    loadPosts();
-                  }
+                  if (result == true && mounted) loadPosts(silent: true);
                 },
               ),
             ),
           ),
-
-          // Bottom indicator: loading spinner or "end of feed" message
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: _isLoadingMore
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : _hasMore
-                  ? const SizedBox.shrink()
-                  : const Center(
-                      child: Text(
-                        '— You\'re all caught up 🎉 —',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textLight,
-                        ),
-                      ),
-                    ),
+          // Bottom skeleton for pagination instead of spinner
+          if (_isLoadingMore)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 20),
+                child: _MasonryGridSkeleton(itemCount: 2),
+              ),
+            )
+          else if (!_hasMore && _posts.isNotEmpty)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: Text('— End of posts —', style: TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w600)),
+                ),
+              ),
             ),
-          ),
         ],
       ),
     );
   }
 }
 
-// ══════════════════════════════════════════════
-//  TOP NAVIGATION BAR
-//  🔔  |  Following · Discover  |  🔍
-// ══════════════════════════════════════════════
 class _TopNavBar extends StatelessWidget {
   final int selectedIndex;
   final List<String> items;
   final ValueChanged<int> onTap;
 
-  const _TopNavBar({
-    required this.selectedIndex,
-    required this.items,
-    required this.onTap,
-  });
+  const _TopNavBar({required this.selectedIndex, required this.items, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -309,31 +267,16 @@ class _TopNavBar extends StatelessWidget {
         height: 48,
         decoration: const BoxDecoration(
           color: CupertinoColors.white,
-          border: Border(
-            bottom: BorderSide(color: Color(0xFFEAEAEA), width: 0.5),
-          ),
+          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
         ),
         child: Row(
           children: [
-            // ── Left: Bell icon ──
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               minimumSize: Size.zero,
-              onPressed: () {
-                Navigator.of(context).push(
-                  CupertinoPageRoute(
-                    builder: (_) => const NotificationScreen(),
-                  ),
-                );
-              },
-              child: const Icon(
-                CupertinoIcons.bell,
-                color: AppColors.textPrimary,
-                size: 22,
-              ),
+              onPressed: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => const NotificationScreen())),
+              child: const Icon(CupertinoIcons.bell, color: AppColors.textPrimary, size: 22),
             ),
-
-            // ── Center: Tab items ──
             Expanded(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -347,29 +290,19 @@ class _TopNavBar extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          AnimatedDefaultTextStyle(
-                            duration: const Duration(milliseconds: 180),
+                          Text(
+                            items[i],
                             style: TextStyle(
                               fontSize: isSelected ? 16 : 14,
-                              fontWeight: isSelected
-                                  ? FontWeight.w700
-                                  : FontWeight.w400,
-                              color: isSelected
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
+                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                              color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
                             ),
-                            child: Text(items[i]),
                           ),
                           const SizedBox(height: 4),
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeOut,
-                            height: 3,
-                            width: isSelected ? 20 : 0,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(99),
-                            ),
+                            height: 3, width: isSelected ? 20 : 0,
+                            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(99)),
                           ),
                         ],
                       ),
@@ -378,21 +311,11 @@ class _TopNavBar extends StatelessWidget {
                 }),
               ),
             ),
-
-            // ── Right: Search icon ──
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               minimumSize: Size.zero,
-              onPressed: () {
-                Navigator.of(context).push(
-                  CupertinoPageRoute(builder: (_) => const ExploreScreen()),
-                );
-              },
-              child: const Icon(
-                CupertinoIcons.search,
-                color: AppColors.textPrimary,
-                size: 22,
-              ),
+              onPressed: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => const ExploreScreen())),
+              child: const Icon(CupertinoIcons.search, color: AppColors.textPrimary, size: 22),
             ),
           ],
         ),
@@ -401,9 +324,6 @@ class _TopNavBar extends StatelessWidget {
   }
 }
 
-// ══════════════════════════════════════════════
-//  2-COLUMN MASONRY GRID
-// ══════════════════════════════════════════════
 class _MasonryGrid extends StatelessWidget {
   final List<PostModel> posts;
   final void Function(PostModel post) onPostTap;
@@ -414,7 +334,6 @@ class _MasonryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final leftCol = <PostModel>[];
     final rightCol = <PostModel>[];
-
     for (int i = 0; i < posts.length; i++) {
       (i.isEven ? leftCol : rightCol).add(posts[i]);
     }
@@ -424,30 +343,88 @@ class _MasonryGrid extends StatelessWidget {
       children: [
         Expanded(
           child: Column(
-            children: leftCol
-                .map(
-                  (p) => Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: PostCard(post: p, onTap: () => onPostTap(p)),
-                  ),
-                )
-                .toList(),
+            children: leftCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 8), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList(),
           ),
         ),
-        const SizedBox(width: 5),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(
-            children: rightCol
-                .map(
-                  (p) => Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: PostCard(post: p, onTap: () => onPostTap(p)),
-                  ),
-                )
-                .toList(),
+            children: rightCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 8), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList(),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _HomeSkeleton extends StatelessWidget {
+  const _HomeSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SingleChildScrollView(
+      physics: NeverScrollableScrollPhysics(),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(8, 12, 8, 0),
+        child: _MasonryGridSkeleton(itemCount: 4),
+      ),
+    );
+  }
+}
+
+class _MasonryGridSkeleton extends StatelessWidget {
+  final int itemCount;
+  const _MasonryGridSkeleton({required this.itemCount});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            children: List.generate(itemCount ~/ 2, (i) => _buildCardSkeleton(i.isEven ? 240 : 180)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            children: List.generate(itemCount ~/ 2, (i) => _buildCardSkeleton(i.isEven ? 180 : 240)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCardSkeleton(double height) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        decoration: BoxDecoration(color: CupertinoColors.white, borderRadius: BorderRadius.circular(12)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Skeleton(height: height, borderRadius: 12),
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Skeleton(width: double.infinity, height: 14),
+                  SizedBox(height: 8),
+                  Row(
+                    children: [
+                      SkeletonCircle(size: 20),
+                      SizedBox(width: 6),
+                      Skeleton(width: 60, height: 10),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
