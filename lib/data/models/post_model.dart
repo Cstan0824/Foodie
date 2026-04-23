@@ -2,6 +2,7 @@ class PostModel {
   final String id;
   final String userId;
   final String? restaurantId;
+  final String? restaurantApprovalId;
   final String imageUrl;
   final List<String> imageUrls;
   final double aspectRatio;
@@ -20,6 +21,7 @@ class PostModel {
     required this.id,
     required this.userId,
     this.restaurantId,
+    this.restaurantApprovalId,
     required this.imageUrl,
     this.imageUrls = const [],
     required this.aspectRatio,
@@ -46,6 +48,7 @@ class PostModel {
       id: id,
       userId: userId,
       restaurantId: restaurantId,
+      restaurantApprovalId: restaurantApprovalId,
       imageUrl: imageUrl,
       imageUrls: imageUrls,
       aspectRatio: aspectRatio,
@@ -104,6 +107,7 @@ class PostModel {
       id: json['post_Id'] as String,
       userId: (user?['user_Id'] as String?) ?? '',
       restaurantId: restaurantId,
+      restaurantApprovalId: json['restaurant_approval_id'] as String?,
       imageUrl: imageUrls.isNotEmpty ? imageUrls.first : '',
       imageUrls: imageUrls,
       aspectRatio: 1.3,

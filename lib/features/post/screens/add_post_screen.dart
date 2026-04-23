@@ -3,11 +3,14 @@ import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
-import 'package:taste_spot/features/post/widgets/post_hashtag_composer.dart';
+import 'package:taste_spot/features/post/widgets/hashtag_text_editing_controller.dart';
+import 'package:taste_spot/features/post/widgets/inline_hashtag_caption_field.dart';
 
 class AddPostScreen extends StatefulWidget {
   const AddPostScreen({super.key});
@@ -18,7 +21,8 @@ class AddPostScreen extends StatefulWidget {
 
 class _AddPostScreenState extends State<AddPostScreen> {
   final _titleController = TextEditingController();
-  final _captionController = TextEditingController();
+  final TextEditingController _captionController =
+      HashtagTextEditingController();
   final _imagePicker = ImagePicker();
 
   // Selected photos from device
@@ -26,13 +30,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
   // Chosen restaurant
   RestaurantModel? _selectedRestaurant;
-  List<String> _hashtags = [];
 
   // State
   bool _isPublishing = false;
-
-  // TODO: replace with real auth userId
-  static const _tempUserId = '00000000-0000-0000-0000-000000000001';
 
   @override
   void dispose() {
@@ -74,6 +74,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
   Future<void> _publish() async {
     final title = _titleController.text.trim();
     final caption = _captionController.text.trim();
+    final hashtags = HashtagUtils.extractHashtagsFromText(caption);
     if (title.isEmpty) {
       _showError('Please add a title before publishing.');
       return;
@@ -99,11 +100,11 @@ class _AddPostScreenState extends State<AddPostScreen> {
       }
 
       await PostRepository.instance.createPost(
-        userId: _tempUserId,
+        userId: SupabaseService.requireCurrentUserId(),
         restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
-        hashtags: _hashtags,
+        hashtags: hashtags,
         images: imageByteslist,
       );
 
@@ -222,27 +223,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
               // ── Details input ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: CupertinoTextField(
+                child: InlineHashtagCaptionField(
                   controller: _captionController,
                   placeholder: 'Share your experience, taste, and tips...',
-                  placeholderStyle: const TextStyle(
-                      color: AppColors.textLight, fontSize: 15),
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                      height: 1.5),
-                  decoration: null,
                   maxLines: 8,
                   minLines: 4,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-              ),
-
-              _divider(),
-
-              PostHashtagComposer(
-                initialTags: _hashtags,
-                onChanged: (tags) => _hashtags = tags,
               ),
 
               _divider(),

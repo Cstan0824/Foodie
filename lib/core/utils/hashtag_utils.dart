@@ -5,6 +5,10 @@ class HashtagUtils {
   static const int maxTagLength = 24;
   static final RegExp _splitPattern = RegExp(r'[\s,]+');
   static final RegExp _validPattern = RegExp(r'^[a-z0-9_]+$');
+  static final RegExp _inlineHashtagPattern = RegExp(
+    r'(^|[\s])#([a-zA-Z0-9_]+)',
+    multiLine: true,
+  );
 
   static String normalizeToken(String raw) {
     var value = raw.trim().toLowerCase();
@@ -29,6 +33,20 @@ class HashtagUtils {
         if (seen.add(token)) {
           normalized.add(token);
         }
+      }
+    }
+
+    return normalized;
+  }
+
+  static List<String> extractHashtagsFromText(String raw) {
+    final normalized = <String>[];
+    final seen = <String>{};
+
+    for (final match in _inlineHashtagPattern.allMatches(raw)) {
+      final token = normalizeToken(match.group(2) ?? '');
+      if (token.isNotEmpty && seen.add(token)) {
+        normalized.add(token);
       }
     }
 
