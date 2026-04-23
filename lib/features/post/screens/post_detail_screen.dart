@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/comment_repository.dart';
@@ -39,6 +40,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   List<CommentModel> _comments = [];
   bool _isLoadingComments = true;
   bool _isPostingComment = false;
+  CommentModel? _editingComment;
 
   /// Returns a human-readable relative time string from a [DateTime].
   String _timeAgo(DateTime? dt) {
@@ -253,31 +255,61 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  Future<void> _submitComment() async {
+  Future<void> _submitComment(BuildContext modalContext) async {
     final text = _commentController.text.trim();
     if (text.isEmpty || _isPostingComment) return;
+
+    final editingComment = _editingComment;
+    if (editingComment != null && text == editingComment.content.trim()) {
+      Navigator.pop(modalContext);
+      return;
+    }
 
     setState(() => _isPostingComment = true);
     try {
       // TODO: replace with real auth userId when auth is implemented
       const tempUserId = '00000000-0000-0000-0000-000000000001';
-      final newComment = await CommentRepository.instance.postComment(
-        postId: _currentPost.id,
-        userId: tempUserId,
-        content: text,
-      );
-      if (mounted) {
-        setState(() => _comments.insert(0, newComment));
-        _commentController.clear();
-        Navigator.pop(context);
+      if (editingComment != null) {
+        final updatedComment = await CommentRepository.instance.updateComment(
+          commentId: editingComment.commentId,
+          userId: tempUserId,
+          content: text,
+        );
+        if (mounted) {
+          setState(() {
+            final index = _comments.indexWhere(
+              (comment) => comment.commentId == updatedComment.commentId,
+            );
+            if (index != -1) {
+              _comments[index] = updatedComment;
+            }
+          });
+          if (modalContext.mounted) {
+            Navigator.pop(modalContext);
+          }
+        }
+      } else {
+        final newComment = await CommentRepository.instance.postComment(
+          postId: _currentPost.id,
+          userId: tempUserId,
+          content: text,
+        );
+        if (mounted) {
+          setState(() => _comments.insert(0, newComment));
+          if (modalContext.mounted) {
+            Navigator.pop(modalContext);
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
         showCupertinoDialog(
           context: context,
           builder: (_) => CupertinoAlertDialog(
-            title: const Text('Failed to post'),
-            content: const Text('Something went wrong. Please try again.'),
+            title: Text(
+              editingComment != null ? 'Failed to save' : 'Failed to post',
+            ),
+            content: Text(e.toString()),
             actions: [
               CupertinoDialogAction(
                 child: const Text('OK'),
@@ -310,6 +342,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               SliverToBoxAdapter(child: _buildAuthorHeader()),
               SliverToBoxAdapter(child: _buildImageSection()),
               SliverToBoxAdapter(child: _buildCaption()),
+              SliverToBoxAdapter(child: _buildHashtags()),
               SliverToBoxAdapter(child: _buildRestaurantTag()),
               SliverToBoxAdapter(child: _buildTimestamp()),
               const SliverToBoxAdapter(
@@ -590,6 +623,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  Widget _buildHashtags() {
+    if (_currentPost.hashtags.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: _currentPost.hashtags.map((tag) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              HashtagUtils.format(tag),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   // ══════════════════════════════════════════
   // RESTAURANT TAG
   // ══════════════════════════════════════════
@@ -844,8 +908,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _showCommentSheet(BuildContext context) {
-    showCupertinoModalPopup(
+  Future<void> _showCommentSheet(
+    BuildContext context, {
+    CommentModel? editingComment,
+  }) async {
+    final initialText = editingComment?.content ?? '';
+    _commentController
+      ..text = initialText
+      ..selection = TextSelection.collapsed(offset: initialText.length);
+    if (mounted) {
+      setState(() => _editingComment = editingComment);
+    }
+
+    await showCupertinoModalPopup(
       context: context,
       builder: (BuildContext ctx) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
@@ -871,7 +946,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   child: CupertinoTextField(
                     controller: _commentController,
                     autofocus: true,
-                    placeholder: 'Add a comment...',
+                    placeholder: editingComment != null
+                        ? 'Edit your comment...'
+                        : 'Add a comment...',
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 10,
@@ -892,10 +969,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 CupertinoButton(
                   padding: const EdgeInsets.only(bottom: 8, left: 8, right: 4),
                   minimumSize: Size.zero,
-                  onPressed: _submitComment,
-                  child: const Text(
-                    'Post',
-                    style: TextStyle(
+                  onPressed: () => _submitComment(ctx),
+                  child: Text(
+                    editingComment != null ? 'Save' : 'Post',
+                    style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       color: AppColors.primary,
                       fontSize: 15,
@@ -908,6 +985,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
       ),
     );
+
+    _commentController.clear();
+    if (mounted) {
+      setState(() => _editingComment = null);
+    }
   }
 
   void _showMoreOptions(BuildContext context) {
@@ -1192,15 +1274,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (isOwner)
-                      _buildHorizontalOption(
-                        icon: CupertinoIcons.delete,
-                        label: 'Delete',
-                        isDestructive: true,
-                        onTap: () {
-                          Navigator.pop(modalContext);
-                          _deleteComment(comment);
-                        },
-                      )
+                      ...[
+                        _buildHorizontalOption(
+                          icon: CupertinoIcons.pencil,
+                          label: 'Edit',
+                          onTap: () {
+                            Navigator.pop(modalContext);
+                            _showCommentSheet(
+                              context,
+                              editingComment: comment,
+                            );
+                          },
+                        ),
+                        _buildHorizontalOption(
+                          icon: CupertinoIcons.delete,
+                          label: 'Delete',
+                          isDestructive: true,
+                          onTap: () {
+                            Navigator.pop(modalContext);
+                            _deleteComment(comment);
+                          },
+                        ),
+                      ]
                     else
                       _buildHorizontalOption(
                         icon: CupertinoIcons.flag,
