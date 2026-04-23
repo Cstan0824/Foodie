@@ -7,6 +7,10 @@ import 'package:taste_spot/data/models/comment_model.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/comment_repository.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
+import 'package:taste_spot/data/repositories/collection_repository.dart';
+import 'package:taste_spot/data/repositories/profile_repository.dart';
+import 'package:taste_spot/data/models/collection_model.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
 import 'package:taste_spot/features/post/screens/report_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -26,6 +30,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isLiked = false;
   bool _isSaved = false;
   bool _isFollowing = false;
+  bool _isFollowUpdating = false;
   int _currentImageIndex = 0;
   final _commentController = TextEditingController();
   final _scrollController = ScrollController();
@@ -86,6 +91,99 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _currentPost = widget.post;
     _loadComments();
     _checkLikeStatus();
+    _checkSaveStatus();
+    _checkFollowStatus();
+  }
+
+  Future<void> _checkFollowStatus() async {
+    try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null || currentUserId == _currentPost.userId) {
+        if (mounted) setState(() => _isFollowing = false);
+        return;
+      }
+
+      final profileRepo = ProfileRepository(Supabase.instance.client);
+      final isFollowing = await profileRepo.checkIsFollowing(
+        followerId: currentUserId,
+        followingId: _currentPost.userId,
+      );
+
+      if (mounted) setState(() => _isFollowing = isFollowing);
+    } catch (e) {
+      print('[FOLLOW CHECK ERROR] $e');
+      // Leave _isFollowing = false (default) so the button is safe to tap
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    if (_isFollowUpdating) return;
+
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null || currentUserId == _currentPost.userId) return;
+
+    final nextState = !_isFollowing;
+    setState(() {
+      _isFollowUpdating = true;
+      _isFollowing = nextState;
+    });
+
+    final profileRepo = ProfileRepository(Supabase.instance.client);
+    try {
+      await profileRepo.setFollowing(
+        followerId: currentUserId,
+        followingId: _currentPost.userId,
+        isFollowing: nextState,
+      );
+      _wasEdited = true;
+    } catch (e) {
+      print('[FOLLOW ERROR] $e');
+      // Revert the optimistic update
+      if (mounted) {
+        setState(() => _isFollowing = !nextState);
+        showCupertinoDialog(
+          context: context,
+          builder: (_) => CupertinoAlertDialog(
+            title: const Text('Could not update follow'),
+            content: const Text('Something went wrong. Please try again.'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFollowUpdating = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _checkSaveStatus() async {
+    try {
+      final currentUserId =
+          Supabase.instance.client.auth.currentUser?.id ??
+          '00000000-0000-0000-0000-000000000001';
+
+      final collectionRepo = CollectionRepository(Supabase.instance.client);
+      final savedPostIds = await collectionRepo.getSavedPostIdsForUser(
+        currentUserId,
+      );
+
+      if (mounted)
+        setState(() => _isSaved = savedPostIds.contains(_currentPost.id));
+    } catch (_) {}
+  }
+
+  bool _isSaving = false;
+
+  void _toggleSave() {
+    _showSaveSheet(context);
   }
 
   Future<void> _checkLikeStatus() async {
@@ -96,6 +194,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) {
+        if (mounted) setState(() => _isLiked = false);
+        return;
+      }
+
       final isLiked = await PostRepository.instance.checkIsLiked(
         _currentPost.id,
         currentUserId,
@@ -132,7 +236,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         currentUserId,
         newIsLiked,
       );
-    } catch (_) {
+    } catch (e) {
+      print('[LIKE ERROR] $e');
       // Revert on failure
       if (mounted) {
         setState(() {
@@ -238,7 +343,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
+    // Use a local variable so we can wrap with PopScope without shifting
+    // all indentation inside the scaffold.
+    final scaffold = CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
       child: Stack(
         children: [
@@ -281,6 +388,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         ],
       ),
+    );
+
+    // PopScope ensures _wasEdited is forwarded even on iOS swipe-back gesture.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        Navigator.of(context).pop(_wasEdited ? true : null);
+      },
+      child: scaffold,
     );
   }
 
@@ -350,35 +467,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ],
               ),
             ),
-            // Follow button
-            GestureDetector(
-              onTap: () => setState(() => _isFollowing = !_isFollowing),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: _isFollowing ? AppColors.surface : AppColors.primary,
-                  borderRadius: BorderRadius.circular(20),
-                  border: _isFollowing
-                      ? Border.all(color: AppColors.divider, width: 0.8)
-                      : null,
-                ),
-                child: Text(
-                  _isFollowing ? 'Following' : 'Follow',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _isFollowing
-                        ? AppColors.textPrimary
-                        : CupertinoColors.white,
+            if (_currentPost.userId !=
+                Supabase.instance.client.auth.currentUser?.id) ...[
+              // Follow button
+              GestureDetector(
+                onTap: _toggleFollow,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isFollowing ? AppColors.surface : AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                    border: _isFollowing
+                        ? Border.all(color: AppColors.divider, width: 0.8)
+                        : null,
+                  ),
+                  child: Text(
+                    _isFollowUpdating
+                        ? '...'
+                        : (_isFollowing ? 'Following' : 'Follow'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _isFollowing
+                          ? AppColors.textPrimary
+                          : CupertinoColors.white,
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
+              const SizedBox(width: 8),
+            ],
             GestureDetector(
               onTap: () => _showMoreOptions(context),
               child: Padding(
@@ -784,7 +906,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 // since _isSaved is not yet backed by a real Supabase check.
                 label: _formatCount(_currentPost.saveCount),
                 color: _isSaved ? AppColors.primary : AppColors.textSecondary,
-                onTap: () => setState(() => _isSaved = !_isSaved),
+                onTap: _toggleSave,
               ),
             ],
           ),
@@ -950,7 +1072,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           _buildHorizontalOption(
                             icon: CupertinoIcons.bookmark,
                             label: 'Save',
-                            onTap: () => Navigator.pop(context),
+                            onTap: () {
+                              Navigator.pop(context);
+                              _showSaveSheet(context);
+                            },
                           ),
                           _buildHorizontalOption(
                             icon: CupertinoIcons.share,
@@ -985,6 +1110,141 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
       ),
     );
+  }
+
+  void _showSaveSheet(BuildContext context) {
+    final currentUserId =
+        Supabase.instance.client.auth.currentUser?.id ??
+        '00000000-0000-0000-0000-000000000001';
+    final collectionRepo = CollectionRepository(Supabase.instance.client);
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (modalContext) => Container(
+        height: MediaQuery.of(context).size.height * 0.5,
+        decoration: const BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Container(
+                width: 40,
+                height: 5,
+                margin: const EdgeInsets.only(top: 10, bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E0E0),
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'Save to Collection',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Expanded(
+                child: FutureBuilder<List<Collection>>(
+                  future: collectionRepo.getUserCollections(currentUserId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CupertinoActivityIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Error loading collections',
+                          style: const TextStyle(
+                            color: CupertinoColors.systemRed,
+                          ),
+                        ),
+                      );
+                    }
+
+                    final collections =
+                        snapshot.data
+                            ?.where((c) => c.collectionType == 'POST')
+                            .toList() ??
+                        [];
+
+                    if (collections.isEmpty) {
+                      return const Center(child: Text('No collections found.'));
+                    }
+
+                    return ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: collections.length,
+                      separatorBuilder: (_, __) => Container(
+                        height: 1,
+                        color: CupertinoColors.systemGrey5,
+                      ),
+                      itemBuilder: (context, index) {
+                        final collection = collections[index];
+                        return CupertinoButton(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          onPressed: () async {
+                            Navigator.pop(modalContext);
+                            await _saveToSpecificCollection(
+                              collection.collectionId,
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              const Icon(
+                                CupertinoIcons.folder_fill,
+                                color: AppColors.primary,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 16),
+                              Text(
+                                collection.name,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveToSpecificCollection(String collectionId) async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final collectionRepo = CollectionRepository(Supabase.instance.client);
+      await collectionRepo.savePostToCollection(collectionId, _currentPost.id);
+
+      if (!_isSaved) {
+        setState(() {
+          _isSaved = true;
+          _currentPost = _currentPost.copyWith(
+            saveCount: _currentPost.saveCount + 1,
+          );
+          _wasEdited = true;
+        });
+      }
+      print('[SAVE] Saved post to collection $collectionId');
+    } catch (e) {
+      print('[SAVE TO COLLECTION ERROR] $e');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   void _showCommentOptions(BuildContext context, CommentModel comment) {

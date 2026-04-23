@@ -53,6 +53,12 @@ class _PostCardState extends State<PostCard> {
     }
 
     try {
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId == null) {
+        if (mounted) setState(() => _isLiked = false);
+        return;
+      }
+
       final isLiked = await PostRepository.instance.checkIsLiked(
         _currentPost.id,
         currentUserId,
@@ -122,7 +128,9 @@ class _PostCardState extends State<PostCard> {
           children: [
             // ── Image ──
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(4),
+              ),
               child: AspectRatio(
                 // PostModel.aspectRatio is h/w (>1 = tall); AspectRatio needs w/h
                 aspectRatio: 1 / _currentPost.aspectRatio,
@@ -132,8 +140,11 @@ class _PostCardState extends State<PostCard> {
                   errorBuilder: (_, _, _) => Container(
                     color: AppColors.surface,
                     child: const Center(
-                      child: Icon(CupertinoIcons.photo,
-                          color: AppColors.textLight, size: 28),
+                      child: Icon(
+                        CupertinoIcons.photo,
+                        color: AppColors.textLight,
+                        size: 28,
+                      ),
                     ),
                   ),
                   loadingBuilder: (_, child, progress) {
@@ -180,8 +191,11 @@ class _PostCardState extends State<PostCard> {
                         width: 16,
                         height: 16,
                         color: AppColors.surface,
-                        child: const Icon(CupertinoIcons.person_fill,
-                            size: 10, color: AppColors.textLight),
+                        child: const Icon(
+                          CupertinoIcons.person_fill,
+                          size: 10,
+                          color: AppColors.textLight,
+                        ),
                       ),
                     ),
                   ),

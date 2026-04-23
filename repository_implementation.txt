@@ -1,0 +1,268 @@
+I need you to help me implement the repository layer for my Flutter + Supabase project called Taste Spot.
+
+Important context:
+- This is NOT a clean architecture project.
+- Current practical architecture is closer to:
+  Screen/UI -> Repository -> Supabase
+- We already have:
+  - feature-foldered screens
+  - model classes under lib/data/models
+  - repository folder under lib/data/repositories
+  - Supabase client accessor in core/services/supabase_service.dart
+- Do NOT redesign the whole project architecture.
+- Do NOT introduce BLoC / Riverpod / Provider / Controller / ViewModel unless absolutely necessary.
+- Keep the approach aligned with the existing project style.
+- Goal: improve only MY assigned modules and keep changes practical.
+
+My assigned modules:
+1. Search & Recommendation Module
+   - Decide what shows on the home feed
+   - Define feed ranking / display logic
+   - Search posts by:
+     - restaurant name
+     - specific places / area
+     - food name
+     - cuisine / category
+   - Rule-based logic only
+   - No AI model training
+   - No trained recommender
+
+2. BlindBox Module
+   - Recommend a restaurant based on:
+     - current location
+     - user preferences
+   - Show one recommendation at a time
+   - User can:
+     - accept / save
+     - swipe to next recommendation
+     - tap to view restaurant info
+   - Keep it system-driven, not user-heavy filtering
+
+3. Home Feed Module
+   - Decide which posts appear first
+   - Determine how posts are ordered
+   - Filter what should not appear
+   - Consider:
+     - restaurant linkage
+     - visibility state
+     - relevance
+     - freshness
+     - engagement
+     - location-related value later
+
+4. Search Module
+   - Keyword search logic
+   - Matching searchable content from posts/restaurants
+   - Search result ordering
+   - Search by restaurant / place / food / category
+   - Possibly hashtag-aware search later if needed
+
+5. Admin Restaurant Management Module
+   - CRUD Restaurant
+     - manual add
+     - edit
+     - disable/update restaurant
+   - Restaurant data maintenance from admin side
+
+6. Restaurant Retrieval Automation / Approval Module
+   - Approval list for new restaurants submitted by users
+   - Approval list for API conflict cases
+   - Detect and manage same location, different restaurant/shop
+   - Review logic for approval workflow
+   - Insert new restaurant when approved
+   - Disable old restaurant when replaced
+
+7. Restaurant Data Classification Support
+   - main cuisine assignment
+   - admin-added extra cuisine tags
+   - ensure restaurant data is clean enough for:
+     - search
+     - feed
+     - BlindBox recommendation
+
+Current database / schema direction:
+- Restaurant table includes:
+  - restaurant_Id
+  - restaurant_name
+  - address
+  - latitude
+  - longitude
+  - maps_url
+  - created_At
+  - main_cuisine_id
+  - source
+  - info_url
+  - isDisabled
+- RestaurantApproval table includes:
+  - approval_Id
+  - curr_restaurant_id
+  - restaurant_name
+  - address
+  - latitude
+  - longitude
+  - maps_url
+  - source
+  - status
+  - detectedAt
+  - main_cuisine_id
+- Cuisine table includes:
+  - type_id
+  - desc
+  - isPrimaryOption
+- Restaurant_Cuisine table includes:
+  - RestaurantId
+  - CuisineId
+- Post table includes:
+  - post_Id
+  - user_Id
+  - restaurant_Id
+  - title
+  - caption
+  - created_At
+  - updated_At
+  - likeCount
+  - saveCount
+  - isRemoved
+  - isBlocked
+  - isPending
+- Report table includes:
+  - report_Id
+  - user_Id
+  - post_Id
+  - comment_Id
+  - reason
+  - status
+  - created_At
+  - details
+- collections table includes:
+  - collection_Id
+  - user_Id
+  - name
+  - description
+  - is_public
+  - created_At
+  - collection_type
+  - is_default
+- collections_item table includes:
+  - item_Id
+  - collection_Id
+  - restaurant_id
+  - post_id
+  - savedAt
+- hashtag table includes:
+  - hashtag_id
+  - name
+- post_hashtag table includes:
+  - post_Id
+  - hashtag_id
+- swipe_history table includes:
+  - user_id
+  - restaurant_id
+  - swiped_at
+- Notification is minimal for now and not my focus
+- User/password/auth cleanup is not my focus right now
+
+Business rules to respect:
+- Every post must be tied to a restaurant
+- Post keeps title and caption
+- Post states:
+  - isPending = waiting for approval / not yet publish-ready
+  - isRemoved = deleted/hidden by moderation or user
+  - isBlocked = blocked from being published / access restricted
+- Restaurant has exactly 1 main cuisine
+- Admin can assign extra cuisine tags through Restaurant_Cuisine
+- User-submitted restaurants do NOT go directly into Restaurant
+- They go into RestaurantApproval first
+- curr_restaurant_id in approval can be NULL if completely new
+- RestaurantApproval status:
+  - 0 = not reviewed
+  - 1 = accepted
+  - 2 = rejected
+- When admin accepts an approval item:
+  - insert a new Restaurant
+  - if replacing an old restaurant at the same location, disable the old Restaurant
+- Posts linked to newly submitted restaurants remain pending until approval
+- Likes are post-only
+- Search / feed / BlindBox are rule-based only
+- BlindBox is not AI-trained
+- Restaurant collections and post collections are separated by collection_type
+- BlindBox may save restaurant into a restaurant collection
+- swipe_history is for restaurant-level swipe tracking only
+
+Current model files already exist or are being created:
+- cuisine_model.dart
+- restaurant_model.dart
+- restaurant_approval_model.dart
+- restaurant_cuisine_model.dart
+- post_model.dart
+- collection_model.dart
+- collection_item_model.dart
+- hashtag_model.dart
+- post_hashtag_model.dart
+- swipe_history_model.dart
+- comment_model.dart
+These models should be reused, not recreated from scratch unless needed.
+
+What I want you to do:
+I want you to help me write the repository layer in a practical, incremental way.
+Do NOT dump a huge enterprise architecture.
+Do NOT overabstract.
+Do NOT create unnecessary generic base repositories.
+
+What I need first:
+1. Decide the repository files I should have for MY module only
+2. Recommend the best order to implement them
+3. For each repository:
+   - purpose
+   - what methods it should contain
+   - which methods are MVP first
+   - which methods are optional later
+4. Then generate the actual Dart code for those repositories
+5. The code should be aligned with:
+   - Flutter
+   - Supabase client usage
+   - my current DB column naming
+   - my model files
+6. Use safe error handling
+7. Keep code readable and practical
+8. Explain where each file should be placed
+9. If a method depends on nested Supabase select syntax, write that correctly
+10. If a repository should call another repository, only do so when clearly useful
+11. If simpler to keep it in one repository for now, prefer simplicity
+
+Very important implementation constraints:
+- Because my DB currently has very little data, repository methods should be written first, and sample data population comes later
+- I want to build in this order:
+  1. Restaurant Retrieval Automation / Approval
+  2. Admin Restaurant CRUD
+  3. Search
+  4. BlindBox
+  5. Home Feed
+- So the repository plan must follow that order
+- I do NOT want to fix unrelated modules like login/profile right now
+- Keep the work focused only on my part
+
+Please structure your response like this:
+
+A. Recommended repository files for my scope
+B. Implementation order
+C. Methods for each repository
+D. Detailed explanation of each method and why it belongs there
+E. Full code for the first repository
+F. Then tell me the next repository to implement after that
+
+My expectation:
+I want a very detailed, practical answer, like a senior developer guiding implementation in an existing student project.
+Do not be vague.
+Do not just give high-level advice.
+Be concrete with:
+- file names
+- class names
+- method signatures
+- Supabase queries
+- model mapping
+- where filters should happen
+- what should remain in the screen
+- what should move into repository
+
+Start with the first repository that should be implemented now.
