@@ -314,30 +314,8 @@ class _PostManagementScreenState extends State<PostManagementScreen>
                         color: AppColors.textPrimary,
                         letterSpacing: -0.5,
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    if (_statusFilter == ReportActionStatus.pending &&
-                        (_postGroupCount + _commentGroupCount) > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF9500).withAlpha(22),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: const Color(0xFFFF9500).withAlpha(60),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Text(
-                          '${_postGroupCount + _commentGroupCount}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFFFF9500),
-                          ),
-                        ),
-                      ),
+                    ),                
+                      
                   ],
                 ),
               ),

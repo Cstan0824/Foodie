@@ -635,7 +635,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildHashtags() {
-    if (_currentPost.hashtags.isEmpty) {
+    final captionHashtags = HashtagUtils.extractHashtagsFromText(
+      _currentPost.description,
+    );
+    if (_currentPost.hashtags.isEmpty || captionHashtags.isNotEmpty) {
       return const SizedBox.shrink();
     }
 
