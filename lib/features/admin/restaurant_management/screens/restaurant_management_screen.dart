@@ -6,7 +6,7 @@ import 'package:taste_spot/data/repositories/restaurant_repository.dart';
 import 'package:taste_spot/data/models/restaurant_approval_model.dart';
 import 'package:taste_spot/data/repositories/restaurant_approval_repository.dart';
 import 'package:taste_spot/features/admin/restaurant_management/screens/view_restaurant_screen.dart';
-import 'package:taste_spot/features/admin/restaurant_management/screens/add_edit_restaurant_screen.dart';
+import 'package:taste_spot/features/admin/restaurant_management/screens/add_edit_approve_restaurant.dart';
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
@@ -14,13 +14,16 @@ class RestaurantManagementScreen extends StatefulWidget {
   const RestaurantManagementScreen({super.key});
 
   @override
-  State<RestaurantManagementScreen> createState() => _RestaurantManagementScreenState();
+  State<RestaurantManagementScreen> createState() =>
+      _RestaurantManagementScreenState();
 }
 
-class _RestaurantManagementScreenState extends State<RestaurantManagementScreen> 
+class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
     with SingleTickerProviderStateMixin {
   int _tab = 0;
   late final AnimationController _tabAnim;
+  final TextEditingController _restaurantSearchCtrl = TextEditingController();
+  final TextEditingController _approvalSearchCtrl = TextEditingController();
 
   final ScrollController _restScrollCtrl = ScrollController();
   final ScrollController _apprScrollCtrl = ScrollController();
@@ -28,7 +31,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   List<RestaurantModel> _restaurants = [];
   List<RestaurantApprovalModel> _approvals = [];
   List<CuisineModel> _cuisines = [];
-  
+
   bool _isLoading = false;
   bool _isFetchingMore = false;
   bool _hasMoreRestaurants = true;
@@ -39,13 +42,20 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   bool _hasMoreApprovals = true;
   String? _approvalsError;
 
+  bool _isSwitchingTab = false;
+
   static const int _limit = 20;
 
   // Search & filter state
   String _searchQuery = '';
-  String _statusFilter = 'all';   // all | active | disabled
-  String _sourceFilter = 'all';   // all | admin | API | user-approved
+  String _statusFilter = 'all'; // all | active | disabled
+  String _sourceFilter = 'all'; // all | admin | API
   List<String> _cuisineFilters = [];
+  String _sort = 'newest'; // newest | oldest | a-z | z-a
+
+  String _approvalSearchQuery = '';
+  String _approvalStatusFilter = 'all'; // all | pending | accepted | rejected
+  String _approvalSort = 'newest'; // newest | oldest | name_az | name_za
 
   final _repo = RestaurantRepository.instance;
   final _approvalRepo = RestaurantApprovalRepository.instance;
@@ -59,7 +69,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
     );
     _restScrollCtrl.addListener(_onRestScroll);
     _apprScrollCtrl.addListener(_onApprScroll);
-    
+
     _loadCuisines();
     _loadRestaurants();
     _loadApprovals();
@@ -70,40 +80,117 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
     _restScrollCtrl.dispose();
     _apprScrollCtrl.dispose();
     _tabAnim.dispose();
+    _restaurantSearchCtrl.dispose();
+    _approvalSearchCtrl.dispose();
     super.dispose();
   }
 
   void _onRestScroll() {
-    if (_restScrollCtrl.position.pixels >= _restScrollCtrl.position.maxScrollExtent - 200) {
+    if (_restScrollCtrl.position.pixels >=
+        _restScrollCtrl.position.maxScrollExtent - 200) {
       _loadMoreRestaurants();
     }
   }
 
   void _onApprScroll() {
-    if (_apprScrollCtrl.position.pixels >= _apprScrollCtrl.position.maxScrollExtent - 200) {
+    if (_apprScrollCtrl.position.pixels >=
+        _apprScrollCtrl.position.maxScrollExtent - 200) {
       _loadMoreApprovals();
     }
   }
 
-  void _switchTab(int index) {
+  void _switchTab(int index) async {
     if (index == _tab) return;
-    setState(() => _tab = index);
+
+    final currentTab = index;
+    setState(() {
+      _tab = index;
+      _isSwitchingTab = true;
+    });
+
     if (index == 1) {
       _tabAnim.forward();
-      if (_approvals.isEmpty && _approvalsError == null) _loadApprovals();
+      await _loadApprovals(refresh: true);
     } else {
       _tabAnim.reverse();
-      if (_restaurants.isEmpty && _error == null) _loadRestaurants();
+      await _loadRestaurants(refresh: true);
+    }
+
+    if (mounted && _tab == currentTab) {
+      setState(() {
+        _isSwitchingTab = false;
+      });
+    }
+  }
+
+  int? _approvalStatusCodeFromFilter(String filter) {
+    switch (filter) {
+      case 'pending':
+        return 0;
+      case 'accepted':
+        return 1;
+      case 'rejected':
+        return 2;
+      default:
+        return null;
+    }
+  }
+
+  void _sortApprovalList(List<RestaurantApprovalModel> items) {
+    switch (_approvalSort) {
+      case 'oldest':
+        items.sort((a, b) {
+          final da = a.detectedAt;
+          final db = b.detectedAt;
+          if (da == null && db == null) return 0;
+          if (da == null) return -1;
+          if (db == null) return 1;
+          return da.compareTo(db);
+        });
+        break;
+      case 'a-z':
+        items.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+        break;
+      case 'z-a':
+        items.sort(
+          (a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()),
+        );
+        break;
+      case 'newest':
+      default:
+        items.sort((a, b) {
+          final da = a.detectedAt;
+          final db = b.detectedAt;
+          if (da == null && db == null) return 0;
+          if (da == null) return 1;
+          if (db == null) return -1;
+          return db.compareTo(da);
+        });
+        break;
     }
   }
 
   Future<void> _loadApprovals({bool refresh = false}) async {
     if (refresh) {
-      setState(() { _approvalsError = null; _hasMoreApprovals = true; });
+      setState(() {
+        _approvalsError = null;
+        _hasMoreApprovals = true;
+      });
     }
-    setState(() { _isLoadingApprovals = true; _approvalsError = null; });
+    setState(() {
+      _isLoadingApprovals = true;
+      _approvalsError = null;
+    });
     try {
-      final approvals = await _approvalRepo.fetchPendingApprovals(limit: _limit, offset: 0);
+      final approvals = await _approvalRepo.fetchApprovals(
+        statusFilter: _approvalStatusCodeFromFilter(_approvalStatusFilter),
+        searchQuery: _approvalSearchQuery.isEmpty ? null : _approvalSearchQuery,
+        limit: _limit,
+        offset: 0,
+      );
+      _sortApprovalList(approvals);
       if (!mounted) return;
       setState(() {
         _approvals = approvals;
@@ -120,18 +207,61 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   }
 
   Future<void> _loadMoreApprovals() async {
-    if (_isFetchingMoreApprovals || !_hasMoreApprovals || _isLoadingApprovals) return;
+    if (_isFetchingMoreApprovals || !_hasMoreApprovals || _isLoadingApprovals)
+      return;
     setState(() => _isFetchingMoreApprovals = true);
     try {
-      final more = await _approvalRepo.fetchPendingApprovals(limit: _limit, offset: _approvals.length);
+      final more = await _approvalRepo.fetchApprovals(
+        statusFilter: _approvalStatusCodeFromFilter(_approvalStatusFilter),
+        searchQuery: _approvalSearchQuery.isEmpty ? null : _approvalSearchQuery,
+        limit: _limit,
+        offset: _approvals.length,
+      );
       if (!mounted) return;
       setState(() {
         _approvals.addAll(more);
+        _sortApprovalList(_approvals);
         _hasMoreApprovals = more.length == _limit;
         _isFetchingMoreApprovals = false;
       });
     } catch (_) {
       if (mounted) setState(() => _isFetchingMoreApprovals = false);
+    }
+  }
+
+  void _sortRestaurantList(List<RestaurantModel> items) {
+    switch (_sort) {
+      case 'oldest':
+        items.sort((a, b) {
+          final da = a.createdAt;
+          final db = b.createdAt;
+          if (da == null && db == null) return 0;
+          if (da == null) return -1;
+          if (db == null) return 1;
+          return da.compareTo(db);
+        });
+        break;
+      case 'a-z':
+        items.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
+        break;
+      case 'z-a':
+        items.sort(
+          (a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()),
+        );
+        break;
+      case 'newest':
+      default:
+        items.sort((a, b) {
+          final da = a.createdAt;
+          final db = b.createdAt;
+          if (da == null && db == null) return 0;
+          if (da == null) return 1;
+          if (db == null) return -1;
+          return db.compareTo(da);
+        });
+        break;
     }
   }
 
@@ -145,9 +275,15 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
 
   Future<void> _loadRestaurants({bool refresh = false}) async {
     if (refresh) {
-      setState(() { _error = null; _hasMoreRestaurants = true; });
+      setState(() {
+        _error = null;
+        _hasMoreRestaurants = true;
+      });
     }
-    setState(() { _isLoading = true; _error = null; });
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
       final restaurants = await _repo.fetchAllRestaurants(
         searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
@@ -157,6 +293,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
         limit: _limit,
         offset: 0,
       );
+      _sortRestaurantList(restaurants);
       if (!mounted) return;
       setState(() {
         _restaurants = restaurants;
@@ -187,6 +324,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
       if (!mounted) return;
       setState(() {
         _restaurants.addAll(more);
+        _sortRestaurantList(_restaurants);
         _hasMoreRestaurants = more.length == _limit;
         _isFetchingMore = false;
       });
@@ -200,25 +338,67 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   List<RestaurantModel> get _filteredRestaurants => _restaurants;
 
   void _clearFilters() {
+    _restaurantSearchCtrl.clear();
     setState(() {
+      _searchQuery = '';
       _statusFilter = 'all';
       _sourceFilter = 'all';
       _cuisineFilters.clear();
+      _sort = 'newest';
     });
-    _loadRestaurants();
+    _loadRestaurants(refresh: true);
   }
 
   bool get _hasActiveFilters =>
-      _statusFilter != 'all' || _sourceFilter != 'all' || _cuisineFilters.isNotEmpty;
+      _statusFilter != 'all' ||
+      _sourceFilter != 'all' ||
+      _cuisineFilters.isNotEmpty ||
+      _sort != 'newest';
+
+  bool get _hasActiveApprovalFilters =>
+      _approvalSearchQuery.trim().isNotEmpty ||
+      _approvalStatusFilter != 'all' ||
+      _approvalSort != 'newest';
+
+  void _clearApprovalFilters() {
+    _approvalSearchCtrl.clear();
+    setState(() {
+      _approvalSearchQuery = '';
+      _approvalStatusFilter = 'all';
+      _approvalSort = 'newest';
+    });
+    _loadApprovals(refresh: true);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        // ── Header ──
-        _buildHeader(context),
-        // ── Content ──
-        Expanded(child: _buildBody()),
+        Column(
+          children: [
+            // ── Header ──
+            _buildHeader(context),
+            // ── Content ──
+            Expanded(child: _buildBody()),
+          ],
+        ),
+        if (_tab == 0)
+          Positioned(
+            right: 16,
+            bottom: 30,
+            child: _FloatingAddButton(
+            onTap: () async {
+              final changed = await Navigator.of(context).push<bool>(
+                CupertinoPageRoute(
+                  builder: (_) => const AddEditApproveRestaurantScreen(),
+                ),
+              );
+              if (changed == true && mounted) {
+                _loadRestaurants(refresh: true);
+              }
+            },
+          ),
+        ),
       ],
     );
   }
@@ -234,7 +414,9 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
           Padding(
             padding: EdgeInsets.only(
               top: MediaQuery.of(context).padding.top + 12,
-              left: 16, right: 16, bottom: 4,
+              left: 16,
+              right: 16,
+              bottom: 4,
             ),
             child: Row(
               children: [
@@ -251,45 +433,85 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                 ),
                 _HeaderIconButton(
                   icon: CupertinoIcons.arrow_clockwise,
-                  onTap: _loadRestaurants,
-                  tooltip: 'Refresh',
-                ),
-                const SizedBox(width: 8),
-                _HeaderActionButton(
-                  icon: CupertinoIcons.add,
-                  label: 'Add',
                   onTap: () {
-                    Navigator.of(context).push(
-                      CupertinoPageRoute(
-                        builder: (_) => const AddEditRestaurantScreen(),
-                      ),
-                    );
+                    if (_tab == 0) {
+                      _loadRestaurants(refresh: true);
+                    } else {
+                      _loadApprovals(refresh: true);
+                    }
                   },
+                  tooltip: 'Refresh',
                 ),
               ],
             ),
           ),
+
           // ── Animated underline tab bar ──
-          _SlideTabBar(
-            labels: [
-              'List ${_restaurants.isNotEmpty ? "(${_restaurants.length})" : ""}',
-              'Approval ${_approvals.isNotEmpty ? "(${_approvals.length})" : ""}',
-            ],
+          _PillTabBar(
+            labels: ['List', 'Approval'],
+            counts: [_restaurants.length, _approvals.length],
             selectedIndex: _tab,
             onTap: _switchTab,
           ),
           // ── Search bar ──
           if (_tab == 0) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: CupertinoSearchTextField(
-                placeholder: 'Search by name or address',
-                onChanged: (v) { setState(() => _searchQuery = v); _loadRestaurants(); },
-                style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CupertinoSearchTextField(
+                      controller: _restaurantSearchCtrl,
+                      placeholder: 'Search by name or address',
+                      onChanged: (v) {
+                        setState(() => _searchQuery = v);
+                        _loadRestaurants();
+                      },
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _ClearFiltersIconButton(
+                    isActive:
+                        _hasActiveFilters || _searchQuery.trim().isNotEmpty,
+                    onTap: _clearFilters,
+                  ),
+                ],
               ),
             ),
             // ── Filters ──
             _buildFilterBar(),
+          ] else ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: CupertinoSearchTextField(
+                      controller: _approvalSearchCtrl,
+                      placeholder: 'Search by name or address',
+                      onChanged: (v) {
+                        setState(() => _approvalSearchQuery = v);
+                        _loadApprovals();
+                      },
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _ClearFiltersIconButton(
+                    isActive: _hasActiveApprovalFilters,
+                    onTap: _clearApprovalFilters,
+                  ),
+                ],
+              ),
+            ),
+            _buildApprovalFilterBar(),
           ],
           Container(height: 0.5, color: AppColors.divider),
         ],
@@ -302,39 +524,56 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   Widget _buildFilterBar() {
     return Padding(
       padding: const EdgeInsets.only(top: 4, bottom: 10, left: 16, right: 16),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
+      child: Column(
         children: [
-          // Status
-          _FilterChip(
-            label: 'Status: ${_statusFilter.toUpperCase()}',
-            isActive: _statusFilter != 'all',
-            onTap: () => _showStatusPicker(),
+          Row(
+            children: [
+              Expanded(
+                child: _FilterChip(
+                  label: 'Status: ${_statusFilter.toUpperCase()}',
+                  isActive: _statusFilter != 'all',
+                  onTap: () => _showStatusPicker(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _FilterChip(
+                  label: 'Source: ${_sourceFilter.toUpperCase()}',
+                  isActive: _sourceFilter != 'all',
+                  onTap: () => _showSourcePicker(),
+                ),
+              ),
+            ],
           ),
-          // Source
-          _FilterChip(
-            label: 'Source: ${_sourceFilter.toUpperCase()}',
-            isActive: _sourceFilter != 'all',
-            onTap: () => _showSourcePicker(),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _FilterChip(
+                  label: 'Sort: ${_sort.toUpperCase()}',
+                  isActive: _sort != 'newest',
+                  onTap: _showSortPicker,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _FilterChip(
+                  label: _cuisineFilters.isEmpty
+                      ? 'Cuisine'
+                      : _cuisineFilters.length == 1
+                      ? _cuisines
+                            .firstWhere(
+                              (c) => c.id == _cuisineFilters.first,
+                              orElse: () => _cuisines.first,
+                            )
+                            .description
+                      : '${_cuisineFilters.length} Cuisines',
+                  isActive: _cuisineFilters.isNotEmpty,
+                  onTap: () => _showCuisinePicker(),
+                ),
+              ),
+            ],
           ),
-          // Cuisine
-          _FilterChip(
-            label: _cuisineFilters.isEmpty
-                ? 'Cuisine'
-                : _cuisineFilters.length == 1
-                    ? _cuisines.firstWhere((c) => c.id == _cuisineFilters.first, orElse: () => _cuisines.first).description
-                    : '${_cuisineFilters.length} Cuisines',
-            isActive: _cuisineFilters.isNotEmpty,
-            onTap: () => _showCuisinePicker(),
-          ),
-          if (_hasActiveFilters)
-            _FilterChip(
-              label: 'Clear',
-              isActive: false,
-              isClear: true,
-              onTap: _clearFilters,
-            ),
         ],
       ),
     );
@@ -346,17 +585,101 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
       options: ['all', 'active', 'disabled'],
       selected: _statusFilter,
       labelBuilder: (o) => o[0].toUpperCase() + o.substring(1),
-      onSelect: (v) { setState(() => _statusFilter = v); _loadRestaurants(); },
+      onSelect: (v) {
+        setState(() => _statusFilter = v);
+        _loadRestaurants();
+      },
     );
   }
 
   void _showSourcePicker() {
     _showOptionSheet(
       title: 'Filter by Source',
-      options: ['all', 'admin', 'API', 'user-approved'],
+      options: ['all', 'ADMIN', 'API'],
       selected: _sourceFilter,
       labelBuilder: (o) => o == 'all' ? 'All' : o,
-      onSelect: (v) { setState(() => _sourceFilter = v); _loadRestaurants(); },
+      onSelect: (v) {
+        setState(() => _sourceFilter = v);
+        _loadRestaurants();
+      },
+    );
+  }
+
+  void _showSortPicker() {
+    const labels = {
+      'newest': 'Newest first',
+      'oldest': 'Oldest first',
+      'a-z': 'A-Z',
+      'z-a': 'Z-A',
+    };
+
+    _showOptionSheet(
+      title: 'Sort Restaurants',
+      options: const ['newest', 'oldest', 'a-z', 'z-a'],
+      selected: _sort,
+      labelBuilder: (o) => labels[o] ?? o,
+      onSelect: (v) {
+        setState(() => _sort = v);
+        _loadRestaurants(refresh: true);
+      },
+    );
+  }
+
+  Widget _buildApprovalFilterBar() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 10, left: 16, right: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: _FilterChip(
+              label: 'Status: ${_approvalStatusFilter.toUpperCase()}',
+              isActive: _approvalStatusFilter != 'all',
+              onTap: _showApprovalStatusPicker,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _FilterChip(
+              label: 'Sort: ${_approvalSort.toUpperCase()}',
+              isActive: _approvalSort != 'newest',
+              onTap: _showApprovalSortPicker,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showApprovalStatusPicker() {
+    _showOptionSheet(
+      title: 'Approval Status',
+      options: ['all', 'pending', 'accepted', 'rejected'],
+      selected: _approvalStatusFilter,
+      labelBuilder: (o) => o[0].toUpperCase() + o.substring(1),
+      onSelect: (v) {
+        setState(() => _approvalStatusFilter = v);
+        _loadApprovals();
+      },
+    );
+  }
+
+  void _showApprovalSortPicker() {
+    const labels = {
+      'newest': 'Newest first',
+      'oldest': 'Oldest first',
+      'a-z': 'A-Z',
+      'z-a': 'Z-A',
+    };
+
+    _showOptionSheet(
+      title: 'Sort Approvals',
+      options: const ['newest', 'oldest', 'a-z', 'z-a'],
+      selected: _approvalSort,
+      labelBuilder: (o) => labels[o] ?? o,
+      onSelect: (v) {
+        setState(() => _approvalSort = v);
+        _loadApprovals(refresh: true);
+      },
     );
   }
 
@@ -375,7 +698,10 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                 children: [
                   Container(
                     color: AppColors.cardBackground,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -384,9 +710,22 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                           onPressed: () {
                             setModalState(() => selectedCuisines.clear());
                           },
-                          child: const Text('Clear', style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+                          child: const Text(
+                            'Clear',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
-                        const Text('Filter by Cuisine', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                        const Text(
+                          'Filter by Cuisine',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
                         CupertinoButton(
                           padding: EdgeInsets.zero,
                           onPressed: () {
@@ -396,7 +735,14 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                             Navigator.pop(context);
                             _loadRestaurants();
                           },
-                          child: const Text('Done', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 16)),
+                          child: const Text(
+                            'Done',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -407,7 +753,9 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                       itemCount: _cuisines.length,
                       itemBuilder: (context, index) {
                         final cuisine = _cuisines[index];
-                        final isSelected = selectedCuisines.contains(cuisine.id);
+                        final isSelected = selectedCuisines.contains(
+                          cuisine.id,
+                        );
                         return GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () {
@@ -420,16 +768,39 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                             });
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
                             decoration: const BoxDecoration(
-                              border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: AppColors.divider,
+                                  width: 0.5,
+                                ),
+                              ),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(cuisine.description, style: TextStyle(fontSize: 16, color: isSelected ? AppColors.primary : AppColors.textPrimary, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400)),
+                                Text(
+                                  cuisine.description,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.textPrimary,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                  ),
+                                ),
                                 if (isSelected)
-                                  const Icon(CupertinoIcons.checkmark_alt, color: AppColors.primary, size: 20),
+                                  const Icon(
+                                    CupertinoIcons.checkmark_alt,
+                                    color: AppColors.primary,
+                                    size: 20,
+                                  ),
                               ],
                             ),
                           ),
@@ -484,6 +855,9 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   // ── Body ───────────────────────────────────────────────────────────────────
 
   Widget _buildBody() {
+    if (_isSwitchingTab) {
+      return const Center(child: CupertinoActivityIndicator(radius: 14));
+    }
     return _tab == 0 ? _buildRestaurantsList() : _buildApprovalsList();
   }
 
@@ -513,7 +887,9 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
 
     return CustomScrollView(
       controller: _restScrollCtrl,
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       slivers: [
         CupertinoSliverRefreshControl(
           onRefresh: () => _loadRestaurants(refresh: true),
@@ -522,13 +898,16 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
           padding: const EdgeInsets.only(top: 0, bottom: 24),
           sliver: SliverList.separated(
             itemCount: filtered.length,
-            separatorBuilder: (_, _) => Container(height: 0.5, color: AppColors.divider),
+            separatorBuilder: (_, _) =>
+                Container(height: 0.5, color: AppColors.divider),
             itemBuilder: (_, i) => _RestaurantRow(
               restaurant: filtered[i],
               onTap: () {
                 Navigator.of(context).push(
                   CupertinoPageRoute(
-                    builder: (_) => ViewRestaurantScreen(restaurantId: filtered[i].restaurantId),
+                    builder: (_) => ViewRestaurantScreen(
+                      restaurantId: filtered[i].restaurantId,
+                    ),
                   ),
                 );
               },
@@ -554,15 +933,25 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
       return _ErrorState(message: _approvalsError!, onRetry: _loadApprovals);
     }
     if (_approvals.isEmpty) {
+      if (_hasActiveApprovalFilters) {
+        return const _EmptyState(
+          icon: CupertinoIcons.search,
+          message: 'No matching approvals',
+          subtitle: 'Try adjusting search or filters.',
+        );
+      }
       return const _EmptyState(
         icon: CupertinoIcons.doc_text,
-        message: 'No pending approvals',
+        message: 'No approvals yet',
+        subtitle: 'Pending, accepted, and rejected items will appear here.',
       );
     }
 
     return CustomScrollView(
       controller: _apprScrollCtrl,
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       slivers: [
         CupertinoSliverRefreshControl(
           onRefresh: () => _loadApprovals(refresh: true),
@@ -571,11 +960,22 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
           padding: const EdgeInsets.only(top: 0, bottom: 24),
           sliver: SliverList.separated(
             itemCount: _approvals.length,
-            separatorBuilder: (_, _) => Container(height: 0.5, color: AppColors.divider),
+            separatorBuilder: (_, _) =>
+                Container(height: 0.5, color: AppColors.divider),
             itemBuilder: (_, i) => _ApprovalRow(
               approval: _approvals[i],
-              onTap: () {
-                // Future: Navigate to view approval detail screen
+              onTap: () async {
+                final changed = await Navigator.of(context).push<bool>(
+                  CupertinoPageRoute(
+                    builder: (_) => AddEditApproveRestaurantScreen(
+                      approvalId: _approvals[i].approvalId,
+                    ),
+                  ),
+                );
+                if (changed == true && mounted) {
+                  _loadApprovals(refresh: true);
+                  _loadRestaurants(refresh: true);
+                }
               },
             ),
           ),
@@ -592,74 +992,119 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   }
 }
 
-// ── Animated underline tab bar ────────────────────────────────────────────────
+// ── Pill tab bar ─────────────────────────────────────────────────────────────
 
-class _SlideTabBar extends StatelessWidget {
+class _PillTabBar extends StatelessWidget {
   final List<String> labels;
+  final List<int> counts;
   final int selectedIndex;
   final ValueChanged<int> onTap;
 
-  const _SlideTabBar({
+  const _PillTabBar({
     required this.labels,
+    required this.counts,
     required this.selectedIndex,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: List.generate(labels.length, (i) {
-            final selected = i == selectedIndex;
-            return Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onTap(i),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 10, top: 10),
-                  child: Center(
-                    child: AnimatedDefaultTextStyle(
-                      duration: const Duration(milliseconds: 180),
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
-                        color: selected
-                            ? AppColors.textPrimary
-                            : AppColors.textSecondary,
-                      ),
-                      child: Text(labels[i]),
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-        ),
-        // Sliding underline
-        LayoutBuilder(builder: (ctx, constraints) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      height: 38,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
           final tabWidth = constraints.maxWidth / labels.length;
           return Stack(
             children: [
-              Container(height: 1, color: AppColors.divider),
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeInOut,
-                left: tabWidth * selectedIndex,
+                left: selectedIndex * tabWidth + 2,
+                top: 2,
+                width: tabWidth - 4,
+                height: constraints.maxHeight - 4,
                 child: Container(
-                  width: tabWidth,
-                  height: 2,
-                  decoration: const BoxDecoration(
-                    color: AppColors.primary,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(6),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF000000).withAlpha(18),
+                        blurRadius: 6,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
                 ),
               ),
+              Row(
+                children: List.generate(labels.length, (i) {
+                  final isSelected = i == selectedIndex;
+                  final count = i < counts.length ? counts[i] : 0;
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onTap(i),
+                      child: Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 180),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                              ),
+                              child: Text(labels[i]),
+                            ),
+                            if (count > 0) ...[
+                              const SizedBox(width: 5),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.primary.withAlpha(20)
+                                      : AppColors.textLight.withAlpha(60),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  '$count',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
             ],
           );
-        }),
-      ],
+        },
+      ),
     );
   }
 }
@@ -671,14 +1116,19 @@ class _HeaderIconButton extends StatelessWidget {
   final VoidCallback onTap;
   final String? tooltip;
 
-  const _HeaderIconButton({required this.icon, required this.onTap, this.tooltip});
+  const _HeaderIconButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 34, height: 34,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           color: AppColors.background,
           borderRadius: BorderRadius.circular(8),
@@ -689,39 +1139,32 @@ class _HeaderIconButton extends StatelessWidget {
   }
 }
 
-class _HeaderActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
+class _FloatingAddButton extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _HeaderActionButton({required this.icon, required this.label, required this.onTap});
+  const _FloatingAddButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        width: 52,
+        height: 52,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.primary, AppColors.accent],
-          ),
-          borderRadius: BorderRadius.circular(8),
+          color: CupertinoColors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.divider, width: 0.5),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withAlpha(50),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              color: const Color(0xFF000000).withAlpha(30),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: CupertinoColors.white),
-            const SizedBox(width: 4),
-            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: CupertinoColors.white)),
-          ],
+        child: const Center(
+          child: Icon(CupertinoIcons.add, size: 24, color: Color(0xFFFF3B30)),
         ),
       ),
     );
@@ -733,28 +1176,20 @@ class _HeaderActionButton extends StatelessWidget {
 class _FilterChip extends StatelessWidget {
   final String label;
   final bool isActive;
-  final bool isClear;
   final VoidCallback onTap;
 
   const _FilterChip({
     required this.label,
     required this.isActive,
-    this.isClear = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final Color bg = isClear
-        ? AppColors.textLight.withAlpha(20)
-        : isActive
-            ? AppColors.primary.withAlpha(18)
-            : AppColors.background;
-    final Color fg = isClear
-        ? AppColors.textSecondary
-        : isActive
-            ? AppColors.primary
-            : AppColors.textSecondary;
+    final Color bg = isActive
+        ? AppColors.primary.withAlpha(18)
+        : AppColors.background;
+    final Color fg = isActive ? AppColors.primary : AppColors.textSecondary;
     final Color border = isActive
         ? AppColors.primary.withAlpha(60)
         : AppColors.divider;
@@ -762,25 +1197,67 @@ class _FilterChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        width: double.infinity,
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: border, width: 0.5),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
-            if (!isClear) ...[
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
               const SizedBox(width: 2),
               Icon(CupertinoIcons.chevron_down, size: 10, color: fg),
             ],
-            if (isClear) ...[
-              const SizedBox(width: 2),
-              Icon(CupertinoIcons.xmark, size: 10, color: fg),
-            ],
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClearFiltersIconButton extends StatelessWidget {
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _ClearFiltersIconButton({required this.isActive, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: isActive
+              ? AppColors.primary.withAlpha(18)
+              : AppColors.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isActive
+                ? AppColors.primary.withAlpha(60)
+                : AppColors.divider,
+            width: 0.5,
+          ),
+        ),
+        child: Icon(
+          CupertinoIcons.trash_slash,
+          size: 17,
+          color: isActive ? AppColors.primary : AppColors.textSecondary,
         ),
       ),
     );
@@ -797,7 +1274,9 @@ class _RestaurantRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final coverUrl = restaurant.imageUrls.isNotEmpty ? restaurant.imageUrls.first : null;
+    final coverUrl = restaurant.imageUrls.isNotEmpty
+        ? restaurant.imageUrls.first
+        : null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -807,7 +1286,8 @@ class _RestaurantRow extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 56, height: 56,
+              width: 56,
+              height: 56,
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(10),
@@ -819,7 +1299,11 @@ class _RestaurantRow extends StatelessWidget {
                       child: Image.network(coverUrl, fit: BoxFit.cover),
                     )
                   : const Center(
-                      child: Icon(CupertinoIcons.photo, size: 22, color: AppColors.textLight),
+                      child: Icon(
+                        CupertinoIcons.photo,
+                        size: 22,
+                        color: AppColors.textLight,
+                      ),
                     ),
             ),
             const SizedBox(width: 12),
@@ -829,7 +1313,11 @@ class _RestaurantRow extends StatelessWidget {
                 children: [
                   Text(
                     restaurant.name,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -837,7 +1325,10 @@ class _RestaurantRow extends StatelessWidget {
                   if (restaurant.address != null)
                     Text(
                       restaurant.address!,
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -845,10 +1336,16 @@ class _RestaurantRow extends StatelessWidget {
                   Row(
                     children: [
                       if (restaurant.mainCuisineId != null)
-                        _MiniTag(label: restaurant.mainCuisineId!, color: const Color(0xFF007AFF)),
+                        _MiniTag(
+                          label: restaurant.mainCuisineId!,
+                          color: const Color(0xFF007AFF),
+                        ),
                       if (restaurant.source != null) ...[
                         const SizedBox(width: 6),
-                        _MiniTag(label: restaurant.source!, color: const Color(0xFF34C759)),
+                        _MiniTag(
+                          label: restaurant.source!,
+                          color: const Color(0xFF34C759),
+                        ),
                       ],
                       const SizedBox(width: 6),
                       _StatusBadge(isDisabled: restaurant.isDisabled),
@@ -858,7 +1355,11 @@ class _RestaurantRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(CupertinoIcons.chevron_right, size: 14, color: AppColors.textLight),
+            const Icon(
+              CupertinoIcons.chevron_right,
+              size: 14,
+              color: AppColors.textLight,
+            ),
           ],
         ),
       ),
@@ -884,7 +1385,11 @@ class _MiniTag extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
       ),
     );
   }
@@ -898,7 +1403,9 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isDisabled ? const Color(0xFFFF3B30) : const Color(0xFF34C759);
+    final color = isDisabled
+        ? const Color(0xFFFF3B30)
+        : const Color(0xFF34C759);
     final label = isDisabled ? 'Disabled' : 'Active';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -911,11 +1418,19 @@ class _StatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 5, height: 5,
+            width: 5,
+            height: 5,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 3),
-          Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
         ],
       ),
     );
@@ -938,10 +1453,20 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(icon, size: 48, color: AppColors.textLight),
           const SizedBox(height: 12),
-          Text(message, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.textSecondary)),
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
           if (subtitle != null) ...[
             const SizedBox(height: 4),
-            Text(subtitle!, style: const TextStyle(fontSize: 13, color: AppColors.textLight)),
+            Text(
+              subtitle!,
+              style: const TextStyle(fontSize: 13, color: AppColors.textLight),
+            ),
           ],
         ],
       ),
@@ -962,9 +1487,20 @@ class _ErrorState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(CupertinoIcons.exclamationmark_triangle, size: 48, color: Color(0xFFFF9500)),
+          const Icon(
+            CupertinoIcons.exclamationmark_triangle,
+            size: 48,
+            color: Color(0xFFFF9500),
+          ),
           const SizedBox(height: 12),
-          Text(message, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.textSecondary)),
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
           const SizedBox(height: 16),
           CupertinoButton(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -987,8 +1523,40 @@ class _ApprovalRow extends StatelessWidget {
 
   const _ApprovalRow({required this.approval, required this.onTap});
 
+  String _statusLabel(int status) {
+    switch (status) {
+      case 1:
+        return 'Accepted';
+      case 2:
+        return 'Rejected';
+      default:
+        return 'Pending';
+    }
+  }
+
+  Color _statusColor(int status) {
+    switch (status) {
+      case 1:
+        return const Color(0xFF34C759);
+      case 2:
+        return const Color(0xFFFF3B30);
+      default:
+        return const Color(0xFFFF9500);
+    }
+  }
+
+  String _formatDetectedAt(DateTime? value) {
+    if (value == null) return 'Unknown date';
+    final local = value.toLocal();
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$m-$d';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final thumbUrl = approval.imageUrl?.trim();
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -998,15 +1566,35 @@ class _ApprovalRow extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 56, height: 56,
+              width: 56,
+              height: 56,
               decoration: BoxDecoration(
                 color: AppColors.surface,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: AppColors.divider, width: 0.5),
               ),
-              child: const Center(
-                child: Icon(CupertinoIcons.doc_text, size: 22, color: AppColors.textLight),
-              ),
+              child: thumbUrl != null && thumbUrl.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        thumbUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(
+                            CupertinoIcons.doc_text,
+                            size: 22,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                      ),
+                    )
+                  : const Center(
+                      child: Icon(
+                        CupertinoIcons.doc_text,
+                        size: 22,
+                        color: AppColors.textLight,
+                      ),
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1015,7 +1603,11 @@ class _ApprovalRow extends StatelessWidget {
                 children: [
                   Text(
                     approval.name,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1023,25 +1615,54 @@ class _ApprovalRow extends StatelessWidget {
                   if (approval.address != null)
                     Text(
                       approval.address!,
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _formatDetectedAt(approval.detectedAt),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textLight,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
                       if (approval.source != null) ...[
-                        _MiniTag(label: approval.source!, color: const Color(0xFF34C759)),
+                        _MiniTag(
+                          label: approval.source!,
+                          color: const Color(0xFF34C759),
+                        ),
                         const SizedBox(width: 6),
                       ],
-                      _MiniTag(label: 'Pending', color: const Color(0xFFFF9500)),
+                      _MiniTag(
+                        label: _statusLabel(approval.status),
+                        color: _statusColor(approval.status),
+                      ),
+                      if (approval.currRestaurantId != null &&
+                          approval.currRestaurantId!.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        _MiniTag(
+                          label: 'Replacement',
+                          color: const Color(0xFF5856D6),
+                        ),
+                      ],
                     ],
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            const Icon(CupertinoIcons.chevron_right, size: 14, color: AppColors.textLight),
+            const Icon(
+              CupertinoIcons.chevron_right,
+              size: 14,
+              color: AppColors.textLight,
+            ),
           ],
         ),
       ),

@@ -3,6 +3,57 @@ import 'dart:typed_data';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/restaurant_approval_model.dart';
+import 'package:taste_spot/data/repositories/restaurant_repository.dart';
+
+class ApprovalFinalImageInput {
+  final String? existingUrl;
+  final Uint8List? bytes;
+  final String fileExt;
+  final bool isCover;
+
+  const ApprovalFinalImageInput.existing({
+    required String url,
+    this.isCover = false,
+  }) : existingUrl = url,
+       bytes = null,
+       fileExt = 'jpg';
+
+  const ApprovalFinalImageInput.upload({
+    required this.bytes,
+    this.fileExt = 'jpg',
+    this.isCover = false,
+  }) : existingUrl = null;
+}
+
+class ApprovalDecisionInput {
+  final String approvalId;
+  final String name;
+  final String address;
+  final double? latitude;
+  final double? longitude;
+  final String? mapsUrl;
+  final String? infoUrl;
+  final String source;
+  final String? mainCuisineId;
+  final double? rating;
+  final List<String> extraCuisineIds;
+  final List<ApprovalFinalImageInput> images;
+
+  const ApprovalDecisionInput({
+    required this.approvalId,
+    required this.name,
+    required this.address,
+    this.latitude,
+    this.longitude,
+    this.mapsUrl,
+    this.infoUrl,
+    required this.source,
+    this.mainCuisineId,
+    this.rating,
+    this.extraCuisineIds = const [],
+    this.images = const [],
+  });
+}
 
 /// Handles the restaurant approval queue workflow.
 ///
@@ -17,6 +68,23 @@ class RestaurantApprovalRepository {
       RestaurantApprovalRepository._();
 
   static const String _approvalImageBucket = 'restaurant_approval_image';
+  static const String _approvalSelect = '''
+          approval_Id,
+          curr_restaurant_id,
+          restaurant_name,
+          address,
+          latitude,
+          longitude,
+          maps_url,
+          source,
+          status,
+          detectedAt,
+          main_cuisine_id,
+          rating,
+          image_url
+        ''';
+
+  final RestaurantRepository _restaurantRepo = RestaurantRepository.instance;
 
   /// Uploads a single image file for a restaurant approval to Supabase Storage.
   /// Path: approvals/<approvalId>/<imageId>.<ext>
@@ -66,30 +134,57 @@ class RestaurantApprovalRepository {
         .range(offset, offset + limit - 1);
 
     return (response as List<dynamic>)
-        .map((row) =>
-            RestaurantApprovalModel.fromJson(row as Map<String, dynamic>))
+        .map(
+          (row) =>
+              RestaurantApprovalModel.fromJson(row as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  /// Fetches approvals with optional status + search filters.
+  ///
+  /// [statusFilter]:
+  /// - null => all statuses
+  /// - 0 => pending only
+  /// - 1 => accepted only
+  /// - 2 => rejected only
+  Future<List<RestaurantApprovalModel>> fetchApprovals({
+    int? statusFilter,
+    String? searchQuery,
+    int limit = 30,
+    int offset = 0,
+  }) async {
+    var query = SupabaseService.client
+        .from('RestaurantApproval')
+        .select(_approvalSelect);
+
+    if (statusFilter != null) {
+      query = query.eq('status', statusFilter);
+    }
+
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.trim();
+      query = query.or('restaurant_name.ilike.%$q%,address.ilike.%$q%');
+    }
+
+    final response = await query
+        .order('detectedAt', ascending: false)
+        .range(offset, offset + limit - 1);
+
+    return (response as List<dynamic>)
+        .map(
+          (row) =>
+              RestaurantApprovalModel.fromJson(row as Map<String, dynamic>),
+        )
         .toList();
   }
 
   /// Fetches a single approval item by its ID.
   /// Returns null if not found.
-  Future<RestaurantApprovalModel?> fetchApprovalById(
-      String approvalId) async {
+  Future<RestaurantApprovalModel?> fetchApprovalById(String approvalId) async {
     final response = await SupabaseService.client
         .from('RestaurantApproval')
-        .select('''
-          approval_Id,
-          curr_restaurant_id,
-          restaurant_name,
-          address,
-          latitude,
-          longitude,
-          maps_url,
-          source,
-          status,
-          detectedAt,
-          main_cuisine_id
-        ''')
+        .select(_approvalSelect)
         .eq('approval_Id', approvalId)
         .maybeSingle();
 
@@ -107,19 +202,7 @@ class RestaurantApprovalRepository {
   }) async {
     var query = SupabaseService.client
         .from('RestaurantApproval')
-        .select('''
-          approval_Id,
-          curr_restaurant_id,
-          restaurant_name,
-          address,
-          latitude,
-          longitude,
-          maps_url,
-          source,
-          status,
-          detectedAt,
-          main_cuisine_id
-        ''')
+        .select(_approvalSelect)
         .neq('status', 0);
 
     if (statusFilter != null) {
@@ -131,8 +214,10 @@ class RestaurantApprovalRepository {
         .range(offset, offset + limit - 1);
 
     return (response as List<dynamic>)
-        .map((row) =>
-            RestaurantApprovalModel.fromJson(row as Map<String, dynamic>))
+        .map(
+          (row) =>
+              RestaurantApprovalModel.fromJson(row as Map<String, dynamic>),
+        )
         .toList();
   }
 
@@ -210,6 +295,81 @@ class RestaurantApprovalRepository {
     return newRestaurantId;
   }
 
+  /// Accepts one approval using reviewed values from the approval-review form.
+  ///
+  /// This method enforces the admin flow:
+  /// 1) Persist reviewed values into RestaurantApproval
+  /// 2) Create Restaurant from reviewed values
+  /// 3) Persist extra cuisines + final images
+  /// 4) Disable old restaurant when applicable
+  /// 5) Un-pend linked posts and point them to the new Restaurant
+  /// 6) Mark approval status as accepted
+  Future<String> acceptApprovalReviewed(ApprovalDecisionInput input) async {
+    final row = await SupabaseService.client
+        .from('RestaurantApproval')
+        .select('approval_Id, status, curr_restaurant_id')
+        .eq('approval_Id', input.approvalId)
+        .maybeSingle();
+
+    if (row == null) {
+      throw Exception('Approval item not found.');
+    }
+
+    if ((row['status'] as int?) != 0) {
+      throw Exception('This approval has already been reviewed.');
+    }
+
+    await _persistReviewedApprovalValues(input);
+
+    final restaurantId = await _restaurantRepo.saveRestaurant(
+      name: input.name,
+      address: input.address,
+      mainCuisineId: input.mainCuisineId ?? '',
+      latitude: input.latitude,
+      longitude: input.longitude,
+      mapsUrl: input.mapsUrl,
+      infoUrl: input.infoUrl,
+      source: input.source,
+      rating: input.rating,
+      extraCuisineIds: input.extraCuisineIds,
+      images: const [],
+    );
+
+    final finalImageRows = await _materializeFinalRestaurantImages(
+      restaurantId: restaurantId,
+      images: input.images,
+    );
+
+    if (finalImageRows.isNotEmpty) {
+      await _restaurantRepo.replaceRestaurantImages(
+        restaurantId,
+        finalImageRows,
+      );
+    }
+
+    final oldRestaurantId = row['curr_restaurant_id']?.toString();
+    if (oldRestaurantId != null && oldRestaurantId.isNotEmpty) {
+      await _restaurantRepo.setDisabled(oldRestaurantId, true);
+    }
+
+    await SupabaseService.client
+        .from('Post')
+        .update({
+          'restaurant_Id': restaurantId,
+          'isPending': false,
+          'restaurant_approval_id': null,
+        })
+        .eq('restaurant_approval_id', input.approvalId)
+        .eq('isPending', true);
+
+    await SupabaseService.client
+        .from('RestaurantApproval')
+        .update({'status': 1})
+        .eq('approval_Id', input.approvalId);
+
+    return restaurantId;
+  }
+
   /// Rejects a pending approval item (sets status = 2).
   Future<void> rejectApproval(String approvalId) async {
     final row = await SupabaseService.client
@@ -230,6 +390,41 @@ class RestaurantApprovalRepository {
         .from('RestaurantApproval')
         .update({'status': 2})
         .eq('approval_Id', approvalId);
+  }
+
+  /// Rejects one approval using reviewed values from the approval-review form.
+  ///
+  /// This method enforces the admin flow:
+  /// 1) Persist reviewed values into RestaurantApproval
+  /// 2) Block linked pending posts (keep restaurant_approval_id)
+  /// 3) Mark approval status as rejected
+  Future<void> rejectApprovalReviewed(ApprovalDecisionInput input) async {
+    final row = await SupabaseService.client
+        .from('RestaurantApproval')
+        .select('approval_Id, status')
+        .eq('approval_Id', input.approvalId)
+        .maybeSingle();
+
+    if (row == null) {
+      throw Exception('Approval item not found.');
+    }
+
+    if ((row['status'] as int?) != 0) {
+      throw Exception('This approval has already been reviewed.');
+    }
+
+    await _persistReviewedApprovalValues(input);
+
+    await SupabaseService.client
+        .from('Post')
+        .update({'isBlocked': true, 'isPending': false})
+        .eq('restaurant_approval_id', input.approvalId)
+        .eq('isPending', true);
+
+    await SupabaseService.client
+        .from('RestaurantApproval')
+        .update({'status': 2})
+        .eq('approval_Id', input.approvalId);
   }
 
   // ---------------------------------------------------------------------------
@@ -274,6 +469,67 @@ class RestaurantApprovalRepository {
     });
 
     return approvalId;
+  }
+
+  Future<void> _persistReviewedApprovalValues(ApprovalDecisionInput input) {
+    return SupabaseService.client
+        .from('RestaurantApproval')
+        .update({
+          'restaurant_name': input.name.trim(),
+          'address': input.address.trim(),
+          'latitude': input.latitude,
+          'longitude': input.longitude,
+          'maps_url': input.mapsUrl,
+          'source': input.source.trim().isEmpty ? 'User' : input.source.trim(),
+          'rating': input.rating,
+          if (input.mainCuisineId != null &&
+              input.mainCuisineId!.trim().isNotEmpty)
+            'main_cuisine_id': input.mainCuisineId,
+          if (input.infoUrl != null) 'info_url': input.infoUrl,
+        })
+        .eq('approval_Id', input.approvalId);
+  }
+
+  Future<List<RestaurantImageRecord>> _materializeFinalRestaurantImages({
+    required String restaurantId,
+    required List<ApprovalFinalImageInput> images,
+  }) async {
+    if (images.isEmpty) return const [];
+
+    final rows = <RestaurantImageRecord>[];
+
+    for (final item in images) {
+      if (item.bytes != null) {
+        final uploaded = await _restaurantRepo.uploadRestaurantImageBytes(
+          restaurantId: restaurantId,
+          bytes: item.bytes!,
+          fileExt: item.fileExt,
+          isCover: item.isCover,
+        );
+        rows.add(uploaded);
+        continue;
+      }
+
+      final existingUrl = item.existingUrl;
+      if (existingUrl != null && existingUrl.trim().isNotEmpty) {
+        rows.add(
+          RestaurantImageRecord(
+            imageId: _generateUUID(),
+            imageUrl: existingUrl,
+            isCover: item.isCover,
+          ),
+        );
+      }
+    }
+
+    if (rows.isEmpty) return const [];
+
+    final hasCover = rows.any((img) => img.isCover);
+    if (!hasCover) {
+      rows[0] = rows[0].copyWith(isCover: true);
+    }
+
+    return rows;
   }
 
   // ---------------------------------------------------------------------------

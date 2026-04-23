@@ -3,19 +3,45 @@ import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/cuisine_model.dart';
+import 'package:taste_spot/data/models/restaurant_approval_model.dart';
+import 'package:taste_spot/data/repositories/restaurant_approval_repository.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
 
 // ── Malaysian location data ──────────────────────────────────────────────────
 
 const List<String> _malaysianStates = [
-  'Johor', 'Kedah', 'Kelantan', 'Kuala Lumpur', 'Labuan', 'Melaka',
-  'Negeri Sembilan', 'Pahang', 'Penang', 'Perak', 'Perlis', 'Putrajaya',
-  'Sabah', 'Sarawak', 'Selangor', 'Terengganu',
+  'Johor',
+  'Kedah',
+  'Kelantan',
+  'Kuala Lumpur',
+  'Labuan',
+  'Melaka',
+  'Negeri Sembilan',
+  'Pahang',
+  'Penang',
+  'Perak',
+  'Perlis',
+  'Putrajaya',
+  'Sabah',
+  'Sarawak',
+  'Selangor',
+  'Terengganu',
 ];
 
 const Map<String, List<String>> _citiesByState = {
   'Kuala Lumpur': ['Kuala Lumpur'],
-  'Selangor': ['Petaling Jaya', 'Shah Alam', 'Subang Jaya', 'Klang', 'Ampang', 'Kajang', 'Puchong', 'Cyberjaya', 'Putrajaya', 'Serdang'],
+  'Selangor': [
+    'Petaling Jaya',
+    'Shah Alam',
+    'Subang Jaya',
+    'Klang',
+    'Ampang',
+    'Kajang',
+    'Puchong',
+    'Cyberjaya',
+    'Putrajaya',
+    'Serdang',
+  ],
   'Penang': ['George Town', 'Butterworth', 'Bayan Lepas', 'Bukit Mertajam'],
   'Johor': ['Johor Bahru', 'Iskandar Puteri', 'Batu Pahat', 'Muar', 'Kluang'],
   'Perak': ['Ipoh', 'Taiping', 'Teluk Intan', 'Kampar'],
@@ -39,7 +65,7 @@ const Map<String, List<String>> _citiesByState = {
 class _FormImage {
   final String id;
   final String? networkUrl; // non-null for existing (already-uploaded) images
-  final File? file;         // non-null for newly picked local images
+  final File? file; // non-null for newly picked local images
   bool isCover;
 
   _FormImage({
@@ -71,22 +97,34 @@ class _PendingCuisine {
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class AddEditRestaurantScreen extends StatefulWidget {
+class AddEditApproveRestaurantScreen extends StatefulWidget {
   /// `null` → add mode (empty form).
   /// Non-null → edit mode (form pre-filled from database).
   final String? restaurantId;
+  final String? approvalId;
 
-  const AddEditRestaurantScreen({super.key, this.restaurantId});
+  const AddEditApproveRestaurantScreen({
+    super.key,
+    this.restaurantId,
+    this.approvalId,
+  }) : assert(
+         restaurantId == null || approvalId == null,
+         'Use either restaurantId or approvalId, not both.',
+       );
 
   @override
-  State<AddEditRestaurantScreen> createState() => _AddEditRestaurantScreenState();
+  State<AddEditApproveRestaurantScreen> createState() =>
+      _AddEditApproveRestaurantScreenState();
 }
 
-class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
-  bool get _isEditMode => widget.restaurantId != null;
+class _AddEditApproveRestaurantScreenState
+    extends State<AddEditApproveRestaurantScreen> {
+  bool get _isApprovalMode => widget.approvalId != null;
+  bool get _isEditMode => widget.restaurantId != null && !_isApprovalMode;
 
   final _picker = ImagePicker();
-  final _repo  = RestaurantRepository.instance;
+  final _repo = RestaurantRepository.instance;
+  final _approvalRepo = RestaurantApprovalRepository.instance;
 
   // ── Form controllers ────────────────────────────────────────────────────────
 
@@ -100,6 +138,7 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
   late final TextEditingController _lngCtrl;
   late final TextEditingController _mapsUrlCtrl;
   late final TextEditingController _infoUrlCtrl;
+  late final TextEditingController _sourceCtrl;
 
   // ── Cuisine state ───────────────────────────────────────────────────────────
 
@@ -128,24 +167,28 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
 
   // ── UX state ────────────────────────────────────────────────────────────────
 
-  bool _isLoading   = true;
+  bool _isLoading = true;
   bool _isSubmitting = false;
   String? _loadError;
   final Map<String, String?> _errors = {};
+
+  RestaurantApprovalModel? _approval;
+  RestaurantBasicInfo? _currentRestaurant;
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
-    _nameCtrl     = TextEditingController();
-    _addr1Ctrl    = TextEditingController();
-    _addr2Ctrl    = TextEditingController();
+    _nameCtrl = TextEditingController();
+    _addr1Ctrl = TextEditingController();
+    _addr2Ctrl = TextEditingController();
     _postcodeCtrl = TextEditingController();
-    _latCtrl      = TextEditingController();
-    _lngCtrl      = TextEditingController();
-    _mapsUrlCtrl  = TextEditingController();
-    _infoUrlCtrl  = TextEditingController();
+    _latCtrl = TextEditingController();
+    _lngCtrl = TextEditingController();
+    _mapsUrlCtrl = TextEditingController();
+    _infoUrlCtrl = TextEditingController();
+    _sourceCtrl = TextEditingController(text: 'admin');
     _loadData();
   }
 
@@ -159,21 +202,43 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     _lngCtrl.dispose();
     _mapsUrlCtrl.dispose();
     _infoUrlCtrl.dispose();
+    _sourceCtrl.dispose();
     super.dispose();
   }
 
   // ── Data loading ─────────────────────────────────────────────────────────────
 
   Future<void> _loadData() async {
-    setState(() { _isLoading = true; _loadError = null; });
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     try {
       final cuisines = await _repo.fetchAllCuisines();
-      _allCuisines     = cuisines;
+      _allCuisines = cuisines;
       _primaryCuisines = cuisines.where((c) => c.isPrimaryOption).toList();
 
-      if (_isEditMode) {
+      if (_isApprovalMode) {
+        final approval = await _approvalRepo.fetchApprovalById(
+          widget.approvalId!,
+        );
+        if (approval == null) {
+          throw Exception('Approval record not found.');
+        }
+        _prefillFromApproval(approval);
+        _approval = approval;
+
+        if (approval.currRestaurantId != null &&
+            approval.currRestaurantId!.isNotEmpty) {
+          _currentRestaurant = await _repo.fetchRestaurantBasicInfo(
+            approval.currRestaurantId!,
+          );
+        }
+      } else if (_isEditMode) {
         final detail = await _repo.fetchRestaurantDetail(widget.restaurantId!);
         if (detail != null) _prefillForm(detail);
+      } else {
+        _sourceCtrl.text = 'admin';
       }
 
       if (mounted) setState(() => _isLoading = false);
@@ -189,20 +254,21 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
 
   void _prefillForm(RestaurantDetailData detail) {
     final r = detail.restaurant;
-    _nameCtrl.text    = r.name;
-    _latCtrl.text     = r.latitude?.toString() ?? '';
-    _lngCtrl.text     = r.longitude?.toString() ?? '';
+    _nameCtrl.text = r.name;
+    _latCtrl.text = r.latitude?.toString() ?? '';
+    _lngCtrl.text = r.longitude?.toString() ?? '';
     _mapsUrlCtrl.text = r.mapsUrl ?? '';
     _infoUrlCtrl.text = r.infoUrl ?? '';
+    _sourceCtrl.text = (r.source ?? 'admin').trim();
 
     // ── Address parsing ────────────────────────────────────────────────────────
     // Use the 5-digit postcode as the anchor. If not found, fall back to
     // putting the whole string in addr1 so the admin can edit manually.
     final rawAddr = r.address ?? '';
-    final parsed  = _parseStoredAddress(rawAddr);
+    final parsed = _parseStoredAddress(rawAddr);
     if (parsed != null) {
-      _addr1Ctrl.text    = parsed.addr1;
-      _addr2Ctrl.text    = parsed.addr2;
+      _addr1Ctrl.text = parsed.addr1;
+      _addr2Ctrl.text = parsed.addr2;
       _postcodeCtrl.text = parsed.postcode;
 
       // Match raw state string against the dropdown list.
@@ -240,12 +306,59 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     _extraCuisineIds.remove(_mainCuisineId);
 
     _images = detail.images
-        .map((img) => _FormImage(
-              id: img.imageId,
-              networkUrl: img.imageUrl,
-              isCover: img.isCover,
-            ))
+        .map(
+          (img) => _FormImage(
+            id: img.imageId,
+            networkUrl: img.imageUrl,
+            isCover: img.isCover,
+          ),
+        )
         .toList();
+  }
+
+  void _prefillFromApproval(RestaurantApprovalModel approval) {
+    _nameCtrl.text = approval.name;
+    _latCtrl.text = approval.latitude?.toString() ?? '';
+    _lngCtrl.text = approval.longitude?.toString() ?? '';
+    _mapsUrlCtrl.text = approval.mapsUrl ?? '';
+    _infoUrlCtrl.text = '';
+    _sourceCtrl.text = (approval.source ?? 'User').trim();
+
+    final rawAddr = approval.address ?? '';
+    final parsed = _parseStoredAddress(rawAddr);
+    if (parsed != null) {
+      _addr1Ctrl.text = parsed.addr1;
+      _addr2Ctrl.text = parsed.addr2;
+      _postcodeCtrl.text = parsed.postcode;
+
+      if (parsed.rawState != null) {
+        _selectedState = _malaysianStates.where((s) {
+          final raw = parsed.rawState!;
+          return raw == s || (raw.contains(s) && s.length >= 4);
+        }).firstOrNull;
+      }
+
+      if (_selectedState != null && parsed.rawCity != null) {
+        final knownCities = _citiesByState[_selectedState!] ?? [];
+        _selectedCity = knownCities.contains(parsed.rawCity)
+            ? parsed.rawCity
+            : null;
+      }
+    } else {
+      _addr1Ctrl.text = rawAddr;
+    }
+
+    _mainCuisineId = approval.mainCuisineId;
+
+    if (approval.imageUrl != null && approval.imageUrl!.trim().isNotEmpty) {
+      _images = [
+        _FormImage(
+          id: 'approval_img_0',
+          networkUrl: approval.imageUrl!.trim(),
+          isCover: true,
+        ),
+      ];
+    }
   }
 
   // ── Address parser ────────────────────────────────────────────────────────────
@@ -260,8 +373,14 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
   /// Everything **before** the postcode segment is joined into `addr1`.
   /// Everything **after** the city is joined into `rawState`.
   /// Returns `null` if no 5-digit postcode is found anywhere in the string.
-  ({String addr1, String addr2, String postcode, String? rawCity, String? rawState})?
-      _parseStoredAddress(String raw) {
+  ({
+    String addr1,
+    String addr2,
+    String postcode,
+    String? rawCity,
+    String? rawState,
+  })?
+  _parseStoredAddress(String raw) {
     if (raw.trim().isEmpty) return null;
 
     final parts = raw
@@ -274,27 +393,27 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
 
     // ── 1. Scan forward for the first segment that is (or starts with) a
     //       5-digit postcode ──────────────────────────────────────────────────
-    final combinedRx   = RegExp(r'^(\d{5})\s+(.+)$'); // "58200 Kuala Lumpur"
-    final standaloneRx = RegExp(r'^\d{5}$');           // "58200"
+    final combinedRx = RegExp(r'^(\d{5})\s+(.+)$'); // "58200 Kuala Lumpur"
+    final standaloneRx = RegExp(r'^\d{5}$'); // "58200"
 
-    int    postcodeIdx = -1;
-    String postcode    = '';
+    int postcodeIdx = -1;
+    String postcode = '';
     String? rawCity;
-    bool   isCombined  = false;
+    bool isCombined = false;
 
     for (int i = 0; i < parts.length; i++) {
       final cm = combinedRx.firstMatch(parts[i]);
       if (cm != null) {
         postcodeIdx = i;
-        postcode    = cm.group(1)!;
-        rawCity     = cm.group(2)!.trim();
-        isCombined  = true;
+        postcode = cm.group(1)!;
+        rawCity = cm.group(2)!.trim();
+        isCombined = true;
         break;
       }
       if (standaloneRx.hasMatch(parts[i])) {
         postcodeIdx = i;
-        postcode    = parts[i];
-        isCombined  = false;
+        postcode = parts[i];
+        isCombined = false;
         break;
       }
     }
@@ -336,10 +455,10 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     }
 
     return (
-      addr1:    addr1,
-      addr2:    addr2,
+      addr1: addr1,
+      addr2: addr2,
       postcode: postcode,
-      rawCity:  rawCity,
+      rawCity: rawCity,
       rawState: rawState,
     );
   }
@@ -389,7 +508,7 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     ctrl.dispose();
     if (confirmed == null || !mounted) return;
 
-    final tempId  = '_temp_${_pendingCuisineCounter++}';
+    final tempId = '_temp_${_pendingCuisineCounter++}';
     final pending = _PendingCuisine(
       tempId: tempId,
       name: confirmed!,
@@ -469,8 +588,10 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     if (lng.isNotEmpty && double.tryParse(lng) == null) {
       _errors['lng'] = 'Invalid number';
     }
-    if (lat.isNotEmpty && lng.isEmpty) _errors['lng'] = 'Required if latitude is set';
-    if (lng.isNotEmpty && lat.isEmpty) _errors['lat'] = 'Required if longitude is set';
+    if (lat.isNotEmpty && lng.isEmpty)
+      _errors['lng'] = 'Required if latitude is set';
+    if (lng.isNotEmpty && lat.isEmpty)
+      _errors['lat'] = 'Required if longitude is set';
 
     final mapsUrl = _mapsUrlCtrl.text.trim();
     if (mapsUrl.isNotEmpty) {
@@ -500,11 +621,13 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     if (picked.isEmpty) return;
     setState(() {
       for (final xf in picked) {
-        _images.add(_FormImage(
-          id: 'new_${_imgIdCounter++}',
-          file: File(xf.path),
-          isCover: _images.isEmpty, // first image auto-becomes cover
-        ));
+        _images.add(
+          _FormImage(
+            id: 'new_${_imgIdCounter++}',
+            file: File(xf.path),
+            isCover: _images.isEmpty, // first image auto-becomes cover
+          ),
+        );
       }
     });
   }
@@ -532,7 +655,8 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     final parts = <String>[];
     if (_addr1Ctrl.text.trim().isNotEmpty) parts.add(_addr1Ctrl.text.trim());
     if (_addr2Ctrl.text.trim().isNotEmpty) parts.add(_addr2Ctrl.text.trim());
-    if (_postcodeCtrl.text.trim().isNotEmpty) parts.add(_postcodeCtrl.text.trim());
+    if (_postcodeCtrl.text.trim().isNotEmpty)
+      parts.add(_postcodeCtrl.text.trim());
     if (_selectedCity != null) parts.add(_selectedCity!);
     if (_selectedState != null) parts.add(_selectedState!);
     return parts.join(', ');
@@ -541,37 +665,48 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
   // ── Submit ────────────────────────────────────────────────────────────────────
 
   Future<void> _submit() async {
+    if (_isApprovalMode) {
+      await _acceptApproval();
+      return;
+    }
+
     if (!_validate()) return;
     setState(() => _isSubmitting = true);
 
     try {
       // Step 0 — Persist any cuisines the admin created during this session.
       //          Pending entries use temp IDs; after this step we have real UUIDs.
-      final pendingMap       = await _resolvePendingCuisines();
-      final resolvedMainId   = pendingMap[_mainCuisineId] ?? _mainCuisineId!;
+      final pendingMap = await _resolvePendingCuisines();
+      final resolvedMainId = pendingMap[_mainCuisineId] ?? _mainCuisineId!;
       final resolvedExtraIds = _extraCuisineIds
           .map((id) => pendingMap[id] ?? id)
           .toList();
 
-      final address  = _buildAddress();
-      final lat      = double.tryParse(_latCtrl.text.trim());
-      final lng      = double.tryParse(_lngCtrl.text.trim());
-      final mapsUrl  = _mapsUrlCtrl.text.trim().isEmpty ? null : _mapsUrlCtrl.text.trim();
-      final infoUrl  = _infoUrlCtrl.text.trim().isEmpty ? null : _infoUrlCtrl.text.trim();
-      final name     = _nameCtrl.text.trim();
+      final address = _buildAddress();
+      final lat = double.tryParse(_latCtrl.text.trim());
+      final lng = double.tryParse(_lngCtrl.text.trim());
+      final mapsUrl = _mapsUrlCtrl.text.trim().isEmpty
+          ? null
+          : _mapsUrlCtrl.text.trim();
+      final infoUrl = _infoUrlCtrl.text.trim().isEmpty
+          ? null
+          : _infoUrlCtrl.text.trim();
+      final name = _nameCtrl.text.trim();
 
       // Step 1 — Ensure a restaurant row exists so we have an ID for storage paths.
       //          In add mode we create the row now; in edit mode we use the known ID.
-      final String targetId = widget.restaurantId ?? await _repo.createRestaurant(
-        name: name,
-        address: address,
-        latitude: lat,
-        longitude: lng,
-        mapsUrl: mapsUrl,
-        mainCuisineId: resolvedMainId,
-        infoUrl: infoUrl,
-        source: 'admin',
-      );
+      final String targetId =
+          widget.restaurantId ??
+          await _repo.createRestaurant(
+            name: name,
+            address: address,
+            latitude: lat,
+            longitude: lng,
+            mapsUrl: mapsUrl,
+            mainCuisineId: resolvedMainId,
+            infoUrl: infoUrl,
+            source: 'admin',
+          );
 
       // Step 2 — Upload any newly picked local images; keep existing remote ones.
       final imageRecords = <RestaurantImageRecord>[];
@@ -590,11 +725,13 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
           );
           imageRecords.add(record);
         } else if (img.networkUrl != null) {
-          imageRecords.add(RestaurantImageRecord(
-            imageId: img.id,
-            imageUrl: img.networkUrl!,
-            isCover: img.isCover,
-          ));
+          imageRecords.add(
+            RestaurantImageRecord(
+              imageId: img.id,
+              imageUrl: img.networkUrl!,
+              isCover: img.isCover,
+            ),
+          );
         }
       }
 
@@ -621,11 +758,11 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
       await showCupertinoDialog(
         context: context,
         builder: (_) => CupertinoAlertDialog(
-          title: Text(_isEditMode ? 'Restaurant Updated' : 'Restaurant Created'),
+          title: Text(
+            _isEditMode ? 'Restaurant Updated' : 'Restaurant Created',
+          ),
           content: Text(
-            _isEditMode
-                ? '$name has been updated.'
-                : '$name has been created.',
+            _isEditMode ? '$name has been updated.' : '$name has been created.',
           ),
           actions: [
             CupertinoDialogAction(
@@ -655,6 +792,295 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     }
   }
 
+  Future<void> _acceptApproval() async {
+    if (!_validate()) return;
+
+    final approval = _approval;
+    if (approval == null) {
+      _showErrorDialog('Approval context is missing.');
+      return;
+    }
+
+    final confirmed = await _showAcceptConfirmDialog();
+    if (confirmed != true) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final pendingMap = await _resolvePendingCuisines();
+      final resolvedMainId = pendingMap[_mainCuisineId] ?? _mainCuisineId!;
+      final resolvedExtraIds = _extraCuisineIds
+          .map((id) => pendingMap[id] ?? id)
+          .toList();
+
+      final decision = ApprovalDecisionInput(
+        approvalId: approval.approvalId,
+        name: _nameCtrl.text.trim(),
+        address: _buildAddress(),
+        latitude: double.tryParse(_latCtrl.text.trim()),
+        longitude: double.tryParse(_lngCtrl.text.trim()),
+        mapsUrl: _mapsUrlCtrl.text.trim().isEmpty
+            ? null
+            : _mapsUrlCtrl.text.trim(),
+        infoUrl: _infoUrlCtrl.text.trim().isEmpty
+            ? null
+            : _infoUrlCtrl.text.trim(),
+        source: _sourceCtrl.text.trim().isEmpty
+            ? 'User'
+            : _sourceCtrl.text.trim(),
+        mainCuisineId: resolvedMainId,
+        extraCuisineIds: resolvedExtraIds,
+        images: _buildApprovalDecisionImages(),
+      );
+
+      await _approvalRepo.acceptApprovalReviewed(decision);
+
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      await _showInfoDialog(
+        title: 'Approval Accepted',
+        message:
+            '${decision.name} has been accepted and published as a restaurant.',
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      _showErrorDialog(e.toString());
+    }
+  }
+
+  Future<void> _rejectApproval() async {
+    final approval = _approval;
+    if (approval == null) {
+      _showErrorDialog('Approval context is missing.');
+      return;
+    }
+
+    final confirmed = await _showRejectConfirmDialog();
+    if (confirmed != true) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final pendingMap = await _resolvePendingCuisines();
+      final resolvedMainId =
+          pendingMap[_mainCuisineId] ??
+          _mainCuisineId ??
+          approval.mainCuisineId;
+      final resolvedExtraIds = _extraCuisineIds
+          .map((id) => pendingMap[id] ?? id)
+          .toList();
+
+      final fallbackName = approval.name.trim();
+      final inputName = _nameCtrl.text.trim().isEmpty
+          ? fallbackName
+          : _nameCtrl.text.trim();
+
+      final builtAddress = _buildAddress().trim();
+      final fallbackAddress = (approval.address ?? '').trim();
+      final inputAddress = builtAddress.isEmpty
+          ? fallbackAddress
+          : builtAddress;
+
+      final decision = ApprovalDecisionInput(
+        approvalId: approval.approvalId,
+        name: inputName,
+        address: inputAddress,
+        latitude: double.tryParse(_latCtrl.text.trim()),
+        longitude: double.tryParse(_lngCtrl.text.trim()),
+        mapsUrl: _mapsUrlCtrl.text.trim().isEmpty
+            ? null
+            : _mapsUrlCtrl.text.trim(),
+        infoUrl: _infoUrlCtrl.text.trim().isEmpty
+            ? null
+            : _infoUrlCtrl.text.trim(),
+        source: _sourceCtrl.text.trim().isEmpty
+            ? 'User'
+            : _sourceCtrl.text.trim(),
+        mainCuisineId: resolvedMainId,
+        extraCuisineIds: resolvedExtraIds,
+        images: _buildApprovalDecisionImages(),
+      );
+
+      await _approvalRepo.rejectApprovalReviewed(decision);
+
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      await _showInfoDialog(
+        title: 'Approval Rejected',
+        message:
+            '${decision.name} has been rejected and linked pending posts were blocked.',
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      _showErrorDialog(e.toString());
+    }
+  }
+
+  List<ApprovalFinalImageInput> _buildApprovalDecisionImages() {
+    final out = <ApprovalFinalImageInput>[];
+    for (final img in _images) {
+      if (img.file != null) {
+        out.add(
+          ApprovalFinalImageInput.upload(
+            bytes: img.file!.readAsBytesSync(),
+            fileExt: _fileExtFromPath(img.file!.path),
+            isCover: img.isCover,
+          ),
+        );
+      } else if (img.networkUrl != null && img.networkUrl!.trim().isNotEmpty) {
+        out.add(
+          ApprovalFinalImageInput.existing(
+            url: img.networkUrl!.trim(),
+            isCover: img.isCover,
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  String _fileExtFromPath(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'png';
+    if (lower.endsWith('.webp')) return 'webp';
+    if (lower.endsWith('.jpeg')) return 'jpeg';
+    if (lower.endsWith('.jpg')) return 'jpg';
+    return 'jpg';
+  }
+
+  Future<bool?> _showRejectConfirmDialog() {
+    return showCupertinoDialog<bool>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text('Reject Approval?'),
+        content: const Text(
+          'This will reject this restaurant approval and block all linked pending posts.',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _showAcceptConfirmDialog() {
+    final current = _currentRestaurant;
+    final reviewedName = _nameCtrl.text.trim();
+    final reviewedAddress = _buildAddress();
+    final reviewedMainCuisine = _allCuisines
+        .where((c) => c.id == _mainCuisineId)
+        .map((c) => c.description)
+        .firstOrNull;
+
+    if (current == null) {
+      return showCupertinoDialog<bool>(
+        context: context,
+        builder: (_) => CupertinoAlertDialog(
+          title: const Text('Accept Approval?'),
+          content: const Text(
+            'This will create a new restaurant from your reviewed values and publish linked pending posts.',
+          ),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Accept'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return showCupertinoDialog<bool>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text('Accept & Replace?'),
+        content: Column(
+          children: [
+            const SizedBox(height: 8),
+            _ComparisonBlock(
+              title: 'Current Restaurant',
+              name: current.name,
+              address: current.address,
+              mainCuisine: current.mainCuisineName,
+              source: current.source,
+              status: current.isDisabled ? 'Disabled' : 'Active',
+            ),
+            const SizedBox(height: 8),
+            _ComparisonBlock(
+              title: 'Reviewed Approval',
+              name: reviewedName,
+              address: reviewedAddress,
+              mainCuisine: reviewedMainCuisine,
+              source: _sourceCtrl.text.trim(),
+              status: 'Pending approval',
+            ),
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Accept'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showInfoDialog({
+    required String title,
+    required String message,
+  }) {
+    return showCupertinoDialog<void>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showErrorDialog(String message) {
+    return showCupertinoDialog<void>(
+      context: context,
+      builder: (_) => CupertinoAlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -667,7 +1093,11 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
           bottom: BorderSide(color: AppColors.divider, width: 0.5),
         ),
         middle: Text(
-          _isEditMode ? 'Edit Restaurant' : 'Add Restaurant',
+          _isApprovalMode
+              ? 'Review Approval'
+              : _isEditMode
+              ? 'Edit Restaurant'
+              : 'Add Restaurant',
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
         ),
       ),
@@ -703,7 +1133,10 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
               ),
               const SizedBox(height: 16),
               CupertinoButton(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
                 color: AppColors.primary,
                 borderRadius: BorderRadius.circular(8),
                 onPressed: _loadData,
@@ -724,18 +1157,41 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
           child: Column(
             children: [
               const SizedBox(height: 8),
+              if (_isApprovalMode && _currentRestaurant != null)
+                _buildCurrentRestaurantInfoCard(),
+              if (_isApprovalMode && _currentRestaurant != null)
+                const SizedBox(height: 8),
               _buildBasicInfoSection(),
               const SizedBox(height: 8),
               _buildCuisineSection(),
               const SizedBox(height: 8),
               _buildImageSection(),
               const SizedBox(height: 16),
-              _buildSubmitButton(),
+              _isApprovalMode ? _buildDecisionButtons() : _buildSubmitButton(),
               const SizedBox(height: 16),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCurrentRestaurantInfoCard() {
+    final current = _currentRestaurant;
+    if (current == null) return const SizedBox.shrink();
+
+    return _SectionCard(
+      title: 'Current Restaurant Context',
+      children: [
+        _InfoLine(label: 'Name', value: current.name),
+        _InfoLine(label: 'Address', value: current.address ?? '-'),
+        _InfoLine(label: 'Main Cuisine', value: current.mainCuisineName ?? '-'),
+        _InfoLine(label: 'Source', value: current.source ?? '-'),
+        _InfoLine(
+          label: 'Status',
+          value: current.isDisabled ? 'Disabled' : 'Active',
+        ),
+      ],
     );
   }
 
@@ -795,7 +1251,9 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
               child: _buildPickerField(
                 label: 'City *',
                 value: _selectedCity,
-                placeholder: cities.isEmpty ? 'Select state first' : 'Select city',
+                placeholder: cities.isEmpty
+                    ? 'Select state first'
+                    : 'Select city',
                 onTap: cities.isEmpty ? null : _showCityPicker,
                 error: _errors['city'],
               ),
@@ -810,7 +1268,10 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
                 label: 'Latitude',
                 controller: _latCtrl,
                 placeholder: 'e.g. 3.1480',
-                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
                 error: _errors['lat'],
               ),
             ),
@@ -820,7 +1281,10 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
                 label: 'Longitude',
                 controller: _lngCtrl,
                 placeholder: 'e.g. 101.7130',
-                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
                 error: _errors['lng'],
               ),
             ),
@@ -839,6 +1303,12 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
           placeholder: 'https://...',
           keyboardType: TextInputType.url,
           error: _errors['infoUrl'],
+        ),
+        _FormField(
+          label: 'Source',
+          controller: _sourceCtrl,
+          placeholder: 'e.g. User / API / Admin',
+          enabled: !_isApprovalMode,
         ),
       ],
     );
@@ -874,7 +1344,9 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
                 color: onTap == null ? AppColors.surface : AppColors.background,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: error != null ? const Color(0xFFFF3B30) : AppColors.divider,
+                  color: error != null
+                      ? const Color(0xFFFF3B30)
+                      : AppColors.divider,
                   width: 0.5,
                 ),
               ),
@@ -882,7 +1354,9 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
                 value ?? placeholder,
                 style: TextStyle(
                   fontSize: 14,
-                  color: value != null ? AppColors.textPrimary : AppColors.textLight,
+                  color: value != null
+                      ? AppColors.textPrimary
+                      : AppColors.textLight,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -979,9 +1453,9 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
     final mainName = _mainCuisineId == null
         ? null
         : _primaryCuisines
-            .where((c) => c.id == _mainCuisineId)
-            .map((c) => c.description)
-            .firstOrNull;
+              .where((c) => c.id == _mainCuisineId)
+              .map((c) => c.description)
+              .firstOrNull;
 
     return _SectionCard(
       title: 'Cuisine',
@@ -999,9 +1473,7 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
                 ),
               ),
             ),
-            _AddNewCuisineButton(
-              onTap: () => _addCuisineDialog(forMain: true),
-            ),
+            _AddNewCuisineButton(onTap: () => _addCuisineDialog(forMain: true)),
           ],
         ),
         const SizedBox(height: 6),
@@ -1206,10 +1678,7 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
               decoration: BoxDecoration(
                 color: AppColors.background,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.divider,
-                  width: 1,
-                ),
+                border: Border.all(color: AppColors.divider, width: 1),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1222,7 +1691,10 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
                   const SizedBox(height: 8),
                   const Text(
                     'Tap to upload images',
-                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   const Text(
@@ -1275,9 +1747,7 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
           borderRadius: BorderRadius.circular(12),
           onPressed: _isSubmitting ? null : _submit,
           child: _isSubmitting
-              ? const CupertinoActivityIndicator(
-                  color: CupertinoColors.white,
-                )
+              ? const CupertinoActivityIndicator(color: CupertinoColors.white)
               : Text(
                   _isEditMode ? 'Update Restaurant' : 'Create Restaurant',
                   style: const TextStyle(
@@ -1287,6 +1757,96 @@ class _AddEditRestaurantScreenState extends State<AddEditRestaurantScreen> {
                   ),
                 ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildDecisionButtons() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          AbsorbPointer(
+            absorbing: _isSubmitting,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Opacity(
+                    opacity: _isSubmitting ? 0.55 : 1,
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      color: const Color(0xFFFF3B30),
+                      borderRadius: BorderRadius.circular(12),
+                      onPressed: _rejectApproval,
+                      child: const Text(
+                        'Reject',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: CupertinoColors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: CupertinoButton(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    color: const Color(0xFF34C759),
+                    borderRadius: BorderRadius.circular(12),
+                    onPressed: _acceptApproval,
+                    child: _isSubmitting
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CupertinoActivityIndicator(
+                                color: CupertinoColors.white,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'Accepting...',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: CupertinoColors.white,
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Text(
+                            'Accept',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: CupertinoColors.white,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isSubmitting)
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CupertinoActivityIndicator(radius: 7),
+                  SizedBox(width: 8),
+                  Text(
+                    'Processing approval, please wait...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1388,6 +1948,7 @@ class _FormField extends StatelessWidget {
   final String? placeholder;
   final TextInputType? keyboardType;
   final String? error;
+  final bool enabled;
 
   const _FormField({
     required this.label,
@@ -1395,6 +1956,7 @@ class _FormField extends StatelessWidget {
     this.placeholder,
     this.keyboardType,
     this.error,
+    this.enabled = true,
   });
 
   @override
@@ -1415,10 +1977,11 @@ class _FormField extends StatelessWidget {
           const SizedBox(height: 6),
           CupertinoTextField(
             controller: controller,
+            enabled: enabled,
             placeholder: placeholder,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.background,
+              color: enabled ? AppColors.background : AppColors.surface,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: error != null
@@ -1427,7 +1990,10 @@ class _FormField extends StatelessWidget {
                 width: 0.5,
               ),
             ),
-            style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+            style: TextStyle(
+              fontSize: 14,
+              color: enabled ? AppColors.textPrimary : AppColors.textSecondary,
+            ),
             placeholderStyle: const TextStyle(
               fontSize: 14,
               color: AppColors.textLight,
@@ -1439,10 +2005,7 @@ class _FormField extends StatelessWidget {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 error!,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFFFF3B30),
-                ),
+                style: const TextStyle(fontSize: 11, color: Color(0xFFFF3B30)),
               ),
             ),
         ],
@@ -1480,8 +2043,8 @@ class _ImageCard extends StatelessWidget {
                     errorBuilder: (_, _, _) => _placeholder(),
                   )
                 : image.file != null
-                    ? Image.file(image.file!, fit: BoxFit.cover)
-                    : _placeholder(),
+                ? Image.file(image.file!, fit: BoxFit.cover)
+                : _placeholder(),
           ),
           // Cover border highlight
           Container(
@@ -1544,11 +2107,121 @@ class _ImageCard extends StatelessWidget {
     return Container(
       color: AppColors.surface,
       child: const Center(
-        child: Icon(
-          CupertinoIcons.photo,
-          size: 24,
-          color: AppColors.textLight,
-        ),
+        child: Icon(CupertinoIcons.photo, size: 24, color: AppColors.textLight),
+      ),
+    );
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoLine({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ComparisonBlock extends StatelessWidget {
+  final String title;
+  final String? name;
+  final String? address;
+  final String? mainCuisine;
+  final String? source;
+  final String? status;
+
+  const _ComparisonBlock({
+    required this.title,
+    this.name,
+    this.address,
+    this.mainCuisine,
+    this.source,
+    this.status,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text('Name: ${name ?? '-'}', style: const TextStyle(fontSize: 12)),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Address: ', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Text(
+                  address ?? '-',
+                  style: const TextStyle(fontSize: 12),
+                  textAlign: TextAlign.left,
+                  softWrap: true,
+                ),
+              ),
+            ],
+          ),
+          Text(
+            'Main Cuisine: ${mainCuisine ?? '-'}',
+            style: const TextStyle(fontSize: 12),
+            textAlign: TextAlign.start,
+          ),
+          Text(
+            'Source: ${source ?? '-'}',
+            style: const TextStyle(fontSize: 12),
+            textAlign: TextAlign.start,
+          ),
+          Text(
+            'Status: ${status ?? '-'}',
+            style: const TextStyle(fontSize: 12),
+            textAlign: TextAlign.start,
+          ),
+        ],
       ),
     );
   }
