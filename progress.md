@@ -7,7 +7,7 @@
 
 ## 1. What Is This Project?
 
-**Taste Spot** is a **food & beverage community mobile app** built with **Flutter** (Dart), heavily inspired by the **Xiaohongshu (小红书 / RED)** social platform. Users can discover restaurants, share food-related posts ("notes"), save collections, follow other foodies, and get random restaurant recommendations via a "Blind Box" shake-to-discover feature.
+**Taste Spot** is a **food & beverage community mobile app** built with **Flutter** (Dart), heavily inspired by the **Xiaohongshu (小红书 / RED)** social platform. Users can discover restaurants, share food-related posts, save collections, follow other foodies, and get random restaurant recommendations via a "Blind Box" shake-to-discover feature.
 
 - **Primary Platform:** iOS (Cupertino-style widgets throughout)
 - **Architecture:** Feature-based folder structure (loosely MVC)
@@ -146,7 +146,7 @@ Everything below works as a **UI-only prototype** with hardcoded, in-memory mock
 - [ ] ❌ Comments are hardcoded; no real posting
 - [ ] ❌ Share functionality does nothing
 
-### 5.5 Add Post ("New Note") Screen
+### 5.5 Add Post Screen
 - [x] Full-screen modal with close (✕) and "Publish" button
 - [x] Horizontal image picker carousel — tap to add mock random images, ✕ to remove
 - [x] Title input field with placeholder
@@ -167,9 +167,9 @@ Everything below works as a **UI-only prototype** with hardcoded, in-memory mock
 - [ ] ❌ "+" button in nav bar does nothing (no album creation)
 
 ### 5.7 Profile Screen
-- [x] Profile section: avatar (gradient ring border), display name, XHS-style user ID, stats row (**Following / Fans / Notes** with tappable counters), bio text, interest tags
+- [x] Profile section: avatar (gradient ring border), display name, XHS-style user ID, stats row (**Following / Fans / Posts** with tappable counters), bio text, interest tags
 - [x] **Edit Profile** button → navigates to Edit Profile screen
-- [x] Tab bar: "Notes" / "Liked" — with animated underline, pinned on scroll
+- [x] Tab bar: "Posts" / "Liked" — with animated underline, pinned on scroll
 - [x] 2-column card grid showing mock posts (tappable → Post Detail)
 - [x] Share icon in top bar (no-op)
 - [x] **Logout** button → shows confirmation action sheet → navigates back to Login

@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final Profile profile;
-
   const EditProfileScreen({super.key, required this.profile});
 
   @override
@@ -17,18 +16,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
   late TextEditingController _bioController;
-
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.profile.name);
-    _usernameController = TextEditingController(
-      text:
-          widget.profile.username ??
-          widget.profile.name.replaceAll(' ', '').toLowerCase(),
-    );
+    _usernameController = TextEditingController(text: widget.profile.username ?? '');
     _bioController = TextEditingController(text: widget.profile.bio ?? '');
   }
 
@@ -41,6 +35,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
+    if (_nameController.text.trim().isEmpty) return;
     setState(() => _isSaving = true);
     try {
       final repository = ProfileRepository(Supabase.instance.client);
@@ -49,9 +44,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         name: _nameController.text.trim(),
         bio: _bioController.text.trim(),
       );
-      if (mounted) {
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         showCupertinoDialog(
@@ -59,65 +52,50 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           builder: (ctx) => CupertinoAlertDialog(
             title: const Text('Error'),
             content: Text(e.toString()),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('OK'),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ],
+            actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(ctx))],
           ),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
         backgroundColor: CupertinoColors.white,
-        border: const Border(
-          bottom: BorderSide(color: AppColors.divider, width: 0.5),
-        ),
+        border: null,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _isSaving ? null : () => Navigator.pop(context),
-          child: const Text(
-            'Cancel',
-            style: TextStyle(
-              fontWeight: FontWeight.w400,
-              color: AppColors.textPrimary,
-            ),
-          ),
+          child: const Text('Cancel', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
         ),
-        middle: const Text('Edit Profile'),
+        middle: const Text('Edit Profile', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5)),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: _isSaving ? null : _saveProfile,
           child: _isSaving
               ? const CupertinoActivityIndicator()
-              : const Text(
-                  'Done',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
+              : const Text('Save', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.primary)),
         ),
       ),
       child: SafeArea(
         child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildAvatarSection(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
+              _buildSectionTitle('ACCOUNT INFORMATION'),
               _buildFormSection(),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+              _buildSectionTitle('ABOUT ME'),
+              _buildBioSection(),
+              const SizedBox(height: 40),
             ],
           ),
         ),
@@ -125,50 +103,63 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textLight, letterSpacing: 0.8),
+      ),
+    );
+  }
+
   Widget _buildAvatarSection() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.only(top: 20),
-      child: Center(
-        child: Stack(
-          clipBehavior: Clip.none,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: Column(
           children: [
-            Container(
-              width: 90,
-              height: 90,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-              ),
-              child: ClipOval(
-                child: Image.network(
-                  'https://i.pravatar.cc/200?img=12',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    CupertinoIcons.person_fill,
-                    size: 44,
-                    color: AppColors.textLight,
+            Stack(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
+                  ),
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surface),
+                    child: ClipOval(
+                      child: Image.network(
+                        'https://i.pravatar.cc/200?u=${widget.profile.userId}',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.background, width: 2),
+                Positioned(
+                  right: 4,
+                  bottom: 4,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: CupertinoColors.white, width: 3),
+                      boxShadow: [
+                        BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 8, offset: const Offset(0, 2)),
+                      ],
+                    ),
+                    child: const Icon(CupertinoIcons.camera_fill, color: CupertinoColors.white, size: 16),
+                  ),
                 ),
-                child: const Icon(
-                  CupertinoIcons.camera_fill,
-                  color: CupertinoColors.white,
-                  size: 14,
-                ),
-              ),
+              ],
             ),
+            const SizedBox(height: 16),
+            const Text('Change Photo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary)),
           ],
         ),
       ),
@@ -176,28 +167,63 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildFormSection() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: CupertinoColors.white,
-        border: Border(
-          top: BorderSide(color: AppColors.divider, width: 0.5),
-          bottom: BorderSide(color: AppColors.divider, width: 0.5),
-        ),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
-          _CupertinoEditRow(label: 'Name', controller: _nameController),
-          const _CustomDivider(),
-          _CupertinoEditRow(
+          _ModernEditField(
+            label: 'Name',
+            controller: _nameController,
+            placeholder: 'Your display name',
+          ),
+          const SizedBox(height: 16),
+          _ModernEditField(
             label: 'Username',
             controller: _usernameController,
             readOnly: true,
+            placeholder: 'username',
           ),
-          const _CustomDivider(),
-          _CupertinoEditRow(
-            label: 'Bio',
-            controller: _bioController,
-            minLines: 2,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBioSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: CupertinoTextField(
+              controller: _bioController,
+              placeholder: 'Write a short bio...',
+              maxLines: 5,
+              padding: EdgeInsets.zero,
+              decoration: null,
+              style: const TextStyle(fontSize: 15, color: AppColors.textPrimary, height: 1.5),
+              placeholderStyle: const TextStyle(fontSize: 15, color: AppColors.textLight),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ValueListenableBuilder(
+            valueListenable: _bioController,
+            builder: (context, value, child) {
+              final count = value.text.length;
+              return Text(
+                '$count / 100',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: count > 100 ? CupertinoColors.destructiveRed : AppColors.textLight,
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -205,80 +231,46 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 }
 
-class _CustomDivider extends StatelessWidget {
-  const _CustomDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 110),
-      child: Container(height: 0.5, color: AppColors.divider),
-    );
-  }
-}
-
-class _CupertinoEditRow extends StatelessWidget {
+class _ModernEditField extends StatelessWidget {
   final String label;
   final TextEditingController controller;
-  final int minLines;
+  final String placeholder;
   final bool readOnly;
 
-  const _CupertinoEditRow({
+  const _ModernEditField({
     required this.label,
     required this.controller,
-    this.minLines = 1,
+    required this.placeholder,
     this.readOnly = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        crossAxisAlignment: minLines > 1
-            ? CrossAxisAlignment.start
-            : CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 90,
-            child: Padding(
-              padding: EdgeInsets.only(top: minLines > 1 ? 12.0 : 0),
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w400,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+        ),
+        Container(
+          height: 54,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: readOnly ? AppColors.surface.withAlpha(120) : AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
           ),
-          Expanded(
-            child: CupertinoTextField(
-              controller: controller,
-              readOnly: readOnly,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              minLines: minLines,
-              maxLines: null, // Allow expanding
-              style: TextStyle(
-                fontSize: 15,
-                color: readOnly
-                    ? AppColors.textSecondary
-                    : AppColors.textPrimary,
-              ),
-              decoration: const BoxDecoration(
-                color: CupertinoColors
-                    .transparent, // entirely flat like iOS native cell
-              ),
-              placeholder: label,
-              placeholderStyle: const TextStyle(
-                fontSize: 15,
-                color: AppColors.textLight,
-              ),
-            ),
+          alignment: Alignment.centerLeft,
+          child: CupertinoTextField(
+            controller: controller,
+            placeholder: placeholder,
+            readOnly: readOnly,
+            padding: EdgeInsets.zero,
+            decoration: null,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: readOnly ? AppColors.textLight : AppColors.textPrimary),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

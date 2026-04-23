@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -28,19 +29,34 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   List<Profile> _followingList = [];
   List<Profile> _followerList = [];
   
-  // Set of following IDs for the current logged-in user to show follow/following button states correctly
+  // Search
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  
+  // Set of following IDs for the current logged-in user
   Set<String> _currentUserFollowingIds = {};
+  final Set<String> _updatingUserIds = {}; // Track which user's follow state is being updated
 
   @override
   void initState() {
     super.initState();
     _selectedTab = widget.initialTabIndex;
     _pageController = PageController(initialPage: _selectedTab);
+    _searchController.addListener(() {
+      setState(() => _searchQuery = _searchController.text.toLowerCase());
+    });
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
     try {
       final repo = ProfileRepository(Supabase.instance.client);
       
@@ -63,46 +79,102 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
         });
       }
     } catch (e) {
-      print('Error loading connections: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _toggleFollow(Profile user) async {
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null || currentUserId == user.userId) return;
+
+    if (_updatingUserIds.contains(user.userId)) return;
+
+    final isCurrentlyFollowing = _currentUserFollowingIds.contains(user.userId);
+    
+    setState(() {
+      _updatingUserIds.add(user.userId);
+      // Optimistic update
+      if (isCurrentlyFollowing) {
+        _currentUserFollowingIds.remove(user.userId);
+      } else {
+        _currentUserFollowingIds.add(user.userId);
+      }
+    });
+
+    try {
+      final repo = ProfileRepository(Supabase.instance.client);
+      await repo.setFollowing(
+        followerId: currentUserId,
+        followingId: user.userId,
+        isFollowing: !isCurrentlyFollowing,
+      );
+    } catch (e) {
+      // Revert optimistic update on failure
       if (mounted) {
-        setState(() => _isLoading = false);
+        setState(() {
+          if (isCurrentlyFollowing) {
+            _currentUserFollowingIds.add(user.userId);
+          } else {
+            _currentUserFollowingIds.remove(user.userId);
+          }
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingUserIds.remove(user.userId);
+        });
       }
     }
+  }
+
+  List<Profile> _getFilteredList(List<Profile> list) {
+    if (_searchQuery.isEmpty) return list;
+    return list.where((u) => 
+      u.name.toLowerCase().contains(_searchQuery) || 
+      (u.username ?? "").toLowerCase().contains(_searchQuery)
+    ).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: CupertinoColors.white,
       child: Column(
         children: [
-          // Custom Sleek Navigation Bar
           _ConnectionNavBar(
             selectedIndex: _selectedTab,
             onTabChanged: (index) {
               setState(() => _selectedTab = index);
               _pageController.animateToPage(
                 index,
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOut,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOutCubic,
               );
             },
           ),
           
-          // Page View
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: CupertinoSearchTextField(
+              controller: _searchController,
+              placeholder: 'Search user...',
+              backgroundColor: AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          
           Expanded(
-            child: _isLoading 
-                ? const Center(child: CupertinoActivityIndicator())
-                : PageView(
-                    controller: _pageController,
-                    onPageChanged: (index) {
-                      setState(() => _selectedTab = index);
-                    },
-                    children: [
-                      _buildListContainer(_followingList, isFollowingTab: true),
-                      _buildListContainer(_followerList, isFollowingTab: false),
-                    ],
-                  ),
+            child: PageView(
+              controller: _pageController,
+              onPageChanged: (index) {
+                setState(() => _selectedTab = index);
+              },
+              children: [
+                _buildListContainer(_followingList, isFollowingTab: true),
+                _buildListContainer(_followerList, isFollowingTab: false),
+              ],
+            ),
           ),
         ],
       ),
@@ -110,20 +182,42 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   }
 
   Widget _buildListContainer(List<Profile> list, {required bool isFollowingTab}) {
-    if (list.isEmpty) {
+    if (_isLoading) return const _ConnectionsSkeleton();
+
+    final filteredList = _getFilteredList(list);
+
+    if (filteredList.isEmpty) {
       return Center(
-        child: Text(
-          isFollowingTab ? 'You are not following anyone yet.' : 'No followers yet.',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 15),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isFollowingTab ? CupertinoIcons.person_add : CupertinoIcons.person_2, 
+              size: 48, 
+              color: AppColors.surface
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _searchQuery.isNotEmpty 
+                  ? 'No results found for "$_searchQuery"'
+                  : (isFollowingTab ? 'Not following anyone yet.' : 'No followers yet.'),
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+            ),
+          ],
         ),
       );
     }
     
-    return ListView.builder(
+    return ListView.separated(
       padding: EdgeInsets.zero,
-      itemCount: list.length,
+      physics: const BouncingScrollPhysics(),
+      itemCount: filteredList.length,
+      separatorBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.only(left: 82),
+        child: Container(height: 0.5, color: AppColors.divider),
+      ),
       itemBuilder: (context, index) {
-        final user = list[index];
+        final user = filteredList[index];
         return _buildUserRow(context, user);
       },
     );
@@ -132,10 +226,11 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
   Widget _buildUserRow(BuildContext context, Profile user) {
     final bool isFollowed = _currentUserFollowingIds.contains(user.userId);
     final isCurrentUser = Supabase.instance.client.auth.currentUser?.id == user.userId;
+    final isUpdating = _updatingUserIds.contains(user.userId);
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: () {
         Navigator.of(context).push(
           CupertinoPageRoute(
             builder: (_) => ProfileScreen(userId: user.userId),
@@ -150,16 +245,17 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
             Container(
               width: 52,
               height: 52,
-              decoration: const BoxDecoration(
-                color: AppColors.divider,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
                 shape: BoxShape.circle,
+                border: Border.all(color: AppColors.divider, width: 0.5),
               ),
               child: ClipOval(
                 child: Image.network(
                   'https://i.pravatar.cc/200?u=${user.userId}',
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Icon(
-                    CupertinoIcons.person_solid, 
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    CupertinoIcons.person_fill, 
                     color: AppColors.textLight, 
                     size: 28,
                   ),
@@ -175,65 +271,95 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                   Text(
                     user.name,
                     style: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textPrimary,
-                      letterSpacing: -0.3,
                     ),
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 2),
                   Text(
-                    '@${user.username ?? user.name.replaceAll(' ', '').toLowerCase()} • ${user.bio ?? "No bio"}',
+                    user.username != null ? '@${user.username}' : 'User',
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       color: AppColors.textSecondary,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
+                  if (user.bio != null && user.bio!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      user.bio!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textLight,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(width: 12),
             // Follow/Following Button
             if (!isCurrentUser)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                onPressed: () async {
-                  // Basic toggle locally for immediate feedback
-                  setState(() {
-                    if (isFollowed) {
-                      _currentUserFollowingIds.remove(user.userId);
-                    } else {
-                      _currentUserFollowingIds.add(user.userId);
-                    }
-                  });
-                  
-                  // In a full implementation, you would call ProfileRepository to actually
-                  // follow/unfollow the user in the database here.
-                },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isFollowed ? AppColors.surface : AppColors.primary,
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(
-                    color: isFollowed ? AppColors.divider : AppColors.primary,
-                    width: 1,
+              GestureDetector(
+                onTap: () => _toggleFollow(user),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isFollowed ? CupertinoColors.white : AppColors.primary,
+                    borderRadius: BorderRadius.circular(100),
+                    border: Border.all(
+                      color: isFollowed ? AppColors.divider : AppColors.primary,
+                      width: 1,
+                    ),
                   ),
-                ),
-                child: Text(
-                  isFollowed ? 'Following' : 'Follow',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: isFollowed ? AppColors.textSecondary : CupertinoColors.white,
-                  ),
+                  child: isUpdating 
+                      ? const CupertinoActivityIndicator(radius: 7)
+                      : Text(
+                          isFollowed ? 'Following' : 'Follow',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isFollowed ? AppColors.textSecondary : CupertinoColors.white,
+                          ),
+                        ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConnectionsSkeleton extends StatelessWidget {
+  const _ConnectionsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      itemCount: 8,
+      physics: const NeverScrollableScrollPhysics(),
+      itemBuilder: (context, index) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            const SkeletonCircle(size: 52),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Skeleton(width: 120, height: 16),
+                  SizedBox(height: 6),
+                  Skeleton(width: 180, height: 12),
+                ],
+              ),
             ),
+            const SizedBox(width: 12),
+            Skeleton(width: 80, height: 32, borderRadius: 16),
           ],
         ),
       ),
@@ -256,10 +382,10 @@ class _ConnectionNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
-    final tabs = ['Following', 'Fans'];
+    final tabs = ['Following', 'Followers'];
 
     return Container(
-      color: AppColors.surface.withValues(alpha: 0.98),
+      color: CupertinoColors.white,
       padding: EdgeInsets.only(top: topPadding),
       child: Container(
         height: 48,
@@ -333,3 +459,4 @@ class _ConnectionNavBar extends StatelessWidget {
     );
   }
 }
+

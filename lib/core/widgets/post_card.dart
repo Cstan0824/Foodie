@@ -7,8 +7,14 @@ import 'package:taste_spot/data/repositories/post_repository.dart';
 class PostCard extends StatefulWidget {
   final PostModel post;
   final VoidCallback? onTap;
+  final bool showAuthor;
 
-  const PostCard({super.key, required this.post, this.onTap});
+  const PostCard({
+    super.key,
+    required this.post,
+    this.onTap,
+    this.showAuthor = true,
+  });
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -113,7 +119,14 @@ class _PostCardState extends State<PostCard> {
       child: Container(
         decoration: BoxDecoration(
           color: CupertinoColors.white,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.black.withAlpha(5),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,15 +134,14 @@ class _PostCardState extends State<PostCard> {
             // ── Image ──
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(4),
+                top: Radius.circular(8),
               ),
               child: AspectRatio(
-                // PostModel.aspectRatio is h/w (>1 = tall); AspectRatio needs w/h
                 aspectRatio: 1 / _currentPost.aspectRatio,
                 child: Image.network(
                   _currentPost.imageUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
+                  errorBuilder: (context, error, stackTrace) => Container(
                     color: AppColors.surface,
                     child: const Center(
                       child: Icon(
@@ -139,7 +151,7 @@ class _PostCardState extends State<PostCard> {
                       ),
                     ),
                   ),
-                  loadingBuilder: (_, child, progress) {
+                  loadingBuilder: (context, child, progress) {
                     if (progress == null) return child;
                     return Container(
                       color: AppColors.surface,
@@ -152,62 +164,65 @@ class _PostCardState extends State<PostCard> {
 
             // ── Caption ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
               child: Text(
                 _currentPost.title,
                 style: const TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
-                  letterSpacing: 0.5,
-                  height: 1.35,
+                  letterSpacing: -0.2,
+                  height: 1.3,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
 
-            // ── User row + like ──
+            // ── User row + Like button ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
               child: Row(
                 children: [
-                  // Avatar
-                  ClipOval(
-                    child: Image.network(
-                      _currentPost.authorAvatar,
-                      width: 16,
-                      height: 16,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        width: 16,
-                        height: 16,
-                        color: AppColors.surface,
-                        child: const Icon(
-                          CupertinoIcons.person_fill,
-                          size: 10,
-                          color: AppColors.textLight,
+                  if (widget.showAuthor) ...[
+                    ClipOval(
+                      child: Image.network(
+                        _currentPost.authorAvatar,
+                        width: 18,
+                        height: 18,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: 18,
+                          height: 18,
+                          color: AppColors.surface,
+                          child: const Icon(
+                            CupertinoIcons.person_fill,
+                            size: 12,
+                            color: AppColors.textLight,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  // Username
-                  Expanded(
-                    child: Text(
-                      _currentPost.authorName,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textPrimary,
-                        overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _currentPost.authorName,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        maxLines: 1,
                       ),
-                      maxLines: 1,
                     ),
-                  ),
+                  ] else
+                    const Spacer(),
+                  
                   // Like button
                   GestureDetector(
                     onTap: _toggleLike,
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           _isLiked
@@ -218,12 +233,13 @@ class _PostCardState extends State<PostCard> {
                               ? AppColors.primary
                               : AppColors.textSecondary,
                         ),
-                        const SizedBox(width: 3),
+                        const SizedBox(width: 4),
                         Text(
                           _formatCount(_currentPost.likes),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w500,
+                            color: _isLiked ? AppColors.primary : AppColors.textSecondary,
                           ),
                         ),
                       ],
@@ -238,3 +254,4 @@ class _PostCardState extends State<PostCard> {
     );
   }
 }
+
