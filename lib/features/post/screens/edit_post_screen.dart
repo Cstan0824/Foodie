@@ -4,11 +4,13 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
-import 'package:taste_spot/features/post/widgets/post_hashtag_composer.dart';
+import 'package:taste_spot/features/post/widgets/hashtag_text_editing_controller.dart';
+import 'package:taste_spot/features/post/widgets/inline_hashtag_caption_field.dart';
 
 class EditPostScreen extends StatefulWidget {
   final PostModel post;
@@ -29,14 +31,15 @@ class _EditPostScreenState extends State<EditPostScreen> {
   final List<XFile> _selectedImages = [];
 
   RestaurantModel? _selectedRestaurant;
-  late List<String> _hashtags;
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.post.title);
-    _captionController = TextEditingController(text: widget.post.description);
+    _captionController = HashtagTextEditingController(
+      text: _buildInitialCaption(widget.post.description, widget.post.hashtags),
+    );
 
     _existingImages = widget.post.imageUrls.isNotEmpty 
         ? List.from(widget.post.imageUrls)
@@ -48,7 +51,6 @@ class _EditPostScreenState extends State<EditPostScreen> {
         name: widget.post.restaurantName,
       );
     }
-    _hashtags = List<String>.from(widget.post.hashtags);
   }
 
   @override
@@ -95,6 +97,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   Future<void> _updatePost() async {
     final title = _titleController.text.trim();
     final caption = _captionController.text.trim();
+    final hashtags = HashtagUtils.extractHashtagsFromText(caption);
     if (title.isEmpty) {
       _showError('Please add a title before saving.');
       return;
@@ -123,7 +126,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
         restaurantId: _selectedRestaurant!.restaurantId,
         title: title,
         caption: caption,
-        hashtags: _hashtags,
+        hashtags: hashtags,
         deletedImageUrls: _deletedImageUrls,
         newImages: newImageBytesList,
       );
@@ -155,6 +158,25 @@ class _EditPostScreenState extends State<EditPostScreen> {
         ],
       ),
     );
+  }
+
+  String _buildInitialCaption(String caption, List<String> hashtags) {
+    final existing = HashtagUtils.extractHashtagsFromText(caption);
+    final missing = hashtags
+        .where((tag) => !existing.contains(HashtagUtils.normalizeToken(tag)))
+        .map(HashtagUtils.format)
+        .toList();
+
+    if (missing.isEmpty) {
+      return caption;
+    }
+
+    final trimmedCaption = caption.trimRight();
+    final suffix = missing.join(' ');
+    if (trimmedCaption.isEmpty) {
+      return suffix;
+    }
+    return '$trimmedCaption\n\n$suffix';
   }
 
   @override
@@ -252,27 +274,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
               // ── Details input ──
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: CupertinoTextField(
+                child: InlineHashtagCaptionField(
                   controller: _captionController,
                   placeholder: 'Share your experience, taste, and tips...',
-                  placeholderStyle: const TextStyle(
-                      color: AppColors.textLight, fontSize: 15),
-                  style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 15,
-                      height: 1.5),
-                  decoration: null,
                   maxLines: 8,
                   minLines: 4,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-              ),
-
-              _divider(),
-
-              PostHashtagComposer(
-                initialTags: _hashtags,
-                onChanged: (tags) => _hashtags = tags,
               ),
 
               _divider(),
