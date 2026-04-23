@@ -3,7 +3,7 @@ import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/models/cuisine_model.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
-import 'package:taste_spot/features/admin/restaurant_management/screens/add_edit_restaurant_screen.dart';
+import 'package:taste_spot/features/admin/restaurant_management/screens/add_edit_approve_restaurant.dart';
 
 class ViewRestaurantScreen extends StatefulWidget {
   final String restaurantId;
@@ -331,7 +331,7 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
                   : () async {
                       final didSave = await Navigator.of(context).push<bool>(
                         CupertinoPageRoute(
-                          builder: (_) => AddEditRestaurantScreen(
+                          builder: (_) => AddEditApproveRestaurantScreen(
                             restaurantId: widget.restaurantId,
                           ),
                         ),

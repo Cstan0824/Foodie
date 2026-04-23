@@ -46,6 +46,7 @@ class RestaurantImageRecord {
   }
 }
 
+
 class RestaurantDetailData {
   final RestaurantModel restaurant;
   final List<CuisineModel> extraCuisines;
@@ -64,6 +65,26 @@ class RestaurantDetailData {
     }
     return images.first.imageUrl;
   }
+}
+
+class RestaurantBasicInfo {
+  final String restaurantId;
+  final String name;
+  final String? address;
+  final String? mainCuisineName;
+  final bool isDisabled;
+  final String? source;
+  final String? coverImageUrl;
+
+  const RestaurantBasicInfo({
+    required this.restaurantId,
+    required this.name,
+    required this.address,
+    required this.mainCuisineName,
+    required this.isDisabled,
+    required this.source,
+    required this.coverImageUrl,
+  });
 }
 
 class RestaurantRepository {
@@ -204,6 +225,53 @@ class RestaurantRepository {
 
     if (response == null) return null;
     return RestaurantModel.fromJson(response);
+  }
+
+  /// Fetches a lightweight preview payload for one restaurant.
+  /// Useful for approval review headers and side-by-side comparisons.
+  Future<RestaurantBasicInfo?> fetchRestaurantBasicInfo(
+    String restaurantId,
+  ) async {
+    final response = await SupabaseService.client
+        .from('Restaurant')
+        .select('''
+          restaurant_Id,
+          restaurant_name,
+          address,
+          source,
+          isDisabled,
+          mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc),
+          Restaurant_Image(image_id, image_url, isCover)
+        ''')
+        .eq('restaurant_Id', restaurantId)
+        .maybeSingle();
+
+    if (response == null) return null;
+
+    final row = response;
+    final images = (row['Restaurant_Image'] as List<dynamic>? ?? const [])
+        .map((img) => img as Map<String, dynamic>)
+        .toList();
+
+    String? coverImageUrl;
+    if (images.isNotEmpty) {
+      final cover = images.firstWhere(
+        (img) => (img['isCover'] as bool?) ?? false,
+        orElse: () => images.first,
+      );
+      coverImageUrl = cover['image_url']?.toString();
+    }
+
+    return RestaurantBasicInfo(
+      restaurantId: row['restaurant_Id']?.toString() ?? '',
+      name: row['restaurant_name']?.toString() ?? '',
+      address: row['address']?.toString(),
+      mainCuisineName:
+          (row['mainCuisine'] as Map<String, dynamic>?)?['desc']?.toString(),
+      isDisabled: row['isDisabled'] as bool? ?? false,
+      source: row['source']?.toString(),
+      coverImageUrl: coverImageUrl,
+    );
   }
 
   /// Fetches a full detail payload for View Restaurant Screen.
@@ -632,12 +700,12 @@ class RestaurantRepository {
     double? longitude,
     String? mapsUrl,
     String? infoUrl,
-    String source = 'admin',
+    String source = 'Admin',
     double? rating,
     List<String> extraCuisineIds = const [],
     List<RestaurantImageRecord> images = const [],
   }) async {
-    final normalizedSource = source.trim().isEmpty ? 'admin' : source.trim();
+    final normalizedSource = source.trim().isEmpty ? 'Admin' : source.trim();
 
     final id = restaurantId ?? await createRestaurant(
             name: name,
