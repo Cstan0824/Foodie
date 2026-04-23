@@ -8,6 +8,7 @@ import 'package:taste_spot/data/repositories/collection_repository.dart';
 import 'package:taste_spot/data/models/profile_model.dart';
 import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
+import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
 
 class CollectionDetailScreen extends StatefulWidget {
@@ -123,11 +124,11 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () async {
-              Navigator.pop(ctx); // Close dialog
+              Navigator.pop(ctx);
               try {
                 await _collectionRepository.deleteCollection(widget.collection.collectionId);
                 if (mounted) {
-                  Navigator.pop(context, true); // Pop screen and return true to refresh
+                  Navigator.pop(context, true);
                 }
               } catch (e) {
                 if (mounted) {
@@ -168,38 +169,29 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
-        backgroundColor: AppColors.background,
+        backgroundColor: CupertinoColors.white,
         border: null,
         middle: Text(
           widget.collection.name,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5),
         ),
-        previousPageTitle: 'Back',
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: _showShareSheet,
-              child: const Icon(
-                CupertinoIcons.person_add,
-                color: AppColors.textPrimary,
-                size: 24,
-              ),
+              child: const Icon(CupertinoIcons.person_add, color: AppColors.textPrimary, size: 22),
             ),
             if (!widget.collection.isDefault) ...[
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: _confirmDelete,
-                child: const Icon(
-                  CupertinoIcons.trash,
-                  color: CupertinoColors.destructiveRed,
-                  size: 22,
-                ),
+                child: const Icon(CupertinoIcons.trash, color: AppColors.textSecondary, size: 20),
               ),
             ],
           ],
@@ -210,12 +202,28 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-              child: CupertinoSearchTextField(
-                controller: _searchController,
-                placeholder: 'Search posts in this collection...',
-                style: const TextStyle(
-                  fontSize: 15,
-                  color: AppColors.textPrimary,
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  children: [
+                    const Icon(CupertinoIcons.search, size: 18, color: AppColors.textLight),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: CupertinoTextField(
+                        controller: _searchController,
+                        placeholder: 'Search in collection...',
+                        placeholderStyle: const TextStyle(color: AppColors.textLight, fontSize: 14),
+                        decoration: null,
+                        style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                        clearButtonMode: OverlayVisibilityMode.editing,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -230,7 +238,28 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
 
   Widget _buildGrid() {
     if (_isLoading) {
-      return const Center(child: CupertinoActivityIndicator());
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 0.75,
+          ),
+          itemCount: 4,
+          itemBuilder: (context, index) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(child: Skeleton(borderRadius: 12)),
+              const SizedBox(height: 8),
+              const Skeleton(width: 100, height: 14),
+            ],
+          ),
+        ),
+      );
     }
 
     if (_error != null) {
@@ -240,11 +269,10 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
           children: [
             const Text(
               'Failed to load posts',
-              style: TextStyle(fontSize: 15, color: AppColors.textSecondary),
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
             CupertinoButton(
-              padding: EdgeInsets.zero,
               onPressed: _loadPosts,
               child: const Text('Try again'),
             ),
@@ -257,9 +285,16 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
 
     if (postsToShow.isEmpty) {
       return Center(
-        child: Text(
-          _posts.isEmpty ? 'No posts yet' : 'No matches found',
-          style: const TextStyle(fontSize: 15, color: AppColors.textSecondary),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(CupertinoIcons.square_favorites, size: 48, color: AppColors.surface),
+            const SizedBox(height: 16),
+            Text(
+              _posts.isEmpty ? 'This collection is empty' : 'No matches found',
+              style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+            ),
+          ],
         ),
       );
     }
@@ -271,21 +306,20 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 20),
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
               children: leftCol.map((post) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 12),
                 child: PostCard(
                   post: post,
                   onTap: () async {
                     final result = await Navigator.of(context).push(
-                      CupertinoPageRoute(
-                        builder: (_) => PostDetailScreen(post: post),
-                      ),
+                      CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
                     );
                     if (result == true && mounted) _loadPosts();
                   },
@@ -293,18 +327,16 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
               )).toList(),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               children: rightCol.map((post) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 12),
                 child: PostCard(
                   post: post,
                   onTap: () async {
                     final result = await Navigator.of(context).push(
-                      CupertinoPageRoute(
-                        builder: (_) => PostDetailScreen(post: post),
-                      ),
+                      CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
                     );
                     if (result == true && mounted) _loadPosts();
                   },
@@ -357,10 +389,7 @@ class _ShareSheetState extends State<_ShareSheet> {
         });
       }
     } catch (e) {
-      print('Error loading share sheet data: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -368,7 +397,6 @@ class _ShareSheetState extends State<_ShareSheet> {
     final collectionRepo = CollectionRepository(Supabase.instance.client);
     final isShared = _sharedUserIds.contains(follower.userId);
 
-    // Optimistic UI update
     setState(() {
       if (isShared) {
         _sharedUserIds.remove(follower.userId);
@@ -384,7 +412,6 @@ class _ShareSheetState extends State<_ShareSheet> {
         await collectionRepo.shareCollection(widget.collectionId, follower.userId);
       }
     } catch (e) {
-      // Revert if failed
       if (mounted) {
         setState(() {
           if (isShared) {
@@ -402,89 +429,81 @@ class _ShareSheetState extends State<_ShareSheet> {
     return Container(
       height: MediaQuery.of(context).size.height * 0.6,
       decoration: const BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        color: CupertinoColors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SafeArea(
         top: false,
         child: Column(
           children: [
-            // Header
+            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppColors.divider)),
-              ),
+              width: 36, height: 4,
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Share Collection',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                  ),
+                  const Text('Share Collection', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
                   CupertinoButton(
                     padding: EdgeInsets.zero,
                     onPressed: () => Navigator.pop(context),
-                    child: const Icon(CupertinoIcons.xmark_circle_fill, color: AppColors.textLight, size: 24),
+                    child: const Icon(CupertinoIcons.xmark_circle_fill, color: AppColors.textLight, size: 28),
                   ),
                 ],
               ),
             ),
 
-            // Content
             Expanded(
               child: _isLoading
                 ? const Center(child: CupertinoActivityIndicator())
                 : _followers.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'You don\'t have any followers yet.',
-                        style: TextStyle(color: AppColors.textSecondary),
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(CupertinoIcons.person_2, size: 48, color: AppColors.surface),
+                          const SizedBox(height: 16),
+                          const Text('No followers to share with', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                        ],
                       ),
                     )
                   : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: _followers.length,
                       itemBuilder: (context, index) {
                         final follower = _followers[index];
                         final isShared = _sharedUserIds.contains(follower.userId);
 
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           child: Row(
                             children: [
                               Container(
-                                width: 44,
-                                height: 44,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.divider,
-                                  shape: BoxShape.circle,
-                                ),
+                                width: 44, height: 44,
+                                decoration: const BoxDecoration(color: CupertinoColors.white, shape: BoxShape.circle),
                                 child: ClipOval(
                                   child: Image.network(
                                     'https://i.pravatar.cc/200?u=${follower.userId}',
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const Icon(
-                                      CupertinoIcons.person_solid,
-                                      color: AppColors.textLight,
-                                      size: 24,
-                                    ),
+                                    errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, color: AppColors.textLight, size: 24),
                                   ),
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Text(
-                                  follower.name,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
+                                child: Text(follower.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                               ),
                               CupertinoSwitch(
                                 value: isShared,
-                                activeColor: AppColors.primary,
+                                activeTrackColor: AppColors.primary,
                                 onChanged: (val) => _toggleShare(follower),
                               ),
                             ],

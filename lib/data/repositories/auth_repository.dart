@@ -61,6 +61,17 @@ class AuthRepository {
     return (response as List<dynamic>).isEmpty;
   }
 
+  Future<bool> isEmailRegistered(String email) async {
+    final normalized = email.trim().toLowerCase();
+    if (normalized.isEmpty) return false;
+    final response = await _supabase
+        .from('User')
+        .select('user_Id')
+        .ilike('email', normalized)
+        .limit(1);
+    return (response as List<dynamic>).isNotEmpty;
+  }
+
   // Sign Up
   Future<AuthResponse> signUp({
     required String email,
@@ -84,6 +95,7 @@ class AuthRepository {
           'user_Id': response.user!.id,
           'name': name,
           'username': name,
+          'email': email.trim().toLowerCase(),
         });
 
         // Create default collections

@@ -3,7 +3,7 @@
 This document contains the essential context for Gemini CLI (or any AI coding assistant) to understand the "Taste Spot" project, its current state, architecture, database rules, and next steps. 
 
 ## 1. Project Overview & Tech Stack
-**Taste Spot** is a food & beverage community mobile app built with Flutter, heavily inspired by Xiaohongshu (小红书 / RED). Users can discover restaurants, share food-related posts ("notes"), save collections, follow other foodies, and get random restaurant recommendations via a "Blind Box" shake-to-discover feature.
+**Taste Spot** is a food & beverage community mobile app built with Flutter, heavily inspired by Xiaohongshu (小红书 / RED). Users can discover restaurants, share food-related posts, save collections, follow other foodies, and get random restaurant recommendations via a "Blind Box" shake-to-discover feature.
 
 - **Primary Platform:** iOS (Uses Cupertino-style widgets)
 - **Framework:** Flutter (Dart SDK ^3.9.0)
@@ -35,7 +35,7 @@ The database has undergone multiple migrations and refactors. Here are the **act
 - An accepted approval creates a new `Restaurant` and may disable an older conflicting one (`isDisabled`).
 - **Cuisines:** A restaurant has exactly ONE main cuisine (`Restaurant.main_cuisine_id`). Additional tags are added via the `Restaurant_Cuisine` many-to-many table. `Cuisine.isPrimaryOption` dictates if it can be a main cuisine.
 
-### 4.2 Posts ("Notes")
+### 4.2 Posts
 - Every `Post` **must** be tied to a `Restaurant`. Free-floating posts are not allowed.
 - Posts for unapproved restaurants are created with `isPending = true` and only become visible when the restaurant is approved.
 - Important Post state flags: `isPending` (waiting approval), `isRemoved` (deleted/hidden), `isBlocked` (access restricted).
