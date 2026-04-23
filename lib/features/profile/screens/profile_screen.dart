@@ -13,6 +13,7 @@ import 'package:taste_spot/features/profile/screens/connections_screen.dart';
 import 'edit_profile_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter/services.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
@@ -159,13 +160,26 @@ class ProfileScreenState extends State<ProfileScreen> {
     final userId = _userProfile?.userId;
     if (userId == null) return;
     
-    // Deep link scheme we configured
     final String deepLink = 'io.supabase.tastespot://profile/$userId';
     
     Share.share(
       'Check out my food journey on Taste Spot!\n$deepLink',
       subject: 'Taste Spot Profile',
     );
+  }
+
+  void _copyProfileLink() {
+    final userId = _userProfile?.userId;
+    if (userId == null) return;
+    
+    final String deepLink = 'io.supabase.tastespot://profile/$userId';
+    
+    Clipboard.setData(ClipboardData(text: deepLink));
+    
+    // Close the menu.
+    setState(() {
+      _isSettingsMenuOpen = false;
+    });
   }
 
   String _formatCount(int count) {
@@ -205,31 +219,32 @@ class ProfileScreenState extends State<ProfileScreen> {
         backgroundColor: CupertinoColors.white,
         border: null,
         middle: _buildUsernameHeader(),
-        trailing: _isCurrentUser
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () {},
-                    child: const Icon(CupertinoIcons.share, color: AppColors.textPrimary, size: 22),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () => setState(() => _isSettingsMenuOpen = !_isSettingsMenuOpen),
-                    child: Icon(
-                      _isSettingsMenuOpen ? CupertinoIcons.xmark : CupertinoIcons.bars, 
-                      color: AppColors.textPrimary, 
-                      size: 24
-                    ),
-                  ),
-                ],
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _shareProfile,
+              child: const Icon(CupertinoIcons.share, color: AppColors.textPrimary, size: 22),
+            ),
+            if (_isCurrentUser)
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () => setState(() => _isSettingsMenuOpen = !_isSettingsMenuOpen),
+                child: Icon(
+                  _isSettingsMenuOpen ? CupertinoIcons.xmark : CupertinoIcons.bars, 
+                  color: AppColors.textPrimary, 
+                  size: 24
+                ),
               )
-            : CupertinoButton(
+            else
+              CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: () {},
                 child: const Icon(CupertinoIcons.ellipsis, color: AppColors.textPrimary, size: 24),
               ),
+          ],
+        ),
       ),
       child: SafeArea(
         bottom: false,
@@ -430,6 +445,8 @@ class ProfileScreenState extends State<ProfileScreen> {
                 _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {}),
                 _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {}),
                 _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {}),
+                _buildMenuAction('Copy Profile Link', CupertinoIcons.link, onTap: _copyProfileLink),
+                _buildMenuAction('Share Profile', CupertinoIcons.share, onTap: _shareProfile),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 0.5, color: AppColors.divider),
