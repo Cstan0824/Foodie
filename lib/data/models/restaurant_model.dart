@@ -10,6 +10,9 @@ class RestaurantModel {
   final String? source;
   final String? infoUrl;
   final bool isDisabled;
+  final double? rating;
+  /// this is a list of image URLs from the restaurant_image table, not the main restaurant table, so it can be empty
+  final List<String> imageUrls;
 
   const RestaurantModel({
     required this.restaurantId,
@@ -23,12 +26,14 @@ class RestaurantModel {
     this.source,
     this.infoUrl,
     this.isDisabled = false,
+    this.rating,
+    this.imageUrls = const [],
   });
 
   factory RestaurantModel.fromJson(Map<String, dynamic> json) {
     final mainCuisine =
         json['mainCuisine'] as Map<String, dynamic>? ??
-            json['Cuisine'] as Map<String, dynamic>?;
+        json['Cuisine'] as Map<String, dynamic>?;
 
     return RestaurantModel(
       restaurantId: json['restaurant_Id'] as String,
@@ -42,12 +47,27 @@ class RestaurantModel {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       mapsUrl: json['maps_url'] as String?,
-      createdAt: json['created_At'] != null 
-          ? DateTime.tryParse(json['created_At'] as String) 
+      createdAt: json['created_At'] != null
+          ? DateTime.tryParse(json['created_At'] as String)
           : null,
       source: json['source'] as String?,
       infoUrl: json['info_url'] as String?,
       isDisabled: json['isDisabled'] as bool? ?? false,
+      rating: (json['rating'] as num?)?.toDouble(),
+      imageUrls: () {
+        final images = List<Map<String, dynamic>>.from(
+          (json['Restaurant_Image'] as List<dynamic>?) ?? [],
+        );
+        // Sort so cover image (isCover == true) is always first.
+        images.sort((a, b) {
+          final aCover = a['isCover'] == true ? 0 : 1;
+          final bCover = b['isCover'] == true ? 0 : 1;
+          return aCover.compareTo(bCover);
+        });
+        return images
+            .map((img) => img['image_url'] as String)
+            .toList();
+      }(),
     );
   }
 
@@ -64,6 +84,8 @@ class RestaurantModel {
       'source': source,
       'info_url': infoUrl,
       'isDisabled': isDisabled,
+      'rating': rating,
+      'image_urls': imageUrls,
     };
   }
 }

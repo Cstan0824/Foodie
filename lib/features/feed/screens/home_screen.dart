@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
@@ -63,8 +64,12 @@ class HomeScreenState extends State<HomeScreen> {
 
   Future<List<PostModel>> _fetchFeedPage({required int offset}) {
     if (_isFollowingTab) {
+      final currentUserId = SupabaseService.currentUserId;
+      if (currentUserId == null || currentUserId.isEmpty) {
+        return Future.value(const []);
+      }
       return PostRepository.instance.fetchFollowingPosts(
-        userId: _getUserId(),
+        userId: currentUserId,
         limit: _pageSize,
         offset: offset,
       );
@@ -78,6 +83,9 @@ class HomeScreenState extends State<HomeScreen> {
 
   String get _emptyFeedMessage {
     if (_isFollowingTab) {
+      if (SupabaseService.currentUserId == null) {
+        return 'Sign in to see posts from people you follow.';
+      }
       return 'Follow people to see their posts here.';
     }
     return 'No posts yet 🍽️';
