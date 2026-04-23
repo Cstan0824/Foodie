@@ -53,12 +53,6 @@ class _PostCardState extends State<PostCard> {
     }
 
     try {
-      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-      if (currentUserId == null) {
-        if (mounted) setState(() => _isLiked = false);
-        return;
-      }
-
       final isLiked = await PostRepository.instance.checkIsLiked(
         _currentPost.id,
         currentUserId,
