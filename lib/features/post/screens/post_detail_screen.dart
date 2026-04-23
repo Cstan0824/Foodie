@@ -492,8 +492,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ],
             GestureDetector(
               onTap: () => _showMoreOptions(context),
-              child: const Padding(
-                padding: EdgeInsets.all(4.0),
+              child: Padding(
+                padding: const EdgeInsets.all(4.0),
                 child: Icon(
                   _isCurrentUserPostOwner
                       ? CupertinoIcons.ellipsis
