@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
 import 'package:taste_spot/data/models/post_model.dart';
@@ -34,7 +35,7 @@ class _ReportFormScreenState extends State<ReportFormScreen> {
   Future<void> _submitReport() async {
     setState(() => _isSubmitting = true);
     try {
-      const currentUserId = '00000000-0000-0000-0000-000000000001';
+      final currentUserId = SupabaseService.requireCurrentUserId();
       final details = _detailsController.text.trim();
 
       if (widget.post != null) {

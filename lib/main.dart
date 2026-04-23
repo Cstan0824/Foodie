@@ -121,6 +121,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   final GlobalKey<HomeScreenState> homeKey = GlobalKey();
   final GlobalKey<ProfileScreenState> profileKey = GlobalKey();
+  final GlobalKey<CollectionScreenState> collectionKey = GlobalKey();
 
   // Active tab: 0=Home, 1=Collection, 3=BlindBox, 4=Profile (2=Add, never stored)
   int _selectedTab = 0;
@@ -163,7 +164,7 @@ class _MainShellState extends State<MainShell> {
             index: _screenIndex,
             children: [
               HomeScreen(key: homeKey),
-              const CollectionScreen(),
+              CollectionScreen(key: collectionKey),
               const BlindBoxScreen(),
               ProfileScreen(key: profileKey),
             ],
@@ -209,6 +210,7 @@ class _MainShellState extends State<MainShell> {
         onTap: () {
           setState(() => _selectedTab = tab);
           if (tab == 0) homeKey.currentState?.loadPosts(silent: true);
+          if (tab == 1) collectionKey.currentState?.refreshCollections();
           if (tab == 4) profileKey.currentState?.loadUserPosts(silent: true);
         },
         child: Column(

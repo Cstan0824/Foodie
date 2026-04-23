@@ -99,4 +99,38 @@ class ProfileRepository {
       return Profile.fromJson(userJson);
     }).toList();
   }
+
+  Future<bool> checkIsFollowing({
+    required String followerId,
+    required String followingId,
+  }) async {
+    final response = await _supabase
+        .from('Follower')
+        .select('follower_Id')
+        .eq('follower_Id', followerId)
+        .eq('following_Id', followingId)
+        .maybeSingle();
+
+    return response != null;
+  }
+
+  Future<void> setFollowing({
+    required String followerId,
+    required String followingId,
+    required bool isFollowing,
+  }) async {
+    if (isFollowing) {
+      await _supabase.from('Follower').upsert({
+        'follower_Id': followerId,
+        'following_Id': followingId,
+      }, onConflict: 'follower_Id,following_Id');
+      return;
+    }
+
+    await _supabase
+        .from('Follower')
+        .delete()
+        .eq('follower_Id', followerId)
+        .eq('following_Id', followingId);
+  }
 }

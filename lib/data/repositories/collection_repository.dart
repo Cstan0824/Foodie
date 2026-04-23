@@ -138,6 +138,19 @@ class CollectionRepository {
         .toList();
   }
 
+  Future<Collection?> getDefaultPostCollection(String userId) async {
+    final response = await _supabase
+        .from('collections')
+        .select()
+        .eq('user_Id', userId)
+        .eq('is_default', true)
+        .eq('collection_type', 'POST')
+        .maybeSingle();
+    
+    if (response == null) return null;
+    return Collection.fromJson(response);
+  }
+
   Future<void> shareCollection(String collectionId, String targetUserId) async {
     await _supabase.from('collections_shares').insert({
       'collection_Id': collectionId,
