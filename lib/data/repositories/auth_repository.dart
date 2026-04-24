@@ -156,4 +156,23 @@ class AuthRepository {
       token: token,
     );
   }
+
+  // Verify Recovery OTP (for Password Reset)
+  Future<AuthResponse> verifyRecoveryOtp({
+    required String email,
+    required String token,
+  }) async {
+    return await _supabase.auth.verifyOTP(
+      type: OtpType.recovery,
+      email: email,
+      token: token,
+    );
+  }
+
+  // Update Password
+  Future<UserResponse> updatePassword(String newPassword) async {
+    return await _supabase.auth.updateUser(
+      UserAttributes(password: newPassword),
+    );
+  }
 }
