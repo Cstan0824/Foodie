@@ -8,7 +8,8 @@ import 'package:taste_spot/data/repositories/post_repository.dart';
 import 'package:taste_spot/features/notification/screens/notification_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/search/screens/explore_screen.dart';
-import 'package:taste_spot/core/services/supabase_service.dart';
+import 'package:taste_spot/data/repositories/notification_repository.dart';
+import 'package:taste_spot/debug_supabase.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,11 +32,24 @@ class HomeScreenState extends State<HomeScreen> {
   bool _hasMore = true;
   String? _error;
   int _offset = 0;
+  int _unreadNotifCount = 0;
+
+  late final NotificationRepository _notifRepo = NotificationRepository(SupabaseService.client);
 
   @override
   void initState() {
     super.initState();
     loadPosts();
+    _fetchUnreadCount();
+  }
+
+  Future<void> _fetchUnreadCount() async {
+    final userId = SupabaseService.currentUserId;
+    if (userId == null) return;
+    try {
+      final count = await _notifRepo.getUnreadCount(userId);
+      if (mounted) setState(() => _unreadNotifCount = count);
+    } catch (_) {}
   }
 
   @override
@@ -59,8 +73,6 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   bool get _isFollowingTab => _topNavIndex == 0;
-
-  String _getUserId() => SupabaseService.client.auth.currentUser?.id ?? '00000000-0000-0000-0000-000000000001';
 
   Future<List<PostModel>> _fetchFeedPage({required int offset}) {
     if (_isFollowingTab) {
@@ -114,6 +126,7 @@ class HomeScreenState extends State<HomeScreen> {
           _hasMore = posts.length == _pageSize;
         });
       }
+      _fetchUnreadCount();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -154,7 +167,9 @@ class HomeScreenState extends State<HomeScreen> {
           _TopNavBar(
             selectedIndex: _topNavIndex,
             items: _topNavItems,
+            unreadCount: _unreadNotifCount,
             onTap: _handleTopNavTap,
+            onNotificationRefresh: _fetchUnreadCount,
           ),
           Expanded(child: _buildFeed()),
         ],
@@ -163,7 +178,6 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFeed() {
-    // Show skeletons while loading initial data
     if (_isLoading && _posts.isEmpty) {
       return const _HomeSkeleton();
     }
@@ -226,7 +240,6 @@ class HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          // Bottom skeleton for pagination instead of spinner
           if (_isLoadingMore)
             const SliverToBoxAdapter(
               child: Padding(
@@ -252,9 +265,17 @@ class HomeScreenState extends State<HomeScreen> {
 class _TopNavBar extends StatelessWidget {
   final int selectedIndex;
   final List<String> items;
+  final int unreadCount;
   final ValueChanged<int> onTap;
+  final VoidCallback onNotificationRefresh;
 
-  const _TopNavBar({required this.selectedIndex, required this.items, required this.onTap});
+  const _TopNavBar({
+    required this.selectedIndex, 
+    required this.items, 
+    required this.unreadCount,
+    required this.onTap, 
+    required this.onNotificationRefresh,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -274,8 +295,32 @@ class _TopNavBar extends StatelessWidget {
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               minimumSize: Size.zero,
-              onPressed: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => const NotificationScreen())),
-              child: const Icon(CupertinoIcons.bell, color: AppColors.textPrimary, size: 22),
+              onPressed: () async {
+                final result = await Navigator.of(context).push(
+                  CupertinoPageRoute(builder: (_) => const NotificationScreen())
+                );
+                if (result == true) onNotificationRefresh();
+              },
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(CupertinoIcons.bell, color: AppColors.textPrimary, size: 22),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        width: 9,
+                        height: 9,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: CupertinoColors.white, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
             Expanded(
               child: Row(
@@ -314,7 +359,12 @@ class _TopNavBar extends StatelessWidget {
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               minimumSize: Size.zero,
-              onPressed: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => const ExploreScreen())),
+              onPressed: () async {
+                final result = await Navigator.of(context).push(
+                  CupertinoPageRoute(builder: (_) => const NotificationScreen())
+                );
+                if (result == true) onNotificationRefresh();
+              },
               child: const Icon(CupertinoIcons.search, color: AppColors.textPrimary, size: 22),
             ),
           ],

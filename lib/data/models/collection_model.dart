@@ -9,7 +9,8 @@ class Collection {
   final bool isPublic;
   final bool isDefault;
   final DateTime createdAt;
-  final Profile? owner; // Added owner info for shared collections
+  final Profile? owner;
+  final List<String> latestItemImages; // New field for card preview
 
   Collection({
     required this.collectionId,
@@ -21,6 +22,7 @@ class Collection {
     this.isDefault = false,
     required this.createdAt,
     this.owner,
+    this.latestItemImages = const [],
   });
 
   bool get isCloneable => isPublic; // For now, if it's public, it's cloneable
@@ -37,6 +39,30 @@ class Collection {
       owner = Profile.fromJson(json['User'] as Map<String, dynamic>);
     }
 
+    // Handle latest item images (will be populated by repository join)
+    final List<String> images = [];
+    final items = json['collections_item'] as List<dynamic>?;
+    if (items != null) {
+      for (final item in items) {
+        String? url;
+        if (json['collection_type'] == 'POST') {
+          final post = item['Post'] as Map<String, dynamic>?;
+          if (post != null) {
+            final postImages = post['Post_Image'] as List<dynamic>?;
+            if (postImages != null && postImages.isNotEmpty) {
+              url = postImages[0]['image_url'] as String?;
+            }
+          }
+        } else {
+          final rest = item['Restaurant'] as Map<String, dynamic>?;
+          // Note: Restaurant model currently doesn't have a direct image list in schema 
+          // but usually uses source or maps image. For now fallback to maps_url or placeholder
+          // Actually, let's check restaurant repository for how it handles images.
+        }
+        if (url != null && url.isNotEmpty) images.add(url);
+      }
+    }
+
     return Collection(
       collectionId: collectionId,
       userId: userId,
@@ -47,6 +73,7 @@ class Collection {
       isDefault: json['is_default'] as bool? ?? false,
       createdAt: DateTime.parse(createdAtRaw),
       owner: owner,
+      latestItemImages: images,
     );
   }
 

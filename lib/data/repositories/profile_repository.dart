@@ -38,26 +38,44 @@ class ProfileRepository {
       final fileName = 'avatar_$userId.png';
       final path = 'avatars/$fileName';
 
+      print('📡 Uploading image to bucket "user_images", path: $path...');
+
       // 1. Upload to Supabase Storage bucket 'user_images'
       await _supabase.storage.from('user_images').uploadBinary(
             path,
             imageBytes,
             fileOptions: const FileOptions(upsert: true, contentType: 'image/png'),
           );
+      
+      print('✅ Storage upload success');
 
       // 2. Get the public URL
       final imageUrl = _supabase.storage.from('user_images').getPublicUrl(path);
+      print('🔗 Generated Public URL: $imageUrl');
 
-      // 3. Update the UserImage table with the new URL
-      await _supabase.from('UserImage').upsert({
-        'image_id': userId,
-        'user_Id': userId,
-        'image_url': imageUrl,
-      }, onConflict: 'image_id');
+      // 3. Update the UserImage table
+      // We upsert based on user_Id to ensure only one profile image record per user
+      try {
+        await _supabase.from('UserImage').upsert({
+          'image_id': userId, // Using userId as image_id for consistency
+          'user_Id': userId,
+          'image_url': imageUrl,
+        });
+        print('✅ UserImage table updated');
+      } catch (dbError) {
+        print('⚠️ UserImage table update failed (might be schema mismatch): $dbError');
+        // Fallback: Try avatar_url on User table if UserImage table doesn't have image_url
+        await _supabase.from('User').update({'avatar_url': imageUrl}).eq('user_Id', userId);
+        print('✅ Fallback: User.avatar_url updated');
+      }
 
       return imageUrl;
+    } on StorageException catch (e) {
+      print('❌ [ProfileRepository.uploadProfileImage] STORAGE ERROR: ${e.message}');
+      print('📊 Status: ${e.statusCode}, Error: ${e.error}');
+      return null;
     } catch (e) {
-      print('Image Upload Error: $e');
+      print('❌ [ProfileRepository.uploadProfileImage] UNKNOWN ERROR: $e');
       return null;
     }
   }

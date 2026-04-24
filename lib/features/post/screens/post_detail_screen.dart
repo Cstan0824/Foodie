@@ -51,6 +51,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isLoadingComments = true;
   bool _isPostingComment = false;
   CommentModel? _editingComment;
+  String? _currentUserAvatar;
 
   /// Returns a human-readable relative time string from a [DateTime].
   String _timeAgo(DateTime? dt) {
@@ -106,9 +107,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _checkLikeStatus();
       _checkSaveStatus();
       _checkFollowStatus();
+      _loadSaveCount();
+      _fetchCurrentUserAvatar();
     } else {
       _isLoadingComments = false;
     }
+  }
+
+  Future<void> _fetchCurrentUserAvatar() async {
+    final userId = _currentUserId;
+    if (userId == null) return;
+    try {
+      final repo = ProfileRepository(Supabase.instance.client);
+      final avatarUrl = await repo.getProfileImageUrl(userId);
+      if (mounted) setState(() => _currentUserAvatar = avatarUrl);
+    } catch (_) {}
+  }
+
+  Future<void> _loadSaveCount() async {
+    try {
+      final collectionRepo = CollectionRepository(Supabase.instance.client);
+      final count = await collectionRepo.getPostSaveCount(_currentPost.id);
+      if (mounted) {
+        setState(() {
+          _currentPost = _currentPost.copyWith(saveCount: count);
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkFollowStatus() async {
@@ -462,14 +487,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const Text(
-                      'Food Explorer 🍜',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.textLight,
-                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
@@ -868,14 +885,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   shape: BoxShape.circle,
                   color: AppColors.primary.withAlpha(30),
                 ),
-                alignment: Alignment.center,
-                child: Text(
-                  comment.initials,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
+                child: ClipOval(
+                  child: (comment.authorAvatar != null && comment.authorAvatar!.isNotEmpty)
+                      ? Image.network(
+                          comment.authorAvatar!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Text(
+                              comment.initials,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        )
+                      : Center(
+                          child: Text(
+                            comment.initials,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -1015,12 +1050,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                ClipOval(
-                  child: Image.network(
-                    'https://i.pravatar.cc/200?img=12',
-                    width: 36,
-                    height: 36,
-                    fit: BoxFit.cover,
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    color: AppColors.surface,
+                    shape: BoxShape.circle,
+                  ),
+                  child: ClipOval(
+                    child: (_currentUserAvatar != null && _currentUserAvatar!.isNotEmpty)
+                        ? Image.network(
+                            _currentUserAvatar!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              CupertinoIcons.person_fill,
+                              color: AppColors.textLight,
+                              size: 20,
+                            ),
+                          )
+                        : const Icon(
+                            CupertinoIcons.person_fill,
+                            color: AppColors.textLight,
+                            size: 20,
+                          ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1075,8 +1127,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   void _showMoreOptions(BuildContext context) {
-    final isOwner = _isCurrentUserPostOwner;
-
     showCupertinoModalPopup(
       context: context,
       builder: (_) => Container(
@@ -1630,10 +1680,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 }
 
-// ══════════════════════════════════════════
-// HELPER WIDGETS
-// ══════════════════════════════════════════
-
 class _ActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1662,10 +1708,6 @@ class _ActionButton extends StatelessWidget {
     );
   }
 }
-
-// ══════════════════════════════════════════
-// SKELETONS
-// ══════════════════════════════════════════
 
 class _CommentSkeleton extends StatelessWidget {
   const _CommentSkeleton();

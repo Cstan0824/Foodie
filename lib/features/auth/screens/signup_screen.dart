@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:taste_spot/features/auth/screens/complete_profile_screen.dart';
+import 'package:taste_spot/features/auth/screens/verify_otp_screen.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
