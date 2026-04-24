@@ -216,8 +216,8 @@ class ProfileScreenState extends State<ProfileScreen> {
     final userId = _userProfile?.userId;
     if (userId == null) return;
     
-    // Using Supabase as a redirector to avoid NXDOMAIN errors in browsers
-    final String deepLink = 'https://wjwfqwvrynyfqbjkqmah.supabase.co/auth/v1/callback?redirect_to=io.supabase.tastespot://profile/$userId';
+    // Using the same host structure that is proven to work in your Supabase config
+    final String deepLink = 'io.supabase.tastespot://login-callback/profile?id=$userId';
     
     Share.share(
       'Check out my food journey on Taste Spot!\n$deepLink',
@@ -624,19 +624,29 @@ class ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
           
-          const SizedBox(height: 24),
-          
-          // Bio Section (Always Left Aligned)
-          Text(
-            _userProfile?.bio ?? 'Tap Edit Profile to add a bio.',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-              height: 1.5,
+          const SizedBox(height: 12),
+
+          // Bio Section (Prettier & Minimal)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              (_userProfile?.bio != null && _userProfile!.bio!.isNotEmpty)
+                  ? _userProfile!.bio!
+                  : 'Welcome to my flavor journey! 🍜',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: AppColors.textPrimary.withAlpha(180),
+                height: 1.6,
+                letterSpacing: 0.1,
+              ),
             ),
           ),
-          
-          const SizedBox(height: 24),
+
+          const SizedBox(height: 20),
+
           _buildActionButtons(),
         ],
       ),

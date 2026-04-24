@@ -4,6 +4,7 @@ import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/features/auth/screens/verify_otp_screen.dart';
 import 'package:taste_spot/features/auth/screens/reset_password_screen.dart';
+import 'package:taste_spot/core/widgets/feedback_dialog.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -18,10 +19,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   late final AuthRepository _authRepo = AuthRepository(Supabase.instance.client);
 
+  String _mapResetError(Object error) {
+    final message = error.toString();
+    if (message.contains('over_email_send_rate_limit')) {
+      return 'Too many requests. Please wait a few minutes before trying to send another reset email.';
+    }
+    if (message.contains('network_error')) {
+      return 'Connection problem. Please check your internet and try again.';
+    }
+    return 'Something went wrong when trying to send reset instructions. Please try again.';
+  }
+
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
-      _showErrorAlert('Please enter your email address.');
+      FeedbackDialog.show(context: context, title: 'Reset Password', message: 'Please enter your email address.');
       return;
     }
 
@@ -31,7 +43,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       await _authRepo.resetPassword(email: email);
       if (!mounted) return;
       
-      // Navigate to OTP verification
       final verified = await Navigator.of(context).push<bool>(
         CupertinoPageRoute(
           builder: (_) => VerifyOTPScreen(email: email, type: OTPType.recovery),
@@ -45,29 +56,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       }
     } on AuthException catch (e) {
       if (!mounted) return;
-      _showErrorAlert(e.message);
+      FeedbackDialog.show(context: context, title: 'Reset Failed', message: _mapResetError(e));
     } catch (e) {
       if (!mounted) return;
-      _showErrorAlert('An unexpected error occurred. Please try again.');
+      FeedbackDialog.show(context: context, title: 'Reset Problem', message: _mapResetError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showErrorAlert(String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('Reset Error'),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('OK'),
-            onPressed: () => Navigator.pop(context),
-          )
-        ],
-      ),
-    );
   }
 
   @override
@@ -95,29 +90,16 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
-
-              // ── Header ──
               const Text(
                 'Reset Password',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.5,
-                ),
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary, letterSpacing: -0.5),
               ),
               const SizedBox(height: 8),
               const Text(
-                'Enter the email associated with your account and we\'ll send an email with instructions to reset your password.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textSecondary,
-                  height: 1.4,
-                ),
+                'Enter the email associated with your account and we\'ll send you a verification code.',
+                style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4),
               ),
               const SizedBox(height: 48),
-
-              // ── Input Field ──
               _buildModernTextField(
                 controller: _emailController,
                 placeholder: 'Email Address',
@@ -125,8 +107,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 32),
-
-              // ── Reset Button ──
               GestureDetector(
                 onTap: () {
                   if (_emailController.text.trim().isNotEmpty && !_isLoading) {
@@ -139,23 +119,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(25),
                     boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withAlpha(51),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
+                      BoxShadow(color: AppColors.primary.withAlpha(51), blurRadius: 10, offset: const Offset(0, 4)),
                     ],
                   ),
                   child: Center(
                     child: _isLoading
                         ? const CupertinoActivityIndicator(color: CupertinoColors.white)
                         : const Text(
-                            'Send Instructions',
-                            style: TextStyle(
-                              color: CupertinoColors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            'Send Code',
+                            style: TextStyle(color: CupertinoColors.white, fontSize: 16, fontWeight: FontWeight.w600),
                           ),
                   ),
                 ),
@@ -166,8 +138,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       ),
     );
   }
-
-  // ── Helper UI Widgets ──
 
   Widget _buildModernTextField({
     required TextEditingController controller,
@@ -188,13 +158,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         keyboardType: keyboardType,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
-        placeholderStyle:
-            const TextStyle(fontSize: 15, color: AppColors.textLight),
+        placeholderStyle: const TextStyle(fontSize: 15, color: AppColors.textLight),
         prefix: Padding(
           padding: const EdgeInsets.only(left: 16.0),
           child: Icon(icon, color: AppColors.textLight, size: 20),
         ),
-        decoration: null, // Clear internal decoration
+        decoration: null,
       ),
     );
   }

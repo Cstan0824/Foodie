@@ -11,6 +11,7 @@ import 'package:taste_spot/features/post/screens/add_post_screen.dart';
 import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 import 'package:taste_spot/features/restaurant/screens/blind_box_screen.dart';
 import 'package:app_links/app_links.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 // Global key for navigation without context
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -53,6 +54,14 @@ class _FoodiAppState extends State<FoodiApp> {
   void initState() {
     super.initState();
     _initDeepLinks();
+    _requestNotificationPermissions();
+  }
+
+  Future<void> _requestNotificationPermissions() async {
+    final status = await Permission.notification.status;
+    if (status.isDenied) {
+      await Permission.notification.request();
+    }
   }
 
   void _initDeepLinks() {
@@ -81,16 +90,35 @@ class _FoodiAppState extends State<FoodiApp> {
   }
 
   void _handleDeepLink(Uri uri) {
-    debugPrint('Handling Deep Link: $uri');
-    // Expected: io.supabase.tastespot://profile/<USER_ID>
+    debugPrint('--- Deep Link Received ---');
+    debugPrint('Full URI: $uri');
     
-    if (uri.scheme == 'io.supabase.tastespot') {
-      if (uri.host == 'profile') {
-        final pathSegments = uri.pathSegments;
-        if (pathSegments.isNotEmpty) {
-          final userId = pathSegments.first;
-          _navigateToProfile(userId);
+    if (uri.scheme == 'io.supabase.tastespot' || uri.scheme == 'tastespot') {
+      String? userId;
+      
+      // 1. Try to find 'id' in query parameters (Safe for both Safari & Chrome)
+      if (uri.queryParameters.containsKey('id')) {
+        userId = uri.queryParameters['id'];
+      }
+      
+      // 2. Fallback: Check path segments for ID (Look for uuid-like pattern or segment after 'profile')
+      if (userId == null || userId.isEmpty) {
+        final segments = uri.pathSegments;
+        if (segments.contains('profile')) {
+          final idx = segments.indexOf('profile');
+          if (idx + 1 < segments.length) {
+            userId = segments[idx + 1];
+          }
+        } else if (segments.isNotEmpty) {
+          // Check if first segment looks like a UUID
+          final first = segments.first;
+          if (first.length > 20) userId = first; 
         }
+      }
+
+      if (userId != null && userId.isNotEmpty) {
+        debugPrint('Navigating to Profile: $userId');
+        _navigateToProfile(userId);
       }
     }
   }

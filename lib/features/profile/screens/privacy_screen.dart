@@ -1,8 +1,77 @@
 import 'package:flutter/cupertino.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/repositories/auth_repository.dart';
+import 'package:taste_spot/core/widgets/feedback_dialog.dart';
+import 'package:taste_spot/features/auth/screens/login_screen.dart';
 
-class PrivacyScreen extends StatelessWidget {
+class PrivacyScreen extends StatefulWidget {
   const PrivacyScreen({super.key});
+
+  @override
+  State<PrivacyScreen> createState() => _PrivacyScreenState();
+}
+
+class _PrivacyScreenState extends State<PrivacyScreen> {
+  bool _isDeleting = false;
+  late final AuthRepository _authRepo = AuthRepository(Supabase.instance.client);
+
+  void _confirmDeleteAccount() {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Delete Account?'),
+        content: const Text(
+          'This action is permanent and will remove all your posts, collections, and profile data. You cannot undo this.',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.pop(context);
+              _handleDeleteAccount();
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleDeleteAccount() async {
+    setState(() => _isDeleting = true);
+    try {
+      await _authRepo.deleteAccount();
+      if (!mounted) return;
+      
+      FeedbackDialog.show(
+        context: context,
+        title: 'Account Deleted',
+        message: 'Your account has been successfully removed. We\'re sorry to see you go!',
+        icon: CupertinoIcons.trash_fill,
+        onConfirm: () {
+          Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+            CupertinoPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      FeedbackDialog.show(
+        context: context,
+        title: 'Deletion Failed',
+        message: 'Something went wrong while deleting your account. Please try again.',
+      );
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -12,33 +81,46 @@ class PrivacyScreen extends StatelessWidget {
         middle: Text('Privacy', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+        child: Stack(
           children: [
-            _buildSection(
-              title: 'Visibility',
+            ListView(
+              padding: const EdgeInsets.all(16),
               children: [
-                _buildSwitchTile(title: 'Private Account', value: false, onChanged: (v) {}),
-                _buildTile(title: 'Blocked Users', onTap: () {}),
+                _buildSection(
+                  title: 'Visibility',
+                  children: [
+                    _buildSwitchTile(title: 'Private Account', value: false, onChanged: (v) {}),
+                    _buildTile(title: 'Blocked Users', onTap: () {}),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _buildSection(
+                  title: 'Data',
+                  children: [
+                    _buildTile(title: 'Personalization', onTap: () {}),
+                    _buildTile(title: 'Download My Data', onTap: () {}),
+                    _buildTile(
+                      title: 'Delete Account', 
+                      isDestructive: true, 
+                      onTap: _isDeleting ? () {} : _confirmDeleteAccount
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'Your privacy is important to us. We use your data to improve your experience. See our full Privacy Policy for more details.',
+                    style: TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 24),
-            _buildSection(
-              title: 'Data',
-              children: [
-                _buildTile(title: 'Personalization', onTap: () {}),
-                _buildTile(title: 'Download My Data', onTap: () {}),
-                _buildTile(title: 'Delete Account', isDestructive: true, onTap: () {}),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12),
-              child: Text(
-                'Your privacy is important to us. We use your data to improve your experience. See our full Privacy Policy for more details.',
-                style: TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4),
+            if (_isDeleting)
+              Container(
+                color: CupertinoColors.white.withAlpha(150),
+                child: const Center(child: CupertinoActivityIndicator()),
               ),
-            ),
           ],
         ),
       ),
