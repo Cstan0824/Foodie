@@ -5,7 +5,6 @@ import 'package:taste_spot/data/models/profile_model.dart';
 import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/core/services/account_service.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 
 class EditProfileScreen extends StatefulWidget {
   final Profile profile;
@@ -18,6 +17,7 @@ class EditProfileScreen extends StatefulWidget {
 class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
+  late TextEditingController _emailController;
   late TextEditingController _bioController;
   String? _profileImageUrl;
   bool _isSaving = false;
@@ -27,6 +27,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.initState();
     _nameController = TextEditingController(text: widget.profile.name);
     _usernameController = TextEditingController(text: widget.profile.username ?? '');
+    
+    // Fetch email from Supabase Auth
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    _emailController = TextEditingController(text: currentUser?.email ?? '');
+    
     _bioController = TextEditingController(text: widget.profile.bio ?? '');
     _loadProfileImage();
   }
@@ -47,6 +52,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void dispose() {
     _nameController.dispose();
     _usernameController.dispose();
+    _emailController.dispose();
     _bioController.dispose();
     super.dispose();
   }
@@ -213,6 +219,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             controller: _usernameController,
             readOnly: true,
             placeholder: 'username',
+          ),
+          const SizedBox(height: 16),
+          _ModernEditField(
+            label: 'Email',
+            controller: _emailController,
+            readOnly: true,
+            placeholder: 'email@example.com',
           ),
         ],
       ),

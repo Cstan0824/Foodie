@@ -12,6 +12,9 @@ import 'package:taste_spot/features/auth/screens/login_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/profile/screens/connections_screen.dart';
 import 'package:taste_spot/features/profile/screens/edit_profile_screen.dart';
+import 'package:taste_spot/features/profile/screens/settings_screen.dart';
+import 'package:taste_spot/features/profile/screens/privacy_screen.dart';
+import 'package:taste_spot/features/profile/screens/help_feedback_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:taste_spot/core/services/account_service.dart';
 import 'package:taste_spot/main.dart';
@@ -213,8 +216,8 @@ class ProfileScreenState extends State<ProfileScreen> {
     final userId = _userProfile?.userId;
     if (userId == null) return;
     
-    // Using Supabase as a redirector to avoid NXDOMAIN errors in browsers
-    final String deepLink = 'https://wjwfqwvrynyfqbjkqmah.supabase.co/auth/v1/callback?redirect_to=io.supabase.tastespot://profile/$userId';
+    // Using the same host structure that is proven to work in your Supabase config
+    final String deepLink = 'io.supabase.tastespot://login-callback/profile?id=$userId';
     
     Share.share(
       'Check out my food journey on Taste Spot!\n$deepLink',
@@ -498,9 +501,15 @@ class ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {}),
-                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {}),
-                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {}),
+                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {
+                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SettingsScreen()));
+                }),
+                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {
+                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PrivacyScreen()));
+                }),
+                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {
+                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => HelpFeedbackScreen()));
+                }),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 0.5, color: AppColors.divider),
@@ -615,19 +624,29 @@ class ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
           
-          const SizedBox(height: 24),
-          
-          // Bio Section (Always Left Aligned)
-          Text(
-            _userProfile?.bio ?? 'Tap Edit Profile to add a bio.',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-              height: 1.5,
+          const SizedBox(height: 12),
+
+          // Bio Section (Prettier & Minimal)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              (_userProfile?.bio != null && _userProfile!.bio!.isNotEmpty)
+                  ? _userProfile!.bio!
+                  : 'Welcome to my flavor journey! 🍜',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: AppColors.textPrimary.withAlpha(180),
+                height: 1.6,
+                letterSpacing: 0.1,
+              ),
             ),
           ),
-          
-          const SizedBox(height: 24),
+
+          const SizedBox(height: 20),
+
           _buildActionButtons(),
         ],
       ),
