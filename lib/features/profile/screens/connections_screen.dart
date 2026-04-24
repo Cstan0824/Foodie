@@ -250,16 +250,22 @@ class _ConnectionsScreenState extends State<ConnectionsScreen> {
                 shape: BoxShape.circle,
                 border: Border.all(color: AppColors.divider, width: 0.5),
               ),
-              child: ClipOval(
-                child: Image.network(
-                  'https://i.pravatar.cc/200?u=${user.userId}',
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    CupertinoIcons.person_fill, 
-                    color: AppColors.textLight, 
-                    size: 28,
-                  ),
-                ),
+            child: ClipOval(
+                child: (user.imageUrl != null && user.imageUrl!.isNotEmpty)
+                    ? Image.network(
+                        user.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => const Icon(
+                          CupertinoIcons.person_fill,
+                          color: AppColors.textLight,
+                          size: 28,
+                        ),
+                      )
+                    : const Icon(
+                        CupertinoIcons.person_fill,
+                        color: AppColors.textLight,
+                        size: 28,
+                      ),
               ),
             ),
             const SizedBox(width: 14),

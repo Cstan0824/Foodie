@@ -14,11 +14,77 @@ class CollectionRepository {
   Future<List<Collection>> getUserCollections(String userId) async {
     final response = await _supabase
         .from('collections')
-        .select()
+        .select('*, User!collections_user_Id_fkey(*, UserImage(image_url))')
         .eq('user_Id', userId)
         .order('created_At', ascending: false);
 
     return (response as List).map((json) => Collection.fromJson(json)).toList();
+  }
+
+  Future<List<Collection>> getSharedCollections(String userId) async {
+    // 1. Get IDs of collections shared with this user
+    final sharesResponse = await _supabase
+        .from('collections_shares')
+        .select('collection_Id')
+        .eq('share_with_id', userId);
+
+    final collectionIds = (sharesResponse as List<dynamic>)
+        .map((row) => row['collection_Id'] as String)
+        .toList();
+
+    if (collectionIds.isEmpty) return [];
+
+    // 2. Fetch those collections with owner (User) info
+    final response = await _supabase
+        .from('collections')
+        .select('*, User!collections_user_Id_fkey(*, UserImage(image_url))')
+        .inFilter('collection_Id', collectionIds)
+        .order('created_At', ascending: false);
+
+    return (response as List).map((json) => Collection.fromJson(json)).toList();
+  }
+
+  Future<Collection> cloneCollection({
+    required String userId,
+    required Collection sourceCollection,
+  }) async {
+    // 1. Create the new collection header
+    final newCollectionId = const Uuid().v4();
+    final response = await _supabase
+        .from('collections')
+        .insert({
+          'collection_Id': newCollectionId,
+          'user_Id': userId,
+          'name': '${sourceCollection.name} (Copy)',
+          'description': sourceCollection.description,
+          'is_public': false, // Cloned collections are private by default
+          'collection_type': sourceCollection.collectionType,
+          'is_default': false,
+        })
+        .select()
+        .single();
+
+    // 2. Fetch all items from the source collection
+    final itemsResponse = await _supabase
+        .from('collections_item')
+        .select('restaurant_id, post_id')
+        .eq('collection_Id', sourceCollection.collectionId);
+
+    final items = itemsResponse as List<dynamic>;
+
+    if (items.isNotEmpty) {
+      // 3. Insert them into the new collection
+      final newItems = items.map((item) => {
+        'item_Id': const Uuid().v4(),
+        'collection_Id': newCollectionId,
+        'restaurant_id': item['restaurant_id'],
+        'post_id': item['post_id'],
+      }).toList();
+
+      await _supabase.from('collections_item').insert(newItems);
+    }
+
+    return Collection.fromJson(response);
   }
 
   Future<Collection> createCollection({

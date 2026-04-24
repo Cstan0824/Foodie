@@ -59,11 +59,21 @@ class _LoginScreenState extends State<LoginScreen> {
             String? avatarUrl;
             try {
               final imageResponse = await Supabase.instance.client
-                  .from('user_images')
+                  .from('UserImage')
                   .select('image_url')
                   .eq('user_Id', session.user.id)
                   .maybeSingle();
               avatarUrl = imageResponse?['image_url'];
+              
+              if (avatarUrl == null) {
+                // Fallback to avatar_url on User table
+                final userResponse = await Supabase.instance.client
+                    .from('User')
+                    .select('avatar_url')
+                    .eq('user_Id', session.user.id)
+                    .maybeSingle();
+                avatarUrl = userResponse?['avatar_url'];
+              }
             } catch (_) {}
 
             final role = profileResponse?['role'] ?? 'user';

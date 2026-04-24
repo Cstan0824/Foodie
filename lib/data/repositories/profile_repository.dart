@@ -10,7 +10,7 @@ class ProfileRepository {
   Future<Profile?> getProfile(String userId) async {
     final response = await _supabase
         .from('User')
-        .select('user_Id, name, username, bio, role, created_At')
+        .select('user_Id, name, username, bio, role, created_At, UserImage(image_url)')
         .eq('user_Id', userId)
         .maybeSingle();
 
@@ -48,8 +48,8 @@ class ProfileRepository {
       // 2. Get the public URL
       final imageUrl = _supabase.storage.from('user_images').getPublicUrl(path);
 
-      // 3. Update the user_images table with the new URL
-      await _supabase.from('user_images').upsert({
+      // 3. Update the UserImage table with the new URL
+      await _supabase.from('UserImage').upsert({
         'image_id': userId,
         'user_Id': userId,
         'image_url': imageUrl,
@@ -65,7 +65,7 @@ class ProfileRepository {
   Future<String?> getProfileImageUrl(String userId) async {
     try {
       final response = await _supabase
-          .from('user_images')
+          .from('UserImage')
           .select('image_url')
           .eq('user_Id', userId)
           .maybeSingle();
@@ -73,14 +73,14 @@ class ProfileRepository {
       if (response == null || response['image_url'] == null) return null;
       return response['image_url'] as String;
     } catch (e) {
-      // If user_images fails, try UserImage (fallback for schema variations)
+      // If UserImage fails, try avatar_url on User table (fallback)
       try {
         final fallback = await _supabase
-            .from('UserImage')
-            .select('image_url')
+            .from('User')
+            .select('avatar_url')
             .eq('user_Id', userId)
             .maybeSingle();
-        return fallback?['image_url'] as String?;
+        return fallback?['avatar_url'] as String?;
       } catch (_) {
         return null;
       }
@@ -106,7 +106,7 @@ class ProfileRepository {
   Future<List<Profile>> getFollowers(String userId) async {
     final response = await _supabase
         .from('Follower')
-        .select('follower_Id, User!Follower_follower_Id_fkey(user_Id, name, username, bio, role, created_At)')
+        .select('follower_Id, User!Follower_follower_Id_fkey(user_Id, name, username, bio, role, created_At, UserImage(image_url))')
         .eq('following_Id', userId);
 
     return (response as List).map((row) {
@@ -118,7 +118,7 @@ class ProfileRepository {
   Future<List<Profile>> getFollowing(String userId) async {
     final response = await _supabase
         .from('Follower')
-        .select('following_Id, User!Follower_following_Id_fkey(user_Id, name, username, bio, role, created_At)')
+        .select('following_Id, User!Follower_following_Id_fkey(user_Id, name, username, bio, role, created_At, UserImage(image_url))')
         .eq('follower_Id', userId);
 
     return (response as List).map((row) {
