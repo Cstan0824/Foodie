@@ -57,12 +57,12 @@ class _FoodiAppState extends State<FoodiApp> {
 
   void _initDeepLinks() {
     _appLinks = AppLinks();
-    
+
     // 1. Handle initial link if app was closed
     _appLinks.getInitialLink().then((uri) {
       if (uri != null) {
         debugPrint('Deep Link (Initial): $uri');
-        _handleDeepLink(uri);
+        _scheduleDeepLinkHandling(uri);
       }
     });
 
@@ -73,13 +73,24 @@ class _FoodiAppState extends State<FoodiApp> {
     });
   }
 
+  void _scheduleDeepLinkHandling(Uri uri) {
+    // Wait for the navigator to be built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleDeepLink(uri);
+    });
+  }
+
   void _handleDeepLink(Uri uri) {
+    debugPrint('Handling Deep Link: $uri');
     // Expected: io.supabase.tastespot://profile/<USER_ID>
-    if (uri.host == 'profile') {
-      final pathSegments = uri.pathSegments;
-      if (pathSegments.isNotEmpty) {
-        final userId = pathSegments.first;
-        _navigateToProfile(userId);
+    
+    if (uri.scheme == 'io.supabase.tastespot') {
+      if (uri.host == 'profile') {
+        final pathSegments = uri.pathSegments;
+        if (pathSegments.isNotEmpty) {
+          final userId = pathSegments.first;
+          _navigateToProfile(userId);
+        }
       }
     }
   }
@@ -149,10 +160,14 @@ class _MainShellState extends State<MainShell> {
 
   int get _screenIndex {
     switch (_selectedTab) {
-      case 1: return 1;
-      case 3: return 2;
-      case 4: return 3;
-      default: return 0;
+      case 1:
+        return 1;
+      case 3:
+        return 2;
+      case 4:
+        return 3;
+      default:
+        return 0;
     }
   }
 
@@ -238,7 +253,10 @@ class _MainShellState extends State<MainShell> {
             const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(fontSize: 10, color: isActive ? AppColors.primary : AppColors.textLight),
+              style: TextStyle(
+                fontSize: 10,
+                color: isActive ? AppColors.primary : AppColors.textLight,
+              ),
             ),
           ],
         ),
@@ -253,15 +271,21 @@ class _MainShellState extends State<MainShell> {
         onTap: _showAddPost,
         child: Center(
           child: Container(
-            width: 46, height: 32,
+            width: 46,
+            height: 32,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [AppColors.primary, AppColors.accent],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(10),
               boxShadow: [
-                BoxShadow(color: AppColors.primary.withAlpha(80), blurRadius: 10, offset: const Offset(0, 4)),
+                BoxShadow(
+                  color: AppColors.primary.withAlpha(80),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
             child: const Icon(CupertinoIcons.add, color: CupertinoColors.white, size: 22),

@@ -9,7 +9,9 @@ import 'package:taste_spot/features/auth/screens/signup_screen.dart';
 import 'package:taste_spot/features/auth/screens/complete_profile_screen.dart';
 import 'package:taste_spot/features/auth/screens/forgot_password_screen.dart';
 import 'package:taste_spot/features/admin/screens/admin_screen.dart';
+import 'package:taste_spot/core/services/account_service.dart';
 import 'package:taste_spot/main.dart';
+import 'dart:convert';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -46,6 +48,46 @@ class _LoginScreenState extends State<LoginScreen> {
               (event == AuthChangeEvent.signedIn ||
                   event == AuthChangeEvent.initialSession)) {
             final isNewUser = await _ensureProfileExists(session.user);
+            
+            // Save account for multi-account support
+            final profileResponse = await Supabase.instance.client
+                .from('User')
+                .select('name, username, role')
+                .eq('user_Id', session.user.id)
+                .maybeSingle();
+            
+            String? avatarUrl;
+            try {
+              final imageResponse = await Supabase.instance.client
+                  .from('user_images')
+                  .select('image_url')
+                  .eq('user_Id', session.user.id)
+                  .maybeSingle();
+              avatarUrl = imageResponse?['image_url'];
+              
+              if (avatarUrl == null) {
+                // Fallback to UserImage
+                final fallback = await Supabase.instance.client
+                  .from('UserImage')
+                  .select('image_url')
+                  .eq('user_Id', session.user.id)
+                  .maybeSingle();
+                avatarUrl = fallback?['image_url'];
+              }
+            } catch (_) {}
+
+            final role = profileResponse?['role'] ?? 'user';
+
+            if (profileResponse != null) {
+              await AccountService.saveAccount(
+                userId: session.user.id,
+                name: profileResponse['name'],
+                username: profileResponse['username'],
+                avatarUrl: avatarUrl,
+                role: role,
+                sessionJson: jsonEncode(session.toJson()),
+              );
+            }
 
             if (!mounted) return;
             if (isNewUser) {
@@ -55,9 +97,15 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               );
             } else {
-              Navigator.of(context).pushReplacement(
-                CupertinoPageRoute(builder: (_) => const MainShell()),
-              );
+              if (role == 'admin') {
+                Navigator.of(context).pushReplacement(
+                  CupertinoPageRoute(builder: (_) => AdminScreen()),
+                );
+              } else {
+                Navigator.of(context).pushReplacement(
+                  CupertinoPageRoute(builder: (_) => const MainShell()),
+                );
+              }
             }
           }
         });
@@ -422,7 +470,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           Center(
                             child: CupertinoButton(
                               onPressed: () => Navigator.of(context).push(
-                                CupertinoPageRoute(builder: (_) => const AdminScreen()),
+                                CupertinoPageRoute(builder: (_) => AdminScreen()),
                               ),
                               child: Text(
                                 'ADMIN ACCESS',

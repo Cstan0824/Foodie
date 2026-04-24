@@ -3,6 +3,7 @@ class Profile {
   final String name;
   final String? username;
   final String? bio;
+  final String role; // 'user' or 'admin'
   final DateTime createdAt;
 
   Profile({
@@ -10,6 +11,7 @@ class Profile {
     required this.name,
     this.username,
     this.bio,
+    this.role = 'user',
     required this.createdAt,
   });
 
@@ -24,6 +26,7 @@ class Profile {
           ? username
           : name.replaceAll(' ', '').toLowerCase(),
       bio: json['bio'] as String?,
+      role: json['role'] as String? ?? 'user',
       createdAt: DateTime.parse(json['created_At'] as String),
     );
   }
@@ -34,6 +37,7 @@ class Profile {
       'name': name,
       if (username != null) 'username': username,
       if (bio != null) 'bio': bio,
+      'role': role,
     };
   }
 }
