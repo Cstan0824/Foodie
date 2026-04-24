@@ -132,6 +132,9 @@ class _AddEditApproveRestaurantScreenState
   late final TextEditingController _addr1Ctrl;
   late final TextEditingController _addr2Ctrl;
   late final TextEditingController _postcodeCtrl;
+  late final TextEditingController _descriptionCtrl;
+  late final TextEditingController _priceRangeCtrl;
+  late final TextEditingController _ratingCtrl;
   String? _selectedState;
   String? _selectedCity;
   late final TextEditingController _latCtrl;
@@ -181,6 +184,9 @@ class _AddEditApproveRestaurantScreenState
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController();
+    _descriptionCtrl = TextEditingController();
+    _priceRangeCtrl = TextEditingController();
+    _ratingCtrl = TextEditingController();
     _addr1Ctrl = TextEditingController();
     _addr2Ctrl = TextEditingController();
     _postcodeCtrl = TextEditingController();
@@ -195,6 +201,9 @@ class _AddEditApproveRestaurantScreenState
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _descriptionCtrl.dispose();
+    _priceRangeCtrl.dispose();
+    _ratingCtrl.dispose();
     _addr1Ctrl.dispose();
     _addr2Ctrl.dispose();
     _postcodeCtrl.dispose();
@@ -238,7 +247,7 @@ class _AddEditApproveRestaurantScreenState
         final detail = await _repo.fetchRestaurantDetail(widget.restaurantId!);
         if (detail != null) _prefillForm(detail);
       } else {
-        _sourceCtrl.text = 'admin';
+        _sourceCtrl.text = 'ADMIN';
       }
 
       if (mounted) setState(() => _isLoading = false);
@@ -255,11 +264,14 @@ class _AddEditApproveRestaurantScreenState
   void _prefillForm(RestaurantDetailData detail) {
     final r = detail.restaurant;
     _nameCtrl.text = r.name;
+    _descriptionCtrl.text = r.description ?? '';
+    _priceRangeCtrl.text = r.priceRange ?? '';
+    _ratingCtrl.text = r.rating?.toString() ?? '';
     _latCtrl.text = r.latitude?.toString() ?? '';
     _lngCtrl.text = r.longitude?.toString() ?? '';
     _mapsUrlCtrl.text = r.mapsUrl ?? '';
     _infoUrlCtrl.text = r.infoUrl ?? '';
-    _sourceCtrl.text = (r.source ?? 'admin').trim();
+    _sourceCtrl.text = (r.source ?? 'ADMIN').trim();
 
     // ── Address parsing ────────────────────────────────────────────────────────
     // Use the 5-digit postcode as the anchor. If not found, fall back to
@@ -318,6 +330,9 @@ class _AddEditApproveRestaurantScreenState
 
   void _prefillFromApproval(RestaurantApprovalModel approval) {
     _nameCtrl.text = approval.name;
+    _descriptionCtrl.text = approval.description ?? '';
+    _priceRangeCtrl.text = approval.priceRange ?? '';
+    _ratingCtrl.text = approval.rating?.toString() ?? '';
     _latCtrl.text = approval.latitude?.toString() ?? '';
     _lngCtrl.text = approval.longitude?.toString() ?? '';
     _mapsUrlCtrl.text = approval.mapsUrl ?? '';
@@ -588,10 +603,22 @@ class _AddEditApproveRestaurantScreenState
     if (lng.isNotEmpty && double.tryParse(lng) == null) {
       _errors['lng'] = 'Invalid number';
     }
-    if (lat.isNotEmpty && lng.isEmpty)
+    if (lat.isNotEmpty && lng.isEmpty) {
       _errors['lng'] = 'Required if latitude is set';
-    if (lng.isNotEmpty && lat.isEmpty)
+    }
+    if (lng.isNotEmpty && lat.isEmpty) {
       _errors['lat'] = 'Required if longitude is set';
+    }
+
+    final rating = _ratingCtrl.text.trim();
+    if (rating.isNotEmpty) {
+      final parsedRating = double.tryParse(rating);
+      if (parsedRating == null) {
+        _errors['rating'] = 'Invalid number';
+      } else if (parsedRating < 0 || parsedRating > 5) {
+        _errors['rating'] = 'Must be between 0 and 5';
+      }
+    }
 
     final mapsUrl = _mapsUrlCtrl.text.trim();
     if (mapsUrl.isNotEmpty) {
@@ -692,6 +719,13 @@ class _AddEditApproveRestaurantScreenState
           ? null
           : _infoUrlCtrl.text.trim();
       final name = _nameCtrl.text.trim();
+      final description = _descriptionCtrl.text.trim().isEmpty
+          ? null
+          : _descriptionCtrl.text.trim();
+      final priceRange = _priceRangeCtrl.text.trim().isEmpty
+          ? null
+          : _priceRangeCtrl.text.trim();
+      final rating = double.tryParse(_ratingCtrl.text.trim());
 
       // Step 1 — Ensure a restaurant row exists so we have an ID for storage paths.
       //          In add mode we create the row now; in edit mode we use the known ID.
@@ -699,13 +733,16 @@ class _AddEditApproveRestaurantScreenState
           widget.restaurantId ??
           await _repo.createRestaurant(
             name: name,
+            description: description,
+            priceRange: priceRange,
             address: address,
             latitude: lat,
             longitude: lng,
             mapsUrl: mapsUrl,
             mainCuisineId: resolvedMainId,
             infoUrl: infoUrl,
-            source: 'admin',
+            source: 'ADMIN',
+            rating: rating,
           );
 
       // Step 2 — Upload any newly picked local images; keep existing remote ones.
@@ -747,9 +784,12 @@ class _AddEditApproveRestaurantScreenState
         longitude: lng,
         mapsUrl: mapsUrl,
         infoUrl: infoUrl,
-        source: 'admin',
+        source: 'ADMIN',
         extraCuisineIds: resolvedExtraIds,
         images: imageRecords,
+        description: description,
+        priceRange: priceRange,
+        rating: rating,
       );
 
       if (!mounted) return;
@@ -812,6 +852,7 @@ class _AddEditApproveRestaurantScreenState
       final resolvedExtraIds = _extraCuisineIds
           .map((id) => pendingMap[id] ?? id)
           .toList();
+      final rating = double.tryParse(_ratingCtrl.text.trim());
 
       final decision = ApprovalDecisionInput(
         approvalId: approval.approvalId,
@@ -826,8 +867,9 @@ class _AddEditApproveRestaurantScreenState
             ? null
             : _infoUrlCtrl.text.trim(),
         source: _sourceCtrl.text.trim().isEmpty
-            ? 'User'
-            : _sourceCtrl.text.trim(),
+            ? 'USER'
+            : _sourceCtrl.text.trim().toUpperCase(),
+        rating: rating,
         mainCuisineId: resolvedMainId,
         extraCuisineIds: resolvedExtraIds,
         images: _buildApprovalDecisionImages(),
@@ -871,6 +913,7 @@ class _AddEditApproveRestaurantScreenState
       final resolvedExtraIds = _extraCuisineIds
           .map((id) => pendingMap[id] ?? id)
           .toList();
+      final rating = double.tryParse(_ratingCtrl.text.trim());
 
       final fallbackName = approval.name.trim();
       final inputName = _nameCtrl.text.trim().isEmpty
@@ -896,8 +939,9 @@ class _AddEditApproveRestaurantScreenState
             ? null
             : _infoUrlCtrl.text.trim(),
         source: _sourceCtrl.text.trim().isEmpty
-            ? 'User'
-            : _sourceCtrl.text.trim(),
+            ? 'USER'
+            : _sourceCtrl.text.trim().toUpperCase(),
+        rating: rating,
         mainCuisineId: resolvedMainId,
         extraCuisineIds: resolvedExtraIds,
         images: _buildApprovalDecisionImages(),
@@ -1212,6 +1256,35 @@ class _AddEditApproveRestaurantScreenState
           error: _errors['name'],
         ),
         _FormField(
+          label: 'Description',
+          controller: _descriptionCtrl,
+          placeholder: 'Short restaurant description or about text',
+          maxLines: 3,
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: _FormField(
+                label: 'Price Range',
+                controller: _priceRangeCtrl,
+                placeholder: 'e.g. RM 20-40',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _FormField(
+                label: 'Rating',
+                controller: _ratingCtrl,
+                placeholder: 'e.g. 4.5',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                error: _errors['rating'],
+              ),
+            ),
+          ],
+        ),
+        _FormField(
           label: 'Address Line 1 *',
           controller: _addr1Ctrl,
           placeholder: 'Street address',
@@ -1307,7 +1380,7 @@ class _AddEditApproveRestaurantScreenState
         _FormField(
           label: 'Source',
           controller: _sourceCtrl,
-          placeholder: 'e.g. User / API / Admin',
+          placeholder: 'e.g. API / ADMIN',
           enabled: !_isApprovalMode,
         ),
       ],
@@ -1949,6 +2022,7 @@ class _FormField extends StatelessWidget {
   final TextInputType? keyboardType;
   final String? error;
   final bool enabled;
+  final int maxLines;
 
   const _FormField({
     required this.label,
@@ -1957,6 +2031,7 @@ class _FormField extends StatelessWidget {
     this.keyboardType,
     this.error,
     this.enabled = true,
+    this.maxLines = 1,
   });
 
   @override
@@ -1979,6 +2054,7 @@ class _FormField extends StatelessWidget {
             controller: controller,
             enabled: enabled,
             placeholder: placeholder,
+            maxLines: maxLines,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: enabled ? AppColors.background : AppColors.surface,

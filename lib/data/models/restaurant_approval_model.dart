@@ -11,6 +11,8 @@ class RestaurantApprovalModel {
   final DateTime? detectedAt;
   final String? mainCuisineId;
   final double? rating;
+  final String? description;
+  final String? priceRange;
   /// this is in the restaurant approval table, not the main restaurant table, so it can be null
   final String? imageUrl;
 
@@ -27,6 +29,8 @@ class RestaurantApprovalModel {
     this.detectedAt,
     this.mainCuisineId,
     this.rating,
+    this.description,
+    this.priceRange,
     this.imageUrl,
   });
 
@@ -46,6 +50,8 @@ class RestaurantApprovalModel {
           : null,
       mainCuisineId: json['main_cuisine_id'] as String?,
       rating: (json['rating'] as num?)?.toDouble(),
+      description: json['description'] as String?,
+      priceRange: json['price_range'] as String?,
       imageUrl: json['image_url'] as String?,
     );
   }

@@ -1,231 +1,630 @@
+import 'dart:math';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/repositories/restaurant_repository.dart';
+import 'package:taste_spot/features/search/screens/search_result.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-class RestaurantDetailScreen extends StatelessWidget {
-  final Map<String, dynamic> restaurant;
+class RestaurantDetailScreen extends StatefulWidget {
+  final Map<String, dynamic>? restaurant; // Mock fallback
+  final String? restaurantId;
   final int initialImageIndex;
 
   const RestaurantDetailScreen({
     super.key,
-    required this.restaurant,
+    this.restaurant,
+    this.restaurantId,
     this.initialImageIndex = 0,
   });
 
   @override
+  State<RestaurantDetailScreen> createState() => _RestaurantDetailScreenState();
+}
+
+class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
+  late final PageController _pageController;
+  int _currentImageIndex = 0;
+
+  bool _isLoading = false;
+  String? _errorMessage;
+  RestaurantDetailData? _detail;
+
+  double? _userLatitude;
+  double? _userLongitude;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentImageIndex = widget.initialImageIndex;
+    _pageController = PageController(initialPage: widget.initialImageIndex);
+
+    _getCurrentLocation();
+
+    if (widget.restaurantId != null && widget.restaurantId!.isNotEmpty) {
+      _loadRestaurantDetail();
+    }
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      if (mounted) {
+        setState(() {
+          _userLatitude = position.latitude;
+          _userLongitude = position.longitude;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadRestaurantDetail() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final detail = await RestaurantRepository.instance.fetchRestaurantDetail(
+        widget.restaurantId!,
+      );
+
+      if (!mounted) return;
+      if (detail == null) {
+        setState(() {
+          _errorMessage = 'Restaurant not found.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _detail = detail;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Unable to load restaurant details.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openExternalUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  Future<void> _openRelatedPosts(String name) async {
+    await Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => SearchResultScreen(initialQuery: 'restaurant: $name'),
+      ),
+    );
+  }
+
+  // --- Dynamic Getters ---
+
+  String get _restaurantName {
+    if (_detail != null) return _detail!.restaurant.name;
+    if (widget.restaurant != null) {
+      return (widget.restaurant!['restaurant_name'] ?? widget.restaurant!['name'] ?? 'Restaurant').toString();
+    }
+    return 'Restaurant';
+  }
+
+  String? get _description {
+    if (_detail != null) return _detail!.restaurant.description;
+    if (widget.restaurant != null) {
+      final raw = (widget.restaurant!['description'] as String?)?.trim();
+      return (raw == null || raw.isEmpty) ? null : raw;
+    }
+    return null;
+  }
+
+  String get _priceRange {
+    if (_detail != null) return _detail!.restaurant.priceRange ?? '-';
+    if (widget.restaurant != null) {
+      return (widget.restaurant!['price_range'] ?? widget.restaurant!['price'] ?? '-').toString();
+    }
+    return '-';
+  }
+
+  String? get _distanceText {
+    if (_detail != null && _userLatitude != null && _userLongitude != null && _detail!.restaurant.latitude != null && _detail!.restaurant.longitude != null) {
+      const earthRadiusKm = 6371.0;
+      double degToRad(double degree) => degree * pi / 180.0;
+
+      final userLat = _userLatitude!;
+      final userLng = _userLongitude!;
+      final restLat = _detail!.restaurant.latitude!;
+      final restLng = _detail!.restaurant.longitude!;
+
+      final dLat = degToRad(restLat - userLat);
+      final dLng = degToRad(restLng - userLng);
+
+      final a = sin(dLat / 2) * sin(dLat / 2) +
+          cos(degToRad(userLat)) *
+              cos(degToRad(restLat)) *
+              sin(dLng / 2) *
+              sin(dLng / 2);
+
+      final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+      final distanceKm = earthRadiusKm * c;
+
+      if (distanceKm < 1) {
+        return '${(distanceKm * 1000).round()} m';
+      }
+      return '${distanceKm.toStringAsFixed(1)} km';
+    }
+    
+    if (widget.restaurant != null) {
+      final raw = widget.restaurant!['distance']?.toString().trim();
+      return (raw == null || raw.isEmpty) ? null : raw;
+    }
+    return null;
+  }
+
+  String get _mainCuisine {
+    if (_detail != null) {
+      return _detail!.restaurant.mainCuisineId ?? 'Cuisine';
+    }
+    final list = _allCuisineTagsMock;
+    return list.isEmpty ? 'Cuisine' : list.first;
+  }
+
+  List<String> get _extraCuisineTags {
+    if (_detail != null) {
+      return _detail!.extraCuisines.map((c) => c.description).where((t) => t != _mainCuisine).toList();
+    }
+    final list = _allCuisineTagsMock;
+    return list.length <= 1 ? const [] : list.skip(1).toList();
+  }
+
+  String get _address {
+    if (_detail != null) return _detail!.restaurant.address ?? 'Address unavailable';
+    if (widget.restaurant != null) {
+      final raw = (widget.restaurant!['address'] as String?)?.trim();
+      return (raw == null || raw.isEmpty) ? 'Address unavailable' : raw;
+    }
+    return 'Address unavailable';
+  }
+
+  String? get _mapsUrl {
+    if (_detail != null) return _detail!.restaurant.mapsUrl;
+    if (widget.restaurant != null) {
+      final raw = (widget.restaurant!['maps_url'] ?? widget.restaurant!['locationUrl'])?.toString().trim();
+      return (raw == null || raw.isEmpty) ? null : raw;
+    }
+    return null;
+  }
+
+  String? get _websiteUrl {
+    if (_detail != null) return _detail!.restaurant.infoUrl;
+    if (widget.restaurant != null) {
+      final raw = widget.restaurant!['info_url']?.toString().trim();
+      return (raw == null || raw.isEmpty) ? null : raw;
+    }
+    return null;
+  }
+
+  String get _rating {
+    if (_detail != null) return _detail!.restaurant.rating?.toString() ?? '-';
+    if (widget.restaurant != null) return widget.restaurant!['rating']?.toString() ?? '-';
+    return '-';
+  }
+
+  List<String> get _images {
+    if (_detail != null) {
+      if (_detail!.images.isNotEmpty) {
+         return _detail!.images.map((e) => e.imageUrl).toList();
+      }
+      return _detail!.restaurant.imageUrls;
+    }
+    if (widget.restaurant != null) {
+      return List<String>.from(widget.restaurant!['images'] ?? const <String>[]);
+    }
+    return [];
+  }
+
+  List<String> get _allCuisineTagsMock {
+    if (widget.restaurant == null) return [];
+    final tags = <String>[];
+    final r = widget.restaurant!;
+
+    final rawCuisines = r['cuisines'];
+    if (rawCuisines is List) {
+      for (final item in rawCuisines) {
+        final text = item?.toString().trim();
+        if (text != null && text.isNotEmpty && !tags.contains(text)) {
+          tags.add(text);
+        }
+      }
+    }
+
+    final rawCuisine = (r['cuisine'] ?? r['main_cuisine'])?.toString().trim();
+    if (rawCuisine != null && rawCuisine.isNotEmpty) {
+      final split = rawCuisine.split('•').map((e) => e.trim()).where((e) => e.isNotEmpty);
+      for (final item in split) {
+        if (!tags.contains(item)) tags.add(item);
+      }
+    }
+    return tags;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final List<String> images = List<String>.from(restaurant['images'] ?? []);
-    final String heroTag = 'restaurant_image_${restaurant['id']}';
+    if (_isLoading) {
+      return CupertinoPageScaffold(
+        backgroundColor: CupertinoColors.white,
+        navigationBar: const CupertinoNavigationBar(
+          backgroundColor: CupertinoColors.white,
+          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+          middle: Text('Loading...'),
+        ),
+        child: const Center(child: CupertinoActivityIndicator()),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return CupertinoPageScaffold(
+        backgroundColor: CupertinoColors.white,
+        navigationBar: const CupertinoNavigationBar(
+          backgroundColor: CupertinoColors.white,
+          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+          middle: Text('Error'),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_errorMessage!, style: const TextStyle(color: AppColors.textPrimary)),
+              const SizedBox(height: 16),
+              CupertinoButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final name = _restaurantName;
+    final heroTag = 'restaurant_image_${widget.restaurantId ?? (widget.restaurant?['id'] ?? name)}';
+    final descriptionText = _description ?? 'No description available for this place yet.';
+    final images = _images;
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
         backgroundColor: CupertinoColors.white,
         border: const Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
-        middle: Text(restaurant['name']),
+        middle: Text(name),
       ),
       child: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Hero Image
-              Hero(
-                tag: heroTag,
-                child: SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.4,
-                  width: double.infinity,
-                  child: images.isNotEmpty
-                      ? Image.network(
-                          images[initialImageIndex],
-                          fit: BoxFit.cover,
-                        )
-                      : Container(color: AppColors.surface),
-                ),
-              ),
-
-              // Details Section
-              Padding(
-                padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header Info
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '${restaurant['rating']}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            restaurant['distance'],
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      restaurant['name'],
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        height: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${restaurant['cuisine']} • ${restaurant['price']}',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // About
-                    const Text(
-                      'About this place',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'A hidden gem offering the best ${restaurant['cuisine'].split('•').last.trim().toLowerCase()} in town. Known for its amazing atmosphere and top-notch service. Perfect for a casual hangout or a special date night.',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        color: AppColors.textSecondary,
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Menu Section
-                    const Text(
-                      'Popular Menu Items',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (restaurant['menu'] != null)
-                      ...List.generate(
-                        (restaurant['menu'] as List).length,
-                        (index) {
-                          final item = restaurant['menu'][index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  item['name'],
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    color: AppColors.textPrimary,
+                    Hero(
+                      tag: heroTag,
+                      child: SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.4,
+                        width: double.infinity,
+                        child: Stack(
+                          children: [
+                            if (images.isEmpty)
+                              Container(color: AppColors.surface)
+                            else
+                              PageView.builder(
+                                controller: _pageController,
+                                itemCount: images.length,
+                                onPageChanged: (index) {
+                                  setState(() {
+                                    _currentImageIndex = index;
+                                  });
+                                },
+                                itemBuilder: (_, index) {
+                                  return Image.network(
+                                    images[index],
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) => Container(
+                                      color: AppColors.surface,
+                                      child: const Center(
+                                        child: Icon(
+                                          CupertinoIcons.photo,
+                                          color: AppColors.textLight,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            if (images.length > 1)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 12,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: List.generate(
+                                    images.length,
+                                    (index) => AnimatedContainer(
+                                      duration: const Duration(milliseconds: 160),
+                                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                                      height: 6,
+                                      width: _currentImageIndex == index ? 16 : 6,
+                                      decoration: BoxDecoration(
+                                        color: _currentImageIndex == index
+                                            ? CupertinoColors.white
+                                            : CupertinoColors.white.withAlpha(130),
+                                        borderRadius: BorderRadius.circular(99),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                Text(
-                                  item['price'],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  _rating,
                                   style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              if (_distanceText != null) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    _distanceText!,
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
                               ],
-                            ),
-                          );
-                        },
-                      ),
-                    const SizedBox(height: 24),
-
-                    // Location
-                    const Text(
-                      'Location',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Icon(CupertinoIcons.location_solid, color: AppColors.primary, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${restaurant['distance']} away from you',
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            name,
                             style: const TextStyle(
-                              fontSize: 15,
+                              color: AppColors.textPrimary,
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '$_mainCuisine${_priceRange != '-' ? ' • $_priceRange' : ''}',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (_description != null) ...[
+                            const SizedBox(height: 24),
+                            const Text(
+                              'About this place',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              descriptionText,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: AppColors.textSecondary,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                          if (_extraCuisineTags.isNotEmpty) ...[
+                            const SizedBox(height: 24),
+                            const Text(
+                              'More cuisines',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _extraCuisineTags
+                                  .map(
+                                    (tag) => Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        borderRadius: BorderRadius.circular(99),
+                                        border: Border.all(color: AppColors.divider, width: 0.8),
+                                      ),
+                                      child: Text(
+                                        tag,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textSecondary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ],
+                          const SizedBox(height: 24),
+                          const Text(
+                            'Location',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
                               color: AppColors.textPrimary,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (restaurant['locationUrl'] != null)
-                      GestureDetector(
-                        onTap: () {
-                          print('Opening: ${restaurant['locationUrl']}');
-                        },
-                        child: Text(
-                          restaurant['locationUrl'],
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: CupertinoColors.activeBlue,
-                            decoration: TextDecoration.underline,
+                          const SizedBox(height: 12),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  CupertinoIcons.location_solid,
+                                  color: AppColors.primary,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _address,
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    color: AppColors.textPrimary,
+                                    height: 1.45,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: CupertinoButton(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(12),
-                        onPressed: () {},
-                        child: const Text('Get Directions'),
+                          if (_mapsUrl != null || _websiteUrl != null) ...[
+                            const SizedBox(height: 14),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                if (_mapsUrl != null)
+                                  CupertinoButton(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(10),
+                                    onPressed: () => _openExternalUrl(_mapsUrl!),
+                                    child: const Text(
+                                      'Open in Maps',
+                                      style: TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                if (_websiteUrl != null)
+                                  CupertinoButton(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    color: AppColors.surface,
+                                    borderRadius: BorderRadius.circular(10),
+                                    onPressed: () => _openExternalUrl(_websiteUrl!),
+                                    child: const Text(
+                                      'Visit their website',
+                                      style: TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 28),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 40),
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+            SafeArea(
+              top: false,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.white,
+                  border: const Border(
+                    top: BorderSide(color: AppColors.divider, width: 0.7),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CupertinoColors.black.withAlpha(10),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton.filled(
+                    borderRadius: BorderRadius.circular(12),
+                    onPressed: () => _openRelatedPosts(name),
+                    child: const Text('See Related Posts'),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

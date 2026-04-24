@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/collection_model.dart';
-import 'notification_repository.dart';
+import '../models/restaurant_model.dart';
 
 class CollectionRepository {
   final SupabaseClient _supabase;

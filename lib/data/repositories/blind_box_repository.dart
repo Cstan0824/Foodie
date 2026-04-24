@@ -14,6 +14,8 @@ class BlindBoxRepository {
   static const String _cardSelect = '''
     restaurant_Id,
     restaurant_name,
+    description,
+    price_range,
     address,
     latitude,
     longitude,
@@ -22,8 +24,10 @@ class BlindBoxRepository {
     source,
     info_url,
     isDisabled,
+    rating,
     created_At,
-    mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc)
+    mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption),
+    Restaurant_Image(image_id, image_url, isCover)
   ''';
 
   // ---------------------------------------------------------------------------

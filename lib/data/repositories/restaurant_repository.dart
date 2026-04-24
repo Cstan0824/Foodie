@@ -98,6 +98,8 @@ class RestaurantRepository {
   static const String _fullSelect = '''
     restaurant_Id,
     restaurant_name,
+    description,
+    price_range,
     address,
     latitude,
     longitude,
@@ -108,7 +110,7 @@ class RestaurantRepository {
     info_url,
     isDisabled,
     rating,
-    mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc),
+    mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption),
     Restaurant_Image(image_id, image_url, isCover)
   ''';
 
@@ -126,7 +128,7 @@ class RestaurantRepository {
     final response = await SupabaseService.client
         .from('Restaurant')
         .select(
-          'restaurant_Id, restaurant_name, address, maps_url, mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc)',
+          'restaurant_Id, restaurant_name, description, price_range, address, latitude, longitude, maps_url, created_At, main_cuisine_id, source, info_url, isDisabled, rating, mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption), Restaurant_Image(image_id, image_url, isCover)',
         )
         .eq('isDisabled', false)
         .ilike('restaurant_name', '%$query%')
@@ -143,7 +145,7 @@ class RestaurantRepository {
     final response = await SupabaseService.client
         .from('Restaurant')
         .select(
-          'restaurant_Id, restaurant_name, address, mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc)',
+          'restaurant_Id, restaurant_name, description, price_range, address, latitude, longitude, maps_url, created_At, main_cuisine_id, source, info_url, isDisabled, rating, mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption), Restaurant_Image(image_id, image_url, isCover)',
         )
         .eq('isDisabled', false)
         .order('created_At', ascending: false)
@@ -237,10 +239,18 @@ class RestaurantRepository {
         .select('''
           restaurant_Id,
           restaurant_name,
+          description,
+          price_range,
+          latitude,
+          longitude,
+          maps_url,
           address,
           source,
+          info_url,
+          rating,
+          main_cuisine_id,
           isDisabled,
-          mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc),
+          mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption),
           Restaurant_Image(image_id, image_url, isCover)
         ''')
         .eq('restaurant_Id', restaurantId)
@@ -296,13 +306,16 @@ class RestaurantRepository {
   /// Returns the generated restaurant ID.
   Future<String> createRestaurant({
     required String name,
+    String? description,
+    String? priceRange,
     String? address,
     double? latitude,
     double? longitude,
     String? mapsUrl,
     String? mainCuisineId,
     String? infoUrl,
-    String source = 'Admin',
+    String source = 'ADMIN',
+    double? rating,
   }) async {
     if (name.trim().isEmpty) {
       throw Exception('Restaurant name is required.');
@@ -313,6 +326,8 @@ class RestaurantRepository {
     await SupabaseService.client.from('Restaurant').insert({
       'restaurant_Id': restaurantId,
       'restaurant_name': name.trim(),
+      'description': description,
+      'price_range': priceRange,
       'address': address,
       'latitude': latitude,
       'longitude': longitude,
@@ -320,6 +335,7 @@ class RestaurantRepository {
       'main_cuisine_id': mainCuisineId,
       'info_url': infoUrl,
       'source': source,
+      'rating': rating,
       'isDisabled': false,
     });
 
@@ -331,6 +347,8 @@ class RestaurantRepository {
   Future<void> updateRestaurant({
     required String restaurantId,
     String? name,
+    String? description,
+    String? priceRange,
     String? address,
     double? latitude,
     double? longitude,
@@ -340,6 +358,8 @@ class RestaurantRepository {
   }) async {
     final updates = <String, dynamic>{};
     if (name != null) updates['restaurant_name'] = name.trim();
+    if (description != null) updates['description'] = description;
+    if (priceRange != null) updates['price_range'] = priceRange;
     if (address != null) updates['address'] = address;
     if (latitude != null) updates['latitude'] = latitude;
     if (longitude != null) updates['longitude'] = longitude;
@@ -366,6 +386,8 @@ class RestaurantRepository {
   Future<void> updateRestaurantDetails({
     required String restaurantId,
     required String name,
+    String? description,
+    String? priceRange,
     required String address,
     required String mainCuisineId,
     double? latitude,
@@ -389,6 +411,8 @@ class RestaurantRepository {
         .from('Restaurant')
         .update({
           'restaurant_name': name.trim(),
+          'description': description,
+          'price_range': priceRange,
           'address': address.trim(),
           'latitude': latitude,
           'longitude': longitude,
@@ -694,21 +718,25 @@ class RestaurantRepository {
   Future<String> saveRestaurant({
     String? restaurantId,
     required String name,
+    String? description,
+    String? priceRange,
     required String address,
     required String mainCuisineId,
     double? latitude,
     double? longitude,
     String? mapsUrl,
     String? infoUrl,
-    String source = 'Admin',
+    String source = 'ADMIN',
     double? rating,
     List<String> extraCuisineIds = const [],
     List<RestaurantImageRecord> images = const [],
   }) async {
-    final normalizedSource = source.trim().isEmpty ? 'Admin' : source.trim();
+    final normalizedSource = source.trim().isEmpty ? 'ADMIN' : source.trim().toUpperCase();
 
     final id = restaurantId ?? await createRestaurant(
             name: name,
+            description: description,
+            priceRange: priceRange,
             address: address,
             latitude: latitude,
             longitude: longitude,
@@ -716,12 +744,15 @@ class RestaurantRepository {
             mainCuisineId: mainCuisineId,
             infoUrl: infoUrl,
             source: normalizedSource,
+            rating: rating,
           );
 
     if (restaurantId != null) {
       await updateRestaurantDetails(
         restaurantId: id,
         name: name,
+        description: description,
+        priceRange: priceRange,
         address: address,
         mainCuisineId: mainCuisineId,
         latitude: latitude,
