@@ -132,7 +132,10 @@ class _EditPostScreenState extends State<EditPostScreen> {
       );
 
       // Wait a moment for Supabase to sync indices if necessary, but returning the fetch immediately should work.
-      final newPostModel = await PostRepository.instance.fetchPostById(widget.post.id);
+      final newPostModel = await PostRepository.instance.fetchPostById(
+        widget.post.id,
+        includeRemoved: true,
+      );
 
       if (mounted) {
         Navigator.of(context).pop(newPostModel ?? widget.post);

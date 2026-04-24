@@ -12,20 +12,29 @@ import 'package:taste_spot/data/repositories/collection_repository.dart';
 import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/data/models/collection_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
 import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 import 'package:taste_spot/features/post/screens/report_form_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final PostModel post;
+  final bool archived;
 
-  const PostDetailScreen({super.key, required this.post});
+  const PostDetailScreen({
+    super.key,
+    required this.post,
+    this.archived = false,
+  });
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
 }
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
+  static final RegExp _captionHashtagPattern = RegExp(r'#[a-zA-Z0-9_]+');
+  static final RegExp _captionWhitespacePattern = RegExp(r'\s');
+
   late PostModel _currentPost;
   bool _wasEdited = false;
   bool _isLiked = false;
@@ -67,6 +76,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   String? get _currentUserId => SupabaseService.currentUserId;
+  bool get _isArchivedView => widget.archived;
 
   bool get _isCurrentUserPostOwner =>
       _currentUserId != null && _currentPost.userId == _currentUserId;
@@ -91,10 +101,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void initState() {
     super.initState();
     _currentPost = widget.post;
-    _loadComments();
-    _checkLikeStatus();
-    _checkSaveStatus();
-    _checkFollowStatus();
+    if (!_isArchivedView) {
+      _loadComments();
+      _checkLikeStatus();
+      _checkSaveStatus();
+      _checkFollowStatus();
+    } else {
+      _isLoadingComments = false;
+    }
   }
 
   Future<void> _checkFollowStatus() async {
@@ -348,35 +362,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               SliverToBoxAdapter(child: _buildHashtags()),
               SliverToBoxAdapter(child: _buildRestaurantTag()),
               SliverToBoxAdapter(child: _buildTimestamp()),
-              const SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 6,
-                  child: ColoredBox(color: Color(0xFFF0F0F0)),
+              if (_isArchivedView)
+                SliverToBoxAdapter(child: _buildArchivedNotice())
+              else ...[
+                const SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 6,
+                    child: ColoredBox(color: Color(0xFFF0F0F0)),
+                  ),
                 ),
-              ),
-              SliverToBoxAdapter(child: _buildCommentsHeader()),
-              _isLoadingComments
-                  ? SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (_, i) => const _CommentSkeleton(),
-                        childCount: 3,
+                SliverToBoxAdapter(child: _buildCommentsHeader()),
+                _isLoadingComments
+                    ? SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (_, i) => const _CommentSkeleton(),
+                          childCount: 3,
+                        ),
+                      )
+                    : SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (_, i) => _buildCommentTile(_comments[i]),
+                          childCount: _comments.length,
+                        ),
                       ),
-                    )
-                  : SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (_, i) => _buildCommentTile(_comments[i]),
-                        childCount: _comments.length,
-                      ),
-                    ),
-              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+                const SliverToBoxAdapter(child: SizedBox(height: 80)),
+              ],
             ],
           ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _buildBottomBar(context),
-          ),
+          if (!_isArchivedView)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildBottomBar(context),
+            ),
         ],
       ),
     );
@@ -599,18 +618,81 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           if (_currentPost.description.isNotEmpty) ...[
             if (_currentPost.title.isNotEmpty) const SizedBox(height: 8),
-            Text(
-              _currentPost.description,
-              style: const TextStyle(
-                fontSize: 15,
-                color: AppColors.textPrimary,
-                height: 1.55,
+            RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: AppColors.textPrimary,
+                  height: 1.55,
+                ),
+                children: _buildCaptionSpans(_currentPost.description),
               ),
             ),
           ],
         ],
       ),
     );
+  }
+
+  List<InlineSpan> _buildCaptionSpans(String text) {
+    final children = <InlineSpan>[];
+    var currentIndex = 0;
+
+    for (final match in _captionHashtagPattern.allMatches(text)) {
+      if (!_isCaptionHashtagBoundary(text, match.start)) {
+        continue;
+      }
+
+      if (match.start > currentIndex) {
+        children.add(
+          TextSpan(text: text.substring(currentIndex, match.start)),
+        );
+      }
+
+      children.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1F4),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: const Color(0xFFFFD4DD),
+                  width: 0.9,
+                ),
+              ),
+              child: Text(
+                match.group(0) ?? '',
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      currentIndex = match.end;
+    }
+
+    if (currentIndex < text.length) {
+      children.add(TextSpan(text: text.substring(currentIndex)));
+    }
+
+    return children;
+  }
+
+  bool _isCaptionHashtagBoundary(String text, int index) {
+    if (index == 0) {
+      return true;
+    }
+    return _captionWhitespacePattern.hasMatch(text[index - 1]);
   }
 
   Widget _buildHashtags() {
@@ -628,17 +710,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         runSpacing: 8,
         children: _currentPost.hashtags.map((tag) {
           return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(20),
+              color: const Color(0xFFFFF1F4),
               borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: const Color(0xFFFFD4DD),
+                width: 0.9,
+              ),
             ),
             child: Text(
               HashtagUtils.format(tag),
               style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
                 color: AppColors.primary,
+                letterSpacing: -0.2,
               ),
             ),
           );
@@ -709,6 +796,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       child: Text(
         label,
         style: const TextStyle(fontSize: 12, color: AppColors.textLight),
+      ),
+    );
+  }
+
+  Widget _buildArchivedNotice() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              CupertinoIcons.archivebox_fill,
+              size: 18,
+              color: AppColors.textLight,
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'This post is in Deleted Posts. Use the menu above to recover it.',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -985,31 +1106,82 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildHorizontalOption(
-                      icon: CupertinoIcons.share,
-                      label: 'Share',
-                      onTap: () => Navigator.pop(context),
-                    ),
-                    _buildHorizontalOption(
-                      icon: CupertinoIcons.link,
-                      label: 'Link',
-                      onTap: () => Navigator.pop(context),
-                    ),
-                    _buildHorizontalOption(
-                      icon: CupertinoIcons.flag,
-                      label: 'Report',
-                      isDestructive: true,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.of(context).push(
-                          CupertinoPageRoute(
-                            fullscreenDialog: true,
-                            builder: (_) =>
-                                ReportFormScreen(post: _currentPost),
+                    if (_isArchivedView)
+                      ...[
+                        _buildHorizontalOption(
+                          icon: CupertinoIcons.arrow_uturn_up_circle,
+                          label: 'Recover',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _recoverPost();
+                          },
+                        ),
+                        _buildHorizontalOption(
+                          icon: CupertinoIcons.pencil,
+                          label: 'Edit',
+                          onTap: () {
+                            Navigator.pop(context);
+                            _editPost();
+                          },
+                        ),
+                        _buildHorizontalOption(
+                          icon: CupertinoIcons.delete,
+                          label: 'Delete',
+                          isDestructive: true,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _hideDeletedPostFromOwner();
+                          },
+                        ),
+                      ]
+                    else ...[
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.share,
+                        label: 'Share',
+                        onTap: () => Navigator.pop(context),
+                      ),
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.link,
+                        label: 'Link',
+                        onTap: () => Navigator.pop(context),
+                      ),
+                      if (isOwner)
+                        ...[
+                          _buildHorizontalOption(
+                            icon: CupertinoIcons.pencil,
+                            label: 'Edit',
+                            onTap: () {
+                              Navigator.pop(context);
+                              _editPost();
+                            },
                           ),
-                        );
-                      },
-                    ),
+                          _buildHorizontalOption(
+                            icon: CupertinoIcons.delete,
+                            label: 'Delete',
+                            isDestructive: true,
+                            onTap: () {
+                              Navigator.pop(context);
+                              _deletePost();
+                            },
+                          ),
+                        ]
+                      else
+                        _buildHorizontalOption(
+                          icon: CupertinoIcons.flag,
+                          label: 'Report',
+                          isDestructive: true,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.of(context).push(
+                              CupertinoPageRoute(
+                                fullscreenDialog: true,
+                                builder: (_) =>
+                                    ReportFormScreen(post: _currentPost),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -1298,6 +1470,162 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
       }
     } catch (e) {
+    }
+  }
+
+  Future<void> _deletePost() async {
+    final confirm = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Delete Post?'),
+        content: const Text('This post will move to your Deleted Posts tab.'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await PostRepository.instance.deletePost(_currentPost.id);
+      _wasEdited = true;
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Delete Failed'),
+          content: Text(e.toString()),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _recoverPost() async {
+    final confirm = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Recover Post?'),
+        content: const Text(
+          'This post will return to your normal posts and leave Deleted Posts.',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Recover'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await PostRepository.instance.restorePost(_currentPost.id);
+      _wasEdited = true;
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Recover Failed'),
+          content: Text(e.toString()),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _editPost() async {
+    final result = await Navigator.of(context).push<PostModel>(
+      CupertinoPageRoute(
+        builder: (_) => EditPostScreen(post: _currentPost),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    setState(() {
+      _currentPost = result;
+      _wasEdited = true;
+    });
+  }
+
+  Future<void> _hideDeletedPostFromOwner() async {
+    final confirm = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Delete Permanently?'),
+        content: const Text(
+          'This will remove the post from your Deleted Posts archive. Admins can still access it if needed.',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await PostRepository.instance.hideDeletedPostFromOwner(_currentPost.id);
+      _wasEdited = true;
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      showCupertinoDialog(
+        context: context,
+        builder: (ctx) => CupertinoAlertDialog(
+          title: const Text('Delete Failed'),
+          content: Text(e.toString()),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     }
   }
 }

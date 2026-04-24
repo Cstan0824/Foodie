@@ -23,6 +23,9 @@ class InlineHashtagCaptionField extends StatefulWidget {
 }
 
 class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
+  static const Color _hashtagSurface = Color(0xFFFFF1F4);
+  static const Color _hashtagBorder = Color(0xFFFFD4DD);
+
   final FocusNode _focusNode = FocusNode();
   List<String> _suggestions = const [];
   bool _isSearching = false;
@@ -209,9 +212,9 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: _hashtagSurface,
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: AppColors.divider, width: 0.8),
+              border: Border.all(color: _hashtagBorder, width: 0.9),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -219,15 +222,15 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
                 Icon(
                   CupertinoIcons.number,
                   size: 14,
-                  color: AppColors.textSecondary,
+                  color: AppColors.primary,
                 ),
                 SizedBox(width: 6),
                 Text(
                   'Hashtag',
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
                   ),
                 ),
               ],
@@ -246,16 +249,19 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
         if (_showSuggestions) ...[
           const SizedBox(height: 10),
           Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.divider, width: 0.8),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (_isSearching)
                   const Padding(
-                    padding: EdgeInsets.all(12),
+                    padding: EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       children: [
                         CupertinoActivityIndicator(radius: 8),
@@ -271,18 +277,44 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
                     ),
                   )
                 else ...[
-                  for (final suggestion in _suggestions)
-                    _SuggestionTile(
-                      label: HashtagUtils.format(suggestion),
-                      subtitle: 'Existing hashtag',
-                      onTap: () => _replaceActiveHashtag(suggestion),
+                  Text(
+                    _suggestions.isNotEmpty
+                        ? 'Suggested hashtags'
+                        : 'Create hashtag',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
                     ),
-                  if (_showCreateOption)
-                    _SuggestionTile(
-                      label: 'Use ${HashtagUtils.format(_activeToken)}',
-                      subtitle: 'Create this hashtag when you publish',
-                      onTap: () => _replaceActiveHashtag(_activeToken),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (final suggestion in _suggestions)
+                        _HashtagPill(
+                          label: HashtagUtils.format(suggestion),
+                          onTap: () => _replaceActiveHashtag(suggestion),
+                        ),
+                      if (_showCreateOption)
+                        _HashtagPill(
+                          label: 'Create ${HashtagUtils.format(_activeToken)}',
+                          onTap: () => _replaceActiveHashtag(_activeToken),
+                        ),
+                    ],
+                  ),
+                  if (_showCreateOption) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      'New hashtags are only created when you publish the post.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary.withAlpha(220),
+                        height: 1.35,
+                      ),
                     ),
+                  ],
                 ],
               ],
             ),
@@ -293,52 +325,47 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
   }
 }
 
-class _SuggestionTile extends StatelessWidget {
-  final String label;
-  final String subtitle;
-  final VoidCallback onTap;
+class _HashtagPill extends StatelessWidget {
+  static const Color _surface = Color(0xFFFFF1F4);
+  static const Color _border = Color(0xFFFFD4DD);
 
-  const _SuggestionTile({
+  final String label;
+  final VoidCallback? onTap;
+
+  const _HashtagPill({
     required this.label,
-    required this.subtitle,
-    required this.onTap,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: AppColors.divider, width: 0.5),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: _border, width: 0.9),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w700,
+          color: AppColors.primary,
+          letterSpacing: -0.2,
         ),
       ),
+    );
+
+    if (onTap == null) {
+      return chip;
+    }
+
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      minimumSize: Size.zero,
+      onPressed: onTap,
+      child: chip,
     );
   }
 }
