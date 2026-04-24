@@ -1,8 +1,11 @@
 import 'package:flutter/cupertino.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/profile_model.dart';
 import 'package:taste_spot/data/repositories/profile_repository.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/core/services/account_service.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 
 class EditProfileScreen extends StatefulWidget {
   final Profile profile;
@@ -16,6 +19,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
   late TextEditingController _bioController;
+  String? _profileImageUrl;
   bool _isSaving = false;
 
   @override
@@ -24,6 +28,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _nameController = TextEditingController(text: widget.profile.name);
     _usernameController = TextEditingController(text: widget.profile.username ?? '');
     _bioController = TextEditingController(text: widget.profile.bio ?? '');
+    _loadProfileImage();
+  }
+
+  Future<void> _loadProfileImage() async {
+    try {
+      final repository = ProfileRepository(Supabase.instance.client);
+      final url = await repository.getProfileImageUrl(widget.profile.userId);
+      if (mounted) {
+        setState(() {
+          _profileImageUrl = url;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -35,15 +52,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
-    if (_nameController.text.trim().isEmpty) return;
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
     setState(() => _isSaving = true);
     try {
       final repository = ProfileRepository(Supabase.instance.client);
       await repository.updateProfile(
         userId: widget.profile.userId,
-        name: _nameController.text.trim(),
+        name: name,
         bio: _bioController.text.trim(),
       );
+
+      // Sync with local accounts
+      final session = Supabase.instance.client.auth.currentSession;
+      await AccountService.saveAccount(
+        userId: widget.profile.userId,
+        name: name,
+        username: widget.profile.username,
+        avatarUrl: _profileImageUrl,
+        sessionJson: session != null ? jsonEncode(session.toJson()) : null,
+      );
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -132,11 +161,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     height: 100,
                     decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surface),
                     child: ClipOval(
-                      child: Image.network(
-                        'https://i.pravatar.cc/200?u=${widget.profile.userId}',
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
-                      ),
+                      child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
+                          ? Image.network(
+                              _profileImageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
+                            )
+                          : const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
                     ),
                   ),
                 ),

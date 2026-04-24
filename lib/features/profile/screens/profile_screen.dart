@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:convert';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/post_model.dart';
@@ -10,10 +11,11 @@ import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/features/auth/screens/login_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/profile/screens/connections_screen.dart';
-import 'edit_profile_screen.dart';
+import 'package:taste_spot/features/profile/screens/edit_profile_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
+import 'package:taste_spot/core/services/account_service.dart';
+import 'package:taste_spot/main.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:flutter/services.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
@@ -30,9 +32,11 @@ class ProfileScreenState extends State<ProfileScreen> {
   bool _isSettingsMenuOpen = false;
 
   Profile? _userProfile;
+  String? _profileImageUrl;
   List<PostModel> _myPosts = [];
   List<PostModel> _likedPosts = [];
   List<PostModel> _archivedPosts = [];
+  List<SavedAccount> _savedAccounts = [];
   int _followersCount = 0;
   int _followingCount = 0;
 
@@ -42,13 +46,18 @@ class ProfileScreenState extends State<ProfileScreen> {
   List<String> get _tabs =>
       _isCurrentUser ? ['Posts', 'Archived', 'Liked'] : ['Posts', 'Liked'];
 
-  String get _avatarUrl =>
-      'https://i.pravatar.cc/200?u=${_userProfile?.userId ?? "guest"}';
-
   @override
   void initState() {
     super.initState();
     _fetchProfileData();
+    _loadSavedAccounts();
+  }
+
+  Future<void> _loadSavedAccounts() async {
+    final accounts = await AccountService.getSavedAccounts();
+    if (mounted) {
+      setState(() => _savedAccounts = accounts);
+    }
   }
 
   @override
@@ -57,6 +66,7 @@ class ProfileScreenState extends State<ProfileScreen> {
     _likedPosts.clear();
     _archivedPosts.clear();
     _userProfile = null;
+    _profileImageUrl = null;
     super.dispose();
   }
 
@@ -68,6 +78,7 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> loadUserPosts({bool silent = false}) async {
     await _fetchProfileData(silent: silent);
+    await _loadSavedAccounts();
   }
 
   Future<void> _fetchProfileData({bool silent = false}) async {
@@ -85,6 +96,7 @@ class ProfileScreenState extends State<ProfileScreen> {
 
       final profileRepo = ProfileRepository(Supabase.instance.client);
       _userProfile = await profileRepo.getProfile(targetUserId);
+      _profileImageUrl = await profileRepo.getProfileImageUrl(targetUserId);
 
       _myPosts = await PostRepository.instance.fetchUserPosts(
         userId: targetUserId,
@@ -106,10 +118,18 @@ class ProfileScreenState extends State<ProfileScreen> {
         userId: targetUserId,
       );
 
-      if (_isCurrentUser) {
-        _archivedPosts = await PostRepository.instance.fetchArchivedPosts(
+      if (_isCurrentUser && _userProfile != null) {
+        final session = Supabase.instance.client.auth.currentSession;
+        await AccountService.saveAccount(
           userId: targetUserId,
+          name: _userProfile!.name,
+          username: _userProfile!.username,
+          avatarUrl: _profileImageUrl,
+          role: _userProfile!.role,
+          sessionJson: session != null ? jsonEncode(session.toJson()) : null,
         );
+        // Refresh the saved accounts list in state
+        await _loadSavedAccounts();
       }
     } catch (e) {
       print('Error fetching profile data: $e');
@@ -117,6 +137,39 @@ class ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _switchAccount(String userId) async {
+    setState(() => _isLoading = true);
+    try {
+      await AccountService.switchAccount(userId);
+      // MainShell will listen to auth change if we set it up, 
+      // but here we can just reload the whole app or navigate.
+      if (mounted) {
+         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+           CupertinoPageRoute(builder: (_) => MainShell()),
+           (route) => false,
+         );
+      }
+    } catch (e) {
+      print('Error switching account: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _addAccount() async {
+    setState(() => _isAccountsMenuOpen = false);
+    // Navigate to Login but don't clear existing sessions in Supabase (yet)
+    // Actually Supabase.auth.signOut() clears the current session.
+    // To add a new one, we just sign out and login. The old one is already saved in AccountService.
+    await Supabase.instance.client.auth.signOut();
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+        CupertinoPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
     }
   }
 
@@ -160,26 +213,13 @@ class ProfileScreenState extends State<ProfileScreen> {
     final userId = _userProfile?.userId;
     if (userId == null) return;
     
-    final String deepLink = 'io.supabase.tastespot://profile/$userId';
+    // Using Supabase as a redirector to avoid NXDOMAIN errors in browsers
+    final String deepLink = 'https://wjwfqwvrynyfqbjkqmah.supabase.co/auth/v1/callback?redirect_to=io.supabase.tastespot://profile/$userId';
     
     Share.share(
       'Check out my food journey on Taste Spot!\n$deepLink',
       subject: 'Taste Spot Profile',
     );
-  }
-
-  void _copyProfileLink() {
-    final userId = _userProfile?.userId;
-    if (userId == null) return;
-    
-    final String deepLink = 'io.supabase.tastespot://profile/$userId';
-    
-    Clipboard.setData(ClipboardData(text: deepLink));
-    
-    // Close the menu.
-    setState(() {
-      _isSettingsMenuOpen = false;
-    });
   }
 
   String _formatCount(int count) {
@@ -346,13 +386,17 @@ class ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildAccountOption(
-                  _userProfile?.username ?? 'user', 
-                  'https://i.pravatar.cc/200?u=1', 
-                  isSelected: true
-                ),
-                _buildAccountOption('foodie_master', 'https://i.pravatar.cc/200?u=2'),
-                _buildAccountOption('taste_tester', 'https://i.pravatar.cc/200?u=3'),
+                ..._savedAccounts.map((account) {
+                  final isCurrent = account.userId == Supabase.instance.client.auth.currentUser?.id;
+                  return GestureDetector(
+                    onTap: isCurrent ? null : () => _switchAccount(account.userId),
+                    child: _buildAccountOption(
+                      account.username ?? 'user', 
+                      account.avatarUrl ?? '', 
+                      isSelected: isCurrent,
+                    ),
+                  );
+                }),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 0.5, color: AppColors.divider),
@@ -360,7 +404,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                 _buildMenuAction(
                   'Add Account', 
                   CupertinoIcons.plus_circle, 
-                  onTap: () => setState(() => _isAccountsMenuOpen = false)
+                  onTap: _addAccount,
                 ),
                 _buildMenuAction(
                   'Log Out', 
@@ -368,6 +412,10 @@ class ProfileScreenState extends State<ProfileScreen> {
                   isDestructive: true,
                   onTap: () async {
                     setState(() => _isAccountsMenuOpen = false);
+                    final userId = Supabase.instance.client.auth.currentUser?.id;
+                    if (userId != null) {
+                      await AccountService.removeAccount(userId);
+                    }
                     await Supabase.instance.client.auth.signOut();
                     if (mounted) {
                       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
@@ -398,7 +446,15 @@ class ProfileScreenState extends State<ProfileScreen> {
           Container(
             width: 32, height: 32,
             decoration: const BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
-            child: ClipOval(child: Image.network(avatar, fit: BoxFit.cover)),
+            child: ClipOval(
+              child: (avatar.isNotEmpty)
+                  ? Image.network(
+                      avatar, 
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 16, color: AppColors.textLight),
+                    )
+                  : const Icon(CupertinoIcons.person_fill, size: 16, color: AppColors.textLight),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -445,8 +501,6 @@ class ProfileScreenState extends State<ProfileScreen> {
                 _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {}),
                 _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {}),
                 _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {}),
-                _buildMenuAction('Copy Profile Link', CupertinoIcons.link, onTap: _copyProfileLink),
-                _buildMenuAction('Share Profile', CupertinoIcons.share, onTap: _shareProfile),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 0.5, color: AppColors.divider),
@@ -639,11 +693,13 @@ class ProfileScreenState extends State<ProfileScreen> {
           color: AppColors.surface,
         ),
         child: ClipOval(
-          child: Image.network(
-            _avatarUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
-          ),
+          child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
+              ? Image.network(
+                  _profileImageUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
+                )
+              : const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
         ),
       ),
     );
