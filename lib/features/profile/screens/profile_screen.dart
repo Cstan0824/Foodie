@@ -895,7 +895,7 @@ class _ActionPill extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(
           color: isPrimary ? AppColors.primary : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(6),
         ),
         alignment: Alignment.center,
         child: isLoading

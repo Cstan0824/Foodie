@@ -1,3 +1,5 @@
+import 'profile_model.dart';
+
 class Collection {
   final String collectionId;
   final String userId;
@@ -7,6 +9,7 @@ class Collection {
   final bool isPublic;
   final bool isDefault;
   final DateTime createdAt;
+  final Profile? owner; // Added owner info for shared collections
 
   Collection({
     required this.collectionId,
@@ -17,13 +20,22 @@ class Collection {
     required this.isPublic,
     this.isDefault = false,
     required this.createdAt,
+    this.owner,
   });
+
+  bool get isCloneable => isPublic; // For now, if it's public, it's cloneable
 
   factory Collection.fromJson(Map<String, dynamic> json) {
     final collectionId =
         (json['collection_Id'] ?? json['collection_id']) as String;
     final userId = (json['user_Id'] ?? json['user_id']) as String;
     final createdAtRaw = (json['created_At'] ?? json['created_at']) as String;
+
+    // Handle nested owner info if present (e.g. from User join)
+    Profile? owner;
+    if (json['User'] != null) {
+      owner = Profile.fromJson(json['User'] as Map<String, dynamic>);
+    }
 
     return Collection(
       collectionId: collectionId,
@@ -34,6 +46,7 @@ class Collection {
       isPublic: json['is_public'] as bool? ?? false,
       isDefault: json['is_default'] as bool? ?? false,
       createdAt: DateTime.parse(createdAtRaw),
+      owner: owner,
     );
   }
 

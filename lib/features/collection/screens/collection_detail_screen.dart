@@ -26,9 +26,15 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
 
   List<PostModel> _posts = [];
   bool _isLoading = true;
+  bool _isCloning = false;
   String? _error;
 
   late final CollectionRepository _collectionRepository;
+  
+  bool get _isOwner {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    return currentUser != null && currentUser.id == widget.collection.userId;
+  }
 
   @override
   void initState() {
@@ -110,6 +116,57 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
         p.restaurantName.toLowerCase().contains(lowerQuery)).toList();
   }
 
+  Future<void> _cloneCollection() async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
+
+    setState(() => _isCloning = true);
+
+    try {
+      await _collectionRepository.cloneCollection(
+        userId: currentUser.id,
+        sourceCollection: widget.collection,
+      );
+      
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('Success'),
+            content: const Text('Collection cloned successfully to your library.'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context, true);
+                },
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (ctx) => CupertinoAlertDialog(
+            title: const Text('Error'),
+            content: Text('Failed to clone collection: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCloning = false);
+    }
+  }
+
   void _confirmDelete() {
     showCupertinoDialog(
       context: context,
@@ -181,17 +238,27 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _showShareSheet,
-              child: const Icon(CupertinoIcons.person_add, color: AppColors.textPrimary, size: 22),
-            ),
-            if (!widget.collection.isDefault) ...[
-              const SizedBox(width: 12),
+            if (_isOwner) ...[
               CupertinoButton(
                 padding: EdgeInsets.zero,
-                onPressed: _confirmDelete,
-                child: const Icon(CupertinoIcons.trash, color: AppColors.textSecondary, size: 20),
+                onPressed: _showShareSheet,
+                child: const Icon(CupertinoIcons.person_add, color: AppColors.textPrimary, size: 22),
+              ),
+              if (!widget.collection.isDefault) ...[
+                const SizedBox(width: 12),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: _confirmDelete,
+                  child: const Icon(CupertinoIcons.trash, color: AppColors.textSecondary, size: 20),
+                ),
+              ],
+            ] else if (widget.collection.isCloneable) ...[
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: _isCloning ? null : _cloneCollection,
+                child: _isCloning 
+                  ? const CupertinoActivityIndicator()
+                  : const Icon(CupertinoIcons.plus_square_on_square, color: AppColors.primary, size: 22),
               ),
             ],
           ],
@@ -490,11 +557,21 @@ class _ShareSheetState extends State<_ShareSheet> {
                                 width: 44, height: 44,
                                 decoration: const BoxDecoration(color: CupertinoColors.white, shape: BoxShape.circle),
                                 child: ClipOval(
-                                  child: Image.network(
-                                    'https://i.pravatar.cc/200?u=${follower.userId}',
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, color: AppColors.textLight, size: 24),
-                                  ),
+                                  child: (follower.imageUrl != null && follower.imageUrl!.isNotEmpty)
+                                      ? Image.network(
+                                          follower.imageUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => const Icon(
+                                            CupertinoIcons.person_fill,
+                                            color: AppColors.textLight,
+                                            size: 24,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          CupertinoIcons.person_fill,
+                                          color: AppColors.textLight,
+                                          size: 24,
+                                        ),
                                 ),
                               ),
                               const SizedBox(width: 12),
