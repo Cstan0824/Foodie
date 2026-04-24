@@ -12,6 +12,9 @@ import 'package:taste_spot/features/auth/screens/login_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/profile/screens/connections_screen.dart';
 import 'package:taste_spot/features/profile/screens/edit_profile_screen.dart';
+import 'package:taste_spot/features/profile/screens/settings_screen.dart';
+import 'package:taste_spot/features/profile/screens/privacy_screen.dart';
+import 'package:taste_spot/features/profile/screens/help_feedback_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:taste_spot/core/services/account_service.dart';
 import 'package:taste_spot/main.dart';
@@ -498,9 +501,15 @@ class ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {}),
-                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {}),
-                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {}),
+                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {
+                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SettingsScreen()));
+                }),
+                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {
+                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PrivacyScreen()));
+                }),
+                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {
+                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => HelpFeedbackScreen()));
+                }),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 0.5, color: AppColors.divider),

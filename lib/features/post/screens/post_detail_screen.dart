@@ -95,6 +95,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _checkLikeStatus();
     _checkSaveStatus();
     _checkFollowStatus();
+    _loadSaveCount();
+  }
+
+  Future<void> _loadSaveCount() async {
+    try {
+      final collectionRepo = CollectionRepository(Supabase.instance.client);
+      final count = await collectionRepo.getPostSaveCount(_currentPost.id);
+      if (mounted) {
+        setState(() {
+          _currentPost = _currentPost.copyWith(saveCount: count);
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _checkFollowStatus() async {

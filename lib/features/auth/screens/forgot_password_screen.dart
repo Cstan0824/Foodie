@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/features/auth/screens/verify_otp_screen.dart';
+import 'package:taste_spot/features/auth/screens/reset_password_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -12,7 +14,6 @@ class ForgotPasswordScreen extends StatefulWidget {
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
-  bool _isSent = false;
   bool _isLoading = false;
 
   late final AuthRepository _authRepo = AuthRepository(Supabase.instance.client);
@@ -29,7 +30,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     try {
       await _authRepo.resetPassword(email: email);
       if (!mounted) return;
-      setState(() => _isSent = true);
+      
+      // Navigate to OTP verification
+      final verified = await Navigator.of(context).push<bool>(
+        CupertinoPageRoute(
+          builder: (_) => VerifyOTPScreen(email: email, type: OTPType.recovery),
+        ),
+      );
+
+      if (verified == true && mounted) {
+        Navigator.of(context).push(
+          CupertinoPageRoute(builder: (_) => const ResetPasswordScreen()),
+        );
+      }
     } on AuthException catch (e) {
       if (!mounted) return;
       _showErrorAlert(e.message);
@@ -104,78 +117,49 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
               const SizedBox(height: 48),
 
-              if (_isSent)
-                Container(
-                  padding: const EdgeInsets.all(16),
+              // ── Input Field ──
+              _buildModernTextField(
+                controller: _emailController,
+                placeholder: 'Email Address',
+                icon: CupertinoIcons.mail,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 32),
+
+              // ── Reset Button ──
+              GestureDetector(
+                onTap: () {
+                  if (_emailController.text.trim().isNotEmpty && !_isLoading) {
+                    _resetPassword();
+                  }
+                },
+                child: Container(
+                  height: 50,
                   decoration: BoxDecoration(
-                    color: CupertinoColors.activeGreen.withAlpha(25),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: CupertinoColors.activeGreen.withAlpha(100),
-                    ),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(CupertinoIcons.check_mark_circled_solid,
-                          color: CupertinoColors.activeGreen),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'If an account exists for this email, a recovery link has been sent.',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: CupertinoColors.activeGreen,
-                          ),
-                        ),
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(25),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withAlpha(51),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
-                )
-              else ...[
-                // ── Input Field ──
-                _buildModernTextField(
-                  controller: _emailController,
-                  placeholder: 'Email Address',
-                  icon: CupertinoIcons.mail,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 32),
-
-                // ── Reset Button ──
-                GestureDetector(
-                  onTap: () {
-                    if (_emailController.text.trim().isNotEmpty && !_isLoading) {
-                      _resetPassword();
-                    }
-                  },
-                  child: Container(
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(25),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withAlpha(51),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: _isLoading
-                          ? const CupertinoActivityIndicator(color: CupertinoColors.white)
-                          : const Text(
-                              'Send Instructions',
-                              style: TextStyle(
-                                color: CupertinoColors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                  child: Center(
+                    child: _isLoading
+                        ? const CupertinoActivityIndicator(color: CupertinoColors.white)
+                        : const Text(
+                            'Send Instructions',
+                            style: TextStyle(
+                              color: CupertinoColors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
-                    ),
+                          ),
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         ),

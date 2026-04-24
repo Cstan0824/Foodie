@@ -7,6 +7,7 @@ import 'dart:math';
 import 'package:taste_spot/features/auth/screens/complete_profile_screen.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/features/auth/screens/verify_otp_screen.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:taste_spot/main.dart';
 
@@ -308,7 +309,11 @@ class _SignupScreenState extends State<SignupScreen> {
 
       if (response.session == null && !disableAuth) {
         if (mounted) {
-          _showOtpDialog(email);
+          await Navigator.of(context).push(
+            CupertinoPageRoute(
+              builder: (_) => VerifyOTPScreen(email: email, type: OTPType.signup),
+            ),
+          );
         }
       } else if (disableAuth) {
         if (mounted) {
@@ -530,7 +535,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   _buildValidationLabel(
                     isChecking: _isCheckingEmail,
                     available: _isEmailTaken == null ? null : !_isEmailTaken!,
-                    takenMsg: 'Email is already registered',
+                    takenMsg: 'User is not available',
                     availMsg: 'Email is valid',
                   ),
 
