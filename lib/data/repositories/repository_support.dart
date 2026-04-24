@@ -7,7 +7,7 @@ const String publicPostSelect = '''
   likeCount,
   saveCount,
   created_At,
-  User!Post_user_Id_fkey(user_Id, name),
+  User!Post_user_Id_fkey(user_Id, name, UserImage(image_url)),
   Restaurant(restaurant_Id, restaurant_name),
   Post_Image(image_Id, image_url),
   post_hashtag:post_hashtag!post_hashtag_post_fk(

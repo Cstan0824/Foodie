@@ -5,10 +5,14 @@ import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/data/repositories/notification_repository.dart';
 
 class PostRepository {
   PostRepository._();
   static final PostRepository instance = PostRepository._();
+
+  final _notifRepo = NotificationRepository(SupabaseService.client);
 
   /// Fetches the latest posts for the Discover feed.
   /// Supports offset-based pagination: pass [offset] to load the next page.
@@ -17,18 +21,28 @@ class PostRepository {
     int limit = 20,
     int offset = 0,
   }) async {
-    final response = await SupabaseService.client
-        .from('Post')
-        .select(publicPostSelect)
-        .eq('isRemoved', false)
-        .eq('isBlocked', false)
-        .eq('isPending', false)
-        .order('created_At', ascending: false)
-        .range(offset, offset + limit - 1);
+    try {
+      final response = await SupabaseService.client
+          .from('Post')
+          .select(publicPostSelect)
+          .eq('isRemoved', false)
+          .eq('isBlocked', false)
+          .eq('isPending', false)
+          .order('created_At', ascending: false)
+          .range(offset, offset + limit - 1);
 
-    return (response as List<dynamic>)
-        .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
-        .toList();
+      return (response as List<dynamic>)
+          .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+          .toList();
+    } on PostgrestException catch (e) {
+      print('❌ [PostRepository.fetchDiscoverPosts] ERROR: ${e.code} - ${e.message}');
+      print('📝 Hint: ${e.hint}');
+      print('📊 Details: ${e.details}');
+      rethrow;
+    } catch (e) {
+      print('❌ [PostRepository.fetchDiscoverPosts] UNKNOWN ERROR: $e');
+      rethrow;
+    }
   }
 
   /// Fetches posts from accounts the current user follows.
@@ -432,6 +446,9 @@ class PostRepository {
         'post_Id': postId,
         'user_Id': userId,
       });
+
+      // Trigger notification
+      _triggerLikeNotification(postId, userId);
       return;
     }
 
@@ -440,6 +457,25 @@ class PostRepository {
         .delete()
         .eq('post_Id', postId)
         .eq('user_Id', userId);
+  }
+
+  Future<void> _triggerLikeNotification(String postId, String userId) async {
+    try {
+      final postData = await SupabaseService.client
+          .from('Post')
+          .select('user_Id')
+          .eq('post_Id', postId)
+          .maybeSingle();
+      
+      final postOwnerId = postData?['user_Id'] as String?;
+      if (postOwnerId != null) {
+        await _notifRepo.notifyLike(
+          likerId: userId, 
+          postOwnerId: postOwnerId, 
+          postId: postId,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<bool> checkIsLiked(String postId, String userId) async {

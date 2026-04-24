@@ -1,24 +1,38 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/collection_model.dart';
+import 'notification_repository.dart';
 
 class CollectionRepository {
   final SupabaseClient _supabase;
+  late final NotificationRepository _notifRepo;
 
-  CollectionRepository(this._supabase);
+  CollectionRepository(this._supabase) {
+    _notifRepo = NotificationRepository(_supabase);
+  }
 
   // ==========================================
   // 1. Core Collection Management
   // ==========================================
 
+  static const String _baseCollectionSelect = '''
+    *,
+    User!collections_user_Id_fkey(*, UserImage(image_url)),
+    collections_item(
+      savedAt,
+      Post(post_Id, Post_Image(image_url)),
+      Restaurant(restaurant_Id)
+    )
+  ''';
+
   Future<List<Collection>> getUserCollections(String userId) async {
     final response = await _supabase
         .from('collections')
-        .select('*, User!collections_user_Id_fkey(*, UserImage(image_url))')
+        .select(_baseCollectionSelect)
         .eq('user_Id', userId)
         .order('created_At', ascending: false);
 
-    return (response as List).map((json) => Collection.fromJson(json)).toList();
+    return _processCollectionResponse(response);
   }
 
   Future<List<Collection>> getSharedCollections(String userId) async {
@@ -37,11 +51,25 @@ class CollectionRepository {
     // 2. Fetch those collections with owner (User) info
     final response = await _supabase
         .from('collections')
-        .select('*, User!collections_user_Id_fkey(*, UserImage(image_url))')
+        .select(_baseCollectionSelect)
         .inFilter('collection_Id', collectionIds)
         .order('created_At', ascending: false);
 
-    return (response as List).map((json) => Collection.fromJson(json)).toList();
+    return _processCollectionResponse(response);
+  }
+
+  List<Collection> _processCollectionResponse(dynamic response) {
+    final list = response as List<dynamic>;
+    return list.map((json) {
+      // Sort and limit items manually since PostgREST doesn't support 
+      // easy limiting of nested joins in this SDK version
+      final items = json['collections_item'] as List<dynamic>?;
+      if (items != null) {
+        items.sort((a, b) => (b['savedAt'] as String).compareTo(a['savedAt'] as String));
+        json['collections_item'] = items.take(2).toList();
+      }
+      return Collection.fromJson(json as Map<String, dynamic>);
+    }).toList();
   }
 
   Future<Collection> cloneCollection({
@@ -222,6 +250,38 @@ class CollectionRepository {
       'collection_Id': collectionId,
       'share_with_id': targetUserId,
     });
+    
+    // Automatically make collection public when shared with someone
+    await _supabase
+        .from('collections')
+        .update({'is_public': true})
+        .eq('collection_Id', collectionId);
+
+    // Trigger notification
+    _triggerShareNotification(collectionId, targetUserId);
+  }
+
+  Future<void> _triggerShareNotification(String collectionId, String targetUserId) async {
+    try {
+      final currentUserId = _supabase.auth.currentUser?.id;
+      if (currentUserId == null) return;
+
+      final collData = await _supabase
+          .from('collections')
+          .select('name')
+          .eq('collection_Id', collectionId)
+          .maybeSingle();
+      
+      final collectionName = collData?['name'] as String?;
+      if (collectionName != null) {
+        await _notifRepo.notifyCollectionShare(
+          sharerId: currentUserId, 
+          targetUserId: targetUserId, 
+          collectionId: collectionId, 
+          collectionName: collectionName,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> removeShare(String collectionId, String targetUserId) async {

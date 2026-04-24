@@ -4,7 +4,10 @@ import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/profile_model.dart';
 import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/core/services/account_service.dart';
+import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 class EditProfileScreen extends StatefulWidget {
   final Profile profile;
@@ -27,6 +30,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   
   String? _profileImageUrl;
   bool _isSaving = false;
+  bool _isImageUploading = false;
 
   @override
   void initState() {
@@ -55,6 +59,55 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 75,
+    );
+
+    if (image == null) return;
+
+    setState(() => _isImageUploading = true);
+
+    try {
+      final bytes = await image.readAsBytes();
+      final repository = ProfileRepository(Supabase.instance.client);
+      
+      final imageUrl = await repository.uploadProfileImage(widget.profile.userId, bytes);
+
+      if (imageUrl != null && mounted) {
+        setState(() {
+          _profileImageUrl = imageUrl;
+          _isImageUploading = false;
+        });
+        
+        // Success: Navigate back to profile page as requested
+        Navigator.pop(context);
+      } else {
+        throw Exception('Upload failed. Check if bucket "user_images" exists.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isImageUploading = false);
+        _showError('Failed to upload image: ${e.toString()}');
+      }
+    }
+  }
+
+  void _showError(String message) {
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(ctx))],
+      ),
+    );
   }
 
   @override
@@ -110,14 +163,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (ctx) => CupertinoAlertDialog(
-            title: const Text('Error'),
-            content: Text(e.toString()),
-            actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(ctx))],
-          ),
-        );
+        _showError(e.toString());
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -133,11 +179,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         border: null,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _isSaving ? null : () => Navigator.pop(context),
+          onPressed: _isSaving || _isImageUploading ? null : () => Navigator.pop(context),
           child: const Text('Cancel', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
         ),
         middle: const Text('Edit Profile', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5)),
-        // Trailing Save button removed as per request
       ),
       child: SafeArea(
         child: SingleChildScrollView(
@@ -178,49 +223,64 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           children: [
-            Stack(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
-                  ),
-                  child: Container(
-                    width: 100,
-                    height: 100,
-                    decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surface),
-                    child: ClipOval(
-                      child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
-                          ? Image.network(
-                              _profileImageUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
-                            )
-                          : const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 4,
-                  bottom: 4,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
+            GestureDetector(
+              onTap: _isImageUploading ? null : _pickAndUploadImage,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: AppColors.primary,
                       shape: BoxShape.circle,
-                      border: Border.all(color: CupertinoColors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 8, offset: const Offset(0, 2)),
-                      ],
+                      border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
                     ),
-                    child: const Icon(CupertinoIcons.camera_fill, color: CupertinoColors.white, size: 16),
+                    child: Container(
+                      width: 100,
+                      height: 100,
+                      decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surface),
+                      child: ClipOval(
+                        child: _isImageUploading
+                            ? const Center(child: CupertinoActivityIndicator())
+                            : (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
+                                ? Image.network(
+                                    _profileImageUrl!,
+                                    fit: BoxFit.cover,
+                                    key: ValueKey(_profileImageUrl), 
+                                    errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
+                                  )
+                                : const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                  if (!_isImageUploading)
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: CupertinoColors.white, width: 3),
+                          boxShadow: [
+                            BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 8, offset: const Offset(0, 2)),
+                          ],
+                        ),
+                        child: const Icon(CupertinoIcons.camera_fill, color: CupertinoColors.white, size: 16),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
-            const Text('Change Photo', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary)),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: _isImageUploading ? null : _pickAndUploadImage,
+              child: Text(
+                _isImageUploading ? 'Uploading...' : 'Change Photo', 
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary)
+              ),
+            ),
           ],
         ),
       ),
@@ -294,7 +354,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               placeholderStyle: const TextStyle(fontSize: 15, color: AppColors.textLight),
               onChanged: (val) {
                 if (_bioError != null) setState(() => _bioError = null);
-                setState(() {}); // Update char counter
+                setState(() {}); 
               },
             ),
           ),
@@ -338,13 +398,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: CupertinoButton(
         padding: EdgeInsets.zero,
-        onPressed: _isSaving ? null : _saveProfile,
+        onPressed: _isSaving || _isImageUploading ? null : _saveProfile,
         child: Container(
           width: double.infinity,
           height: 54,
           decoration: BoxDecoration(
             color: AppColors.primary,
-            borderRadius: BorderRadius.circular(6), // Even more rectangular look
+            borderRadius: BorderRadius.circular(6), 
             boxShadow: [
               BoxShadow(
                 color: AppColors.primary.withAlpha(60),

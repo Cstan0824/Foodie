@@ -31,7 +31,6 @@ class ProfileScreen extends StatefulWidget {
 class ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
   bool _isLoading = true;
-  bool _isAccountsMenuOpen = false;
   bool _isSettingsMenuOpen = false;
 
   Profile? _userProfile;
@@ -144,29 +143,58 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _switchAccount(String userId) async {
+    if (!mounted) return;
+    final currentId = Supabase.instance.client.auth.currentUser?.id;
+    
     setState(() => _isLoading = true);
     try {
+      if (userId == currentId) {
+        // If it's the current account, refresh session and data
+        await Supabase.instance.client.auth.refreshSession();
+        await _fetchProfileData(silent: false);
+        return;
+      }
+
       await AccountService.switchAccount(userId);
-      // MainShell will listen to auth change if we set it up, 
-      // but here we can just reload the whole app or navigate.
+      // Give Supabase a moment to update the local session state
+      await Future.delayed(const Duration(milliseconds: 600));
+      
       if (mounted) {
+         // Reset navigation to MainShell with the new account context
          Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-           CupertinoPageRoute(builder: (_) => MainShell()),
+           CupertinoPageRoute(builder: (_) => const MainShell()),
            (route) => false,
          );
       }
     } catch (e) {
       print('Error switching account: $e');
+      final errStr = e.toString();
+      if (errStr.contains('refresh_token_not_found') || errStr.contains('Invalid Refresh Token')) {
+        if (mounted) {
+          showCupertinoDialog(
+            context: context,
+            builder: (ctx) => CupertinoAlertDialog(
+              title: const Text('Session Expired'),
+              content: const Text('Please sign in again to access this account.'),
+              actions: [
+                CupertinoDialogAction(
+                  child: const Text('OK'),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _addAccount();
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _addAccount() async {
-    setState(() => _isAccountsMenuOpen = false);
-    // Navigate to Login but don't clear existing sessions in Supabase (yet)
-    // Actually Supabase.auth.signOut() clears the current session.
-    // To add a new one, we just sign out and login. The old one is already saved in AccountService.
     await Supabase.instance.client.auth.signOut();
     if (mounted) {
       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
@@ -215,10 +243,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   void _shareProfile() {
     final userId = _userProfile?.userId;
     if (userId == null) return;
-    
-    // Using the same host structure that is proven to work in your Supabase config
     final String deepLink = 'io.supabase.tastespot://login-callback/profile?id=$userId';
-    
     Share.share(
       'Check out my food journey on Taste Spot!\n$deepLink',
       subject: 'Taste Spot Profile',
@@ -251,9 +276,52 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  void _showImagePreview(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) return;
+
+    showCupertinoModalPopup(
+      context: context,
+      barrierColor: Colors.black.withAlpha(220),
+      builder: (context) => GestureDetector(
+        onTap: () => Navigator.pop(context),
+        child: Container(
+          width: double.infinity,
+          height: double.infinity,
+          color: Colors.transparent,
+          child: Center(
+            child: Hero(
+              tag: 'profile_image_hero',
+              child: Container(
+                width: MediaQuery.of(context).size.width * 0.85,
+                height: MediaQuery.of(context).size.width * 0.85,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withAlpha(120), blurRadius: 40, offset: const Offset(0, 20)),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: AppColors.surface,
+                      child: const Icon(CupertinoIcons.person_fill, size: 100, color: AppColors.textLight),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool anyMenuOpen = _isAccountsMenuOpen || _isSettingsMenuOpen;
+    final bool anyMenuOpen = _isSettingsMenuOpen;
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
@@ -265,11 +333,6 @@ class ProfileScreenState extends State<ProfileScreen> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: _shareProfile,
-              child: const Icon(CupertinoIcons.share, color: AppColors.textPrimary, size: 22),
-            ),
             if (_isCurrentUser)
               CupertinoButton(
                 padding: EdgeInsets.zero,
@@ -312,11 +375,9 @@ class ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
 
-            // Background dim overlay when any menu is open
             if (anyMenuOpen)
               GestureDetector(
                 onTap: () => setState(() {
-                  _isAccountsMenuOpen = false;
                   _isSettingsMenuOpen = false;
                 }),
                 child: Container(
@@ -324,10 +385,6 @@ class ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
 
-            // ── Switch Account Dropdown ──
-            _buildAccountsDropdown(),
-
-            // ── More/Settings Dropdown ──
             _buildSettingsDropdown(),
           ],
         ),
@@ -337,7 +394,7 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildUsernameHeader() {
     return GestureDetector(
-      onTap: _isCurrentUser ? () => setState(() => _isAccountsMenuOpen = !_isAccountsMenuOpen) : null,
+      onTap: _isCurrentUser ? () => _showAccountsSheet(context) : null,
       behavior: HitTestBehavior.opaque,
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -354,83 +411,88 @@ class ProfileScreenState extends State<ProfileScreen> {
           ),
           if (_isCurrentUser) ...[
             const SizedBox(width: 2),
-            Icon(
-              _isAccountsMenuOpen ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down, 
-              size: 12, 
-              color: AppColors.textPrimary
-            ),
+            const Icon(CupertinoIcons.chevron_down, size: 12, color: AppColors.textPrimary),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildAccountsDropdown() {
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutBack,
-      top: _isAccountsMenuOpen ? 0 : -20,
-      left: 0, right: 0,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: _isAccountsMenuOpen ? 1.0 : 0.0,
-        child: IgnorePointer(
-          ignoring: !_isAccountsMenuOpen,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 25, offset: const Offset(0, 10)),
-              ],
+  void _showAccountsSheet(BuildContext context) {
+    showCupertinoModalPopup(
+      context: context,
+      barrierColor: Colors.black.withAlpha(100),
+      builder: (modalContext) => Container(
+        padding: EdgeInsets.only(
+          top: 12, left: 24, right: 24, 
+          bottom: MediaQuery.of(context).padding.bottom + 40,
+        ),
+        decoration: const BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40, height: 5,
+                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2.5)),
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ..._savedAccounts.map((account) {
-                  final isCurrent = account.userId == Supabase.instance.client.auth.currentUser?.id;
-                  return GestureDetector(
-                    onTap: isCurrent ? null : () => _switchAccount(account.userId),
-                    child: _buildAccountOption(
-                      account.username ?? 'user', 
-                      account.avatarUrl ?? '', 
-                      isSelected: isCurrent,
-                    ),
-                  );
-                }),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 0.5, color: AppColors.divider),
-                ),
-                _buildMenuAction(
-                  'Add Account', 
-                  CupertinoIcons.plus_circle, 
-                  onTap: _addAccount,
-                ),
-                _buildMenuAction(
-                  'Log Out', 
-                  CupertinoIcons.square_arrow_right, 
-                  isDestructive: true,
-                  onTap: () async {
-                    setState(() => _isAccountsMenuOpen = false);
-                    final userId = Supabase.instance.client.auth.currentUser?.id;
-                    if (userId != null) {
-                      await AccountService.removeAccount(userId);
-                    }
-                    await Supabase.instance.client.auth.signOut();
-                    if (mounted) {
-                      Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                        CupertinoPageRoute(builder: (_) => const LoginScreen()),
-                        (route) => false,
+            const SizedBox(height: 32),
+            const Text('Manage Accounts', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -0.5)),
+            const SizedBox(height: 24),
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  children: [
+                    ..._savedAccounts.map((account) {
+                      final isCurrent = account.userId == Supabase.instance.client.auth.currentUser?.id;
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.pop(modalContext);
+                          _switchAccount(account.userId);
+                        },
+                        child: _buildAccountOption(
+                          account.username ?? 'user', 
+                          account.avatarUrl ?? '', 
+                          isSelected: isCurrent,
+                        ),
                       );
-                    }
-                  }
+                    }),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Divider(height: 1, color: AppColors.divider),
+            ),
+            _buildMenuAction('Add Account', CupertinoIcons.plus_circle, onTap: () {
+                Navigator.pop(modalContext);
+                _addAccount();
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildMenuAction('Log Out All Accounts', CupertinoIcons.square_arrow_right, isDestructive: true,
+              onTap: () async {
+                Navigator.pop(modalContext);
+                for (var acc in _savedAccounts) {
+                  await AccountService.removeAccount(acc.userId);
+                }
+                await Supabase.instance.client.auth.signOut();
+                if (mounted) {
+                  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                    CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+                  );
+                }
+              }
+            ),
+          ],
         ),
       ),
     );
@@ -451,27 +513,14 @@ class ProfileScreenState extends State<ProfileScreen> {
             decoration: const BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
             child: ClipOval(
               child: (avatar.isNotEmpty)
-                  ? Image.network(
-                      avatar, 
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 16, color: AppColors.textLight),
-                    )
+                  ? Image.network(avatar, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 16, color: AppColors.textLight))
                   : const Icon(CupertinoIcons.person_fill, size: 16, color: AppColors.textLight),
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              username, 
-              style: TextStyle(
-                fontSize: 14, 
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? AppColors.primary : AppColors.textPrimary
-              )
-            ),
-          ),
-          if (isSelected)
-            const Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppColors.primary),
+          Expanded(child: Text(username, style: TextStyle(fontSize: 14, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: isSelected ? AppColors.primary : AppColors.textPrimary))),
+          if (isSelected) const Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppColors.primary),
         ],
       ),
     );
@@ -489,40 +538,20 @@ class ProfileScreenState extends State<ProfileScreen> {
         child: IgnorePointer(
           ignoring: !_isSettingsMenuOpen,
           child: Container(
-            width: 200,
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 25, offset: const Offset(0, 10)),
-              ],
-            ),
+            width: 200, padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: CupertinoColors.white, borderRadius: BorderRadius.circular(20),
+              boxShadow: [BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 25, offset: const Offset(0, 10))]),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () {
-                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SettingsScreen()));
-                }),
-                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () {
-                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PrivacyScreen()));
-                }),
-                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () {
-                  Navigator.of(context).push(CupertinoPageRoute(builder: (_) => HelpFeedbackScreen()));
-                }),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 0.5, color: AppColors.divider),
-                ),
+                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SettingsScreen()))),
+                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PrivacyScreen()))),
+                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => HelpFeedbackScreen()))),
+                const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider(height: 0.5, color: AppColors.divider)),
                 _buildMenuAction('Logout', CupertinoIcons.power, isDestructive: true, onTap: () async {
                    setState(() => _isSettingsMenuOpen = false);
                    await Supabase.instance.client.auth.signOut();
-                   if (mounted) {
-                     Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                       CupertinoPageRoute(builder: (_) => const LoginScreen()),
-                       (route) => false,
-                     );
-                   }
+                   if (mounted) Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(CupertinoPageRoute(builder: (_) => const LoginScreen()), (route) => false);
                 }),
               ],
             ),
@@ -535,16 +564,11 @@ class ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuAction(String label, IconData icon, {bool isDestructive = false, required VoidCallback onTap}) {
     final Color color = isDestructive ? CupertinoColors.systemRed : AppColors.textPrimary;
     return GestureDetector(
-      onTap: () {
-        setState(() { _isAccountsMenuOpen = false; _isSettingsMenuOpen = false; });
-        onTap();
-      },
+      onTap: () { setState(() { _isSettingsMenuOpen = false; }); onTap(); },
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
         child: Row(
           children: [
             Icon(icon, size: 18, color: color.withAlpha(200)),
@@ -556,16 +580,36 @@ class ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildAvatar() {
+    return GestureDetector(
+      onTap: () => _showImagePreview(_profileImageUrl),
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5)),
+        child: Hero(
+          tag: 'profile_image_hero',
+          child: Container(
+            width: 76, height: 76,
+            decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surface),
+            child: ClipOval(
+              child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
+                  ? Image.network(_profileImageUrl!, fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight))
+                  : const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildProfileSection(BuildContext context) {
     if (_isLoading) return const _ProfileHeaderSkeleton();
-
     return Container(
-      color: CupertinoColors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      color: CupertinoColors.white, padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1: Avatar & Identity Column
           Row(
             children: [
               _buildAvatar(),
@@ -574,79 +618,32 @@ class ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _userProfile?.name ?? 'User',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
+                    Text(_userProfile?.name ?? 'User', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)),
                     const SizedBox(height: 4),
-                    Text(
-                      '@${_userProfile?.username ?? "user"}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textLight,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    Text('@${_userProfile?.username ?? "user"}', style: const TextStyle(fontSize: 14, color: AppColors.textLight, fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
             ],
           ),
-          
           const SizedBox(height: 24),
-          
-          // Stats Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _StatItem(
-                value: _formatCount(_myPosts.length),
-                label: 'Posts',
-                onTap: () => setState(() => _selectedTab = 0),
-              ),
+              _StatItem(value: _formatCount(_myPosts.length), label: 'Posts', onTap: () => setState(() => _selectedTab = 0)),
               Container(width: 1, height: 16, color: AppColors.divider),
-              _StatItem(
-                value: _formatCount(_followersCount),
-                label: 'Followers',
-                onTap: () => _navigateToConnections(1),
-              ),
+              _StatItem(value: _formatCount(_followersCount), label: 'Followers', onTap: () => _navigateToConnections(1)),
               Container(width: 1, height: 16, color: AppColors.divider),
-              _StatItem(
-                value: _formatCount(_followingCount),
-                label: 'Following',
-                onTap: () => _navigateToConnections(0),
-              ),
+              _StatItem(value: _formatCount(_followingCount), label: 'Following', onTap: () => _navigateToConnections(0)),
             ],
           ),
-          
           const SizedBox(height: 12),
-
-          // Bio Section (Prettier & Minimal)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text(
-              (_userProfile?.bio != null && _userProfile!.bio!.isNotEmpty)
-                  ? _userProfile!.bio!
-                  : 'Welcome to my flavor journey! 🍜',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-                color: AppColors.textPrimary.withAlpha(180),
-                height: 1.6,
-                letterSpacing: 0.1,
-              ),
-            ),
+            child: Text((_userProfile?.bio != null && _userProfile!.bio!.isNotEmpty) ? _userProfile!.bio! : 'Welcome to my flavor journey! 🍜',
+              maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: AppColors.textPrimary.withAlpha(180), height: 1.6, letterSpacing: 0.1)),
           ),
-
           const SizedBox(height: 20),
-
           _buildActionButtons(),
         ],
       ),
@@ -656,192 +653,67 @@ class ProfileScreenState extends State<ProfileScreen> {
   void _navigateToConnections(int initialTab) {
     final targetUserId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
     if (targetUserId == null) return;
-    Navigator.of(context).push(
-      CupertinoPageRoute(
-        builder: (_) => ConnectionsScreen(
-          initialTabIndex: initialTab,
-          userId: targetUserId,
-        ),
-      ),
-    );
+    Navigator.of(context).push(CupertinoPageRoute(builder: (_) => ConnectionsScreen(initialTabIndex: initialTab, userId: targetUserId)));
   }
 
   Widget _buildActionButtons() {
     return Row(
       children: [
-        if (_isCurrentUser)
-          Expanded(
-            child: _ActionPill(
-              label: 'Edit Profile',
-              onTap: () async {
+        if (_isCurrentUser) ...[
+          Expanded(child: _ActionPill(label: 'Edit Profile', onTap: () async {
                 if (_userProfile == null) return;
-                await Navigator.of(context).push(
-                  CupertinoPageRoute(
-                    builder: (_) => EditProfileScreen(profile: _userProfile!),
-                  ),
-                );
+                await Navigator.of(context).push(CupertinoPageRoute(builder: (_) => EditProfileScreen(profile: _userProfile!)));
                 _fetchProfileData(silent: true);
-              },
-            ),
-          )
-        else
-          Expanded(
-            child: _ActionPill(
-              label: _isFollowingUser ? 'Following' : 'Follow',
-              isPrimary: !_isFollowingUser,
-              isLoading: _isFollowUpdating,
-              onTap: _toggleFollowUser,
-            ),
-          ),
+              })),
+          const SizedBox(width: 12),
+          GestureDetector(onTap: _shareProfile, child: Container(height: 40, width: 48, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(6)), child: const Icon(CupertinoIcons.share, color: AppColors.textPrimary, size: 20))),
+        ] else
+          Expanded(child: _ActionPill(label: _isFollowingUser ? 'Following' : 'Follow', isPrimary: !_isFollowingUser, isLoading: _isFollowUpdating, onTap: _toggleFollowUser)),
       ],
-    );
-  }
-
-  Widget _buildAvatar() {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
-      ),
-      child: Container(
-        width: 76,
-        height: 76,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppColors.surface,
-        ),
-        child: ClipOval(
-          child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
-              ? Image.network(
-                  _profileImageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
-                )
-              : const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
-        ),
-      ),
     );
   }
 
   Widget _buildSliverGrid(BuildContext context) {
     if (_isLoading) return const _GridSkeleton();
-
     final posts = _currentPosts;
     if (posts.isEmpty) {
-      return SliverFillRemaining(
-        hasScrollBody: false,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+      return SliverFillRemaining(hasScrollBody: false, child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(CupertinoIcons.doc_text, size: 48, color: AppColors.surface),
               const SizedBox(height: 12),
-              Text(
-                _selectedTab == 0 ? 'No posts yet' : 'No posts found',
-                style: const TextStyle(color: AppColors.textLight, fontSize: 14),
-              ),
-            ],
-          ),
-        ),
-      );
+              Text(_selectedTab == 0 ? 'No posts yet' : 'No posts found', style: const TextStyle(color: AppColors.textLight, fontSize: 14)),
+            ])));
     }
-
-    return SliverPadding(
-      padding: const EdgeInsets.all(10),
-      sliver: SliverToBoxAdapter(
-        child: _ProfileMasonryGrid(
-          posts: posts,
-          onPostTap: (post) async {
-            final result = await Navigator.of(context).push(
-              CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
-            );
+    return SliverPadding(padding: const EdgeInsets.all(10), sliver: SliverToBoxAdapter(child: _ProfileMasonryGrid(posts: posts, onPostTap: (post) async {
+            final result = await Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)));
             if (result == true) _fetchProfileData(silent: true);
-          },
-        ),
-      ),
-    );
+          })));
   }
 }
 
 class _ProfileHeaderSkeleton extends StatelessWidget {
   const _ProfileHeaderSkeleton();
-
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const SkeletonCircle(size: 80),
-              const SizedBox(width: 20),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Skeleton(width: 140, height: 22),
-                    SizedBox(height: 8),
-                    Skeleton(width: 80, height: 14),
-                  ],
-                ),
-              ),
-            ],
-          ),
+    return Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [const SkeletonCircle(size: 80), const SizedBox(width: 20), const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Skeleton(width: 140, height: 22), SizedBox(height: 8), Skeleton(width: 80, height: 14)]))]),
           const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(3, (index) => const Column(
-              children: [
-                Skeleton(width: 36, height: 20),
-                SizedBox(height: 6),
-                Skeleton(width: 54, height: 12),
-              ],
-            )),
-          ),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: List.generate(3, (index) => const Column(children: [Skeleton(width: 36, height: 20), SizedBox(height: 6), Skeleton(width: 54, height: 12)]))),
           const SizedBox(height: 24),
           const Skeleton(width: double.infinity, height: 14),
           const SizedBox(height: 6),
           const Skeleton(width: 220, height: 14),
           const SizedBox(height: 24),
           const Skeleton(height: 40, borderRadius: 20),
-        ],
-      ),
-    );
+        ]));
   }
 }
 
 class _GridSkeleton extends StatelessWidget {
   const _GridSkeleton();
-
   @override
   Widget build(BuildContext context) {
-    return SliverPadding(
-      padding: const EdgeInsets.all(10),
-      sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 0.7,
-        ),
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Expanded(child: Skeleton(borderRadius: 12)),
-              const SizedBox(height: 8),
-              const Skeleton(width: 100, height: 14),
-              const SizedBox(height: 4),
-              Skeleton(width: 60, height: 12, borderRadius: 4),
-            ],
-          ),
-          childCount: 4,
-        ),
-      ),
-    );
+    return SliverPadding(padding: const EdgeInsets.all(10), sliver: SliverGrid(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 0.7),
+        delegate: SliverChildBuilderDelegate((context, index) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Expanded(child: Skeleton(borderRadius: 12)), const SizedBox(height: 8), const Skeleton(width: 100, height: 14), const SizedBox(height: 4), Skeleton(width: 60, height: 12, borderRadius: 4)]), childCount: 4)));
   }
 }
 
@@ -849,28 +721,10 @@ class _StatItem extends StatelessWidget {
   final String value;
   final String label;
   final VoidCallback? onTap;
-
   const _StatItem({required this.value, required this.label, this.onTap});
-
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textSecondary),
-          ),
-        ],
-      ),
-    );
+    return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: Column(children: [Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary)), const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textSecondary))]));
   }
 }
 
@@ -879,76 +733,27 @@ class _ActionPill extends StatelessWidget {
   final bool isPrimary;
   final bool isLoading;
   final VoidCallback onTap;
-
-  const _ActionPill({
-    required this.label,
-    this.isPrimary = false,
-    this.isLoading = false,
-    required this.onTap,
-  });
-
+  const _ActionPill({required this.label, this.isPrimary = false, this.isLoading = false, required this.onTap});
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isLoading ? null : onTap,
-      child: Container(
-        height: 40,
-        decoration: BoxDecoration(
-          color: isPrimary ? AppColors.primary : AppColors.surface,
-          borderRadius: BorderRadius.circular(6),
-        ),
-        alignment: Alignment.center,
-        child: isLoading
-            ? const CupertinoActivityIndicator(radius: 8)
-            : Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: isPrimary ? CupertinoColors.white : AppColors.textPrimary,
-                ),
-              ),
-      ),
-    );
+    return GestureDetector(onTap: isLoading ? null : onTap, child: Container(height: 40, decoration: BoxDecoration(color: isPrimary ? AppColors.primary : AppColors.surface, borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: isLoading ? const CupertinoActivityIndicator(radius: 8) : Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: isPrimary ? CupertinoColors.white : AppColors.textPrimary))));
   }
 }
 
 class _ProfileMasonryGrid extends StatelessWidget {
   final List<PostModel> posts;
   final void Function(PostModel post) onPostTap;
-
   const _ProfileMasonryGrid({required this.posts, required this.onPostTap});
-
   @override
   Widget build(BuildContext context) {
     final leftCol = <PostModel>[];
     final rightCol = <PostModel>[];
-    for (int i = 0; i < posts.length; i++) {
-      (i.isEven ? leftCol : rightCol).add(posts[i]);
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            children: leftCol.map((p) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: PostCard(post: p, onTap: () => onPostTap(p)),
-            )).toList(),
-          ),
-        ),
+    for (int i = 0; i < posts.length; i++) { (i.isEven ? leftCol : rightCol).add(posts[i]); }
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(children: leftCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 10), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList())),
         const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            children: rightCol.map((p) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: PostCard(post: p, onTap: () => onPostTap(p)),
-            )).toList(),
-          ),
-        ),
-      ],
-    );
+        Expanded(child: Column(children: rightCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 10), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList())),
+      ]);
   }
 }
 
@@ -956,66 +761,21 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
   final int selectedTab;
   final ValueChanged<int> onTabChanged;
   final List<String> tabs;
-
-  const _TextTabBarDelegate({
-    required this.selectedTab,
-    required this.onTabChanged,
-    required this.tabs,
-  });
-
+  const _TextTabBarDelegate({required this.selectedTab, required this.onTabChanged, required this.tabs});
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: CupertinoColors.white,
-      child: Column(
-        children: [
-          Expanded(
-            child: Row(
-              children: List.generate(tabs.length, (i) {
+    return Container(color: CupertinoColors.white, child: Column(children: [
+          Expanded(child: Row(children: List.generate(tabs.length, (i) {
                 final active = i == selectedTab;
-                return Expanded(
-                  child: GestureDetector(
-                    onTap: () => onTabChanged(i),
-                    behavior: HitTestBehavior.opaque,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            tabs[i],
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                              color: active ? AppColors.textPrimary : AppColors.textSecondary,
-                            ),
-                          ),
+                return Expanded(child: GestureDetector(onTap: () => onTabChanged(i), behavior: HitTestBehavior.opaque, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text(tabs[i], style: TextStyle(fontSize: 14, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.textPrimary : AppColors.textSecondary)),
                           const SizedBox(height: 12),
-                          // The red indicator sits on the border
-                          Opacity(
-                            opacity: active ? 1.0 : 0.0,
-                            child: Container(
-                              width: 24,
-                              height: 2.5,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
+                          Opacity(opacity: active ? 1.0 : 0.0, child: Container(width: 24, height: 2.5, decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2)),)),
+                        ]))));
+              }))),
           Container(height: 1, color: AppColors.divider),
-        ],
-      ),
-    );
+        ]));
   }
-
   @override double get maxExtent => 44;
   @override double get minExtent => 44;
   @override bool shouldRebuild(covariant _TextTabBarDelegate old) => old.selectedTab != selectedTab || old.tabs != tabs;

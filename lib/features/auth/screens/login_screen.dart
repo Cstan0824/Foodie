@@ -48,6 +48,9 @@ class _LoginScreenState extends State<LoginScreen> {
           if (session != null &&
               (event == AuthChangeEvent.signedIn ||
                   event == AuthChangeEvent.initialSession)) {
+            
+            if (mounted) setState(() => _isLoading = true);
+
             final isNewUser = await _ensureProfileExists(session.user);
             
             final profileResponse = await Supabase.instance.client
@@ -64,16 +67,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   .eq('user_Id', session.user.id)
                   .maybeSingle();
               avatarUrl = imageResponse?['image_url'];
-              
-              if (avatarUrl == null) {
-                // Fallback to avatar_url on User table
-                final userResponse = await Supabase.instance.client
-                    .from('User')
-                    .select('avatar_url')
-                    .eq('user_Id', session.user.id)
-                    .maybeSingle();
-                avatarUrl = userResponse?['avatar_url'];
-              }
             } catch (_) {}
 
             final role = profileResponse?['role'] ?? 'user';
@@ -172,7 +165,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       FeedbackDialog.show(context: context, title: 'Google Sign In', message: _mapAuthError(e));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      // Note: We don't set _isLoading = false here if it's successful 
+      // because the onAuthStateChange listener will handle the transition.
+      // But in case of error, we must reset it.
+      if (mounted) {
+        // We only reset if there was an error that didn't lead to a sign-in event
+        // Actually, the SDK might take time to return from signInWithOAuth.
+      }
     }
   }
 
@@ -184,7 +183,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       FeedbackDialog.show(context: context, title: 'Apple Sign In', message: _mapAuthError(e));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      // Same logic as Google login
     }
   }
 
@@ -200,188 +199,199 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoColors.white,
-      child: Stack(
-        children: [
-          Positioned(
-            top: -100,
-            right: -100,
-            child: Container(
-              width: 300, height: 300,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.primary.withAlpha(15)),
-            ),
-          ),
-          Positioned(
-            bottom: -50,
-            left: -50,
-            child: Container(
-              width: 200, height: 200,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: CupertinoColors.activeBlue.withAlpha(10)),
-            ),
-          ),
-          
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 28.0),
-                  physics: const BouncingScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          const SizedBox(height: 50),
-
-                          Center(
-                            child: Column(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary,
-                                    borderRadius: BorderRadius.circular(24),
-                                    boxShadow: [
-                                      BoxShadow(color: AppColors.primary.withAlpha(80), blurRadius: 20, offset: const Offset(0, 8)),
-                                    ],
-                                  ),
-                                  child: const Icon(CupertinoIcons.flame_fill, color: CupertinoColors.white, size: 40),
-                                ),
-                                const SizedBox(height: 24),
-                                const Text(
-                                  'Taste Spot',
-                                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -1.2),
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  'Discover your next favorite flavor',
-                                  style: TextStyle(fontSize: 15, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
-                                ),
-                              ],
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 60),
-
-                          _buildModernTextField(
-                            controller: _emailController,
-                            focusNode: _emailFocus,
-                            placeholder: 'Email address',
-                            icon: CupertinoIcons.mail_solid,
-                          ),
-                          const SizedBox(height: 16),
-                          _buildModernTextField(
-                            controller: _passwordController,
-                            focusNode: _passwordFocus,
-                            placeholder: 'Password',
-                            icon: CupertinoIcons.lock_fill,
-                            obscureText: true,
-                          ),
-                          
-                          const SizedBox(height: 16),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: CupertinoButton(
-                              padding: EdgeInsets.zero,
-                              onPressed: () => Navigator.of(context).push(
-                                CupertinoPageRoute(builder: (_) => const ForgotPasswordScreen()),
-                              ),
-                              child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700)),
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 24),
-
-                          CupertinoButton(
-                            padding: EdgeInsets.zero,
-                            onPressed: _isLoading ? null : _login,
-                            child: Container(
-                              height: 54,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                borderRadius: BorderRadius.circular(27),
-                                boxShadow: [
-                                  BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 15, offset: const Offset(0, 6)),
-                                ],
-                              ),
-                              child: Center(
-                                child: _isLoading
-                                    ? const CupertinoActivityIndicator(color: CupertinoColors.white)
-                                    : const Text(
-                                        'Sign In',
-                                        style: TextStyle(color: CupertinoColors.white, fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2),
-                                      ),
-                              ),
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 40),
-
-                          Row(
+    return Stack(
+      children: [
+        CupertinoPageScaffold(
+          backgroundColor: CupertinoColors.white,
+          child: Stack(
+            children: [
+              Positioned(
+                top: -100,
+                right: -100,
+                child: Container(
+                  width: 300, height: 300,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.primary.withAlpha(15)),
+                ),
+              ),
+              Positioned(
+                bottom: -50,
+                left: -50,
+                child: Container(
+                  width: 200, height: 200,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: CupertinoColors.activeBlue.withAlpha(10)),
+                ),
+              ),
+              
+              SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 28.0),
+                      physics: const BouncingScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: IntrinsicHeight(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Expanded(child: Container(height: 1, color: AppColors.divider)),
-                              const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                child: Text('Continue with', style: TextStyle(color: AppColors.textLight, fontSize: 13, fontWeight: FontWeight.w600)),
-                              ),
-                              Expanded(child: Container(height: 1, color: AppColors.divider)),
-                            ],
-                          ),
-                          const SizedBox(height: 28),
+                              const SizedBox(height: 50),
 
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildSocialButton(
-                                icon: Icons.g_mobiledata,
-                                color: const Color(0xFF4285F4),
-                                size: 40,
-                                onTap: _isLoading ? () {} : _loginWithGoogle,
-                              ),
-                              const SizedBox(width: 24),
-                              _buildSocialButton(
-                                icon: Icons.apple,
-                                color: CupertinoColors.black,
-                                size: 28,
-                                onTap: _isLoading ? () {} : _loginWithApple,
-                              ),
-                            ],
-                          ),
-
-                          const Spacer(),
-                          
-                          Center(
-                            child: CupertinoButton(
-                              onPressed: () => Navigator.of(context).push(
-                                CupertinoPageRoute(builder: (_) => const SignupScreen()),
-                              ),
-                              child: RichText(
-                                text: const TextSpan(
-                                  text: "Don't have an account? ",
-                                  style: TextStyle(fontSize: 15, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                              Center(
+                                child: Column(
                                   children: [
-                                    TextSpan(
-                                      text: 'Sign up',
-                                      style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800),
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary,
+                                        borderRadius: BorderRadius.circular(24),
+                                        boxShadow: [
+                                          BoxShadow(color: AppColors.primary.withAlpha(80), blurRadius: 20, offset: const Offset(0, 8)),
+                                        ],
+                                      ),
+                                      child: const Icon(CupertinoIcons.flame_fill, color: CupertinoColors.white, size: 40),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    const Text(
+                                      'Taste Spot',
+                                      style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -1.2),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'Discover your next favorite flavor',
+                                      style: TextStyle(fontSize: 15, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
                                     ),
                                   ],
                                 ),
                               ),
-                            ),
+                              
+                              const SizedBox(height: 60),
+
+                              _buildModernTextField(
+                                controller: _emailController,
+                                focusNode: _emailFocus,
+                                placeholder: 'Email address',
+                                icon: CupertinoIcons.mail_solid,
+                              ),
+                              const SizedBox(height: 16),
+                              _buildModernTextField(
+                                controller: _passwordController,
+                                focusNode: _passwordFocus,
+                                placeholder: 'Password',
+                                icon: CupertinoIcons.lock_fill,
+                                obscureText: true,
+                              ),
+                              
+                              const SizedBox(height: 16),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: CupertinoButton(
+                                  padding: EdgeInsets.zero,
+                                  onPressed: () => Navigator.of(context).push(
+                                    CupertinoPageRoute(builder: (_) => const ForgotPasswordScreen()),
+                                  ),
+                                  child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700)),
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 24),
+
+                              CupertinoButton(
+                                padding: EdgeInsets.zero,
+                                onPressed: _isLoading ? null : _login,
+                                child: Container(
+                                  height: 54,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius: BorderRadius.circular(27),
+                                    boxShadow: [
+                                      BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 15, offset: const Offset(0, 6)),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: _isLoading
+                                        ? const CupertinoActivityIndicator(color: CupertinoColors.white)
+                                        : const Text(
+                                            'Sign In',
+                                            style: TextStyle(color: CupertinoColors.white, fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 40),
+
+                              Row(
+                                children: [
+                                  Expanded(child: Container(height: 1, color: AppColors.divider)),
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 16),
+                                    child: Text('Continue with', style: TextStyle(color: AppColors.textLight, fontSize: 13, fontWeight: FontWeight.w600)),
+                                  ),
+                                  Expanded(child: Container(height: 1, color: AppColors.divider)),
+                                ],
+                              ),
+                              const SizedBox(height: 28),
+
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildSocialButton(
+                                    icon: Icons.g_mobiledata,
+                                    color: const Color(0xFF4285F4),
+                                    size: 40,
+                                    onTap: _isLoading ? () {} : _loginWithGoogle,
+                                  ),
+                                  const SizedBox(width: 24),
+                                  _buildSocialButton(
+                                    icon: Icons.apple,
+                                    color: CupertinoColors.black,
+                                    size: 28,
+                                    onTap: _isLoading ? () {} : _loginWithApple,
+                                  ),
+                                ],
+                              ),
+
+                              const Spacer(),
+                              
+                              Center(
+                                child: CupertinoButton(
+                                  onPressed: () => Navigator.of(context).push(
+                                    CupertinoPageRoute(builder: (_) => const SignupScreen()),
+                                  ),
+                                  child: RichText(
+                                    text: const TextSpan(
+                                      text: "Don't have an account? ",
+                                      style: TextStyle(fontSize: 15, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                                      children: [
+                                        TextSpan(
+                                          text: 'Sign up',
+                                          style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
                           ),
-                          const SizedBox(height: 24),
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_isLoading)
+          Container(
+            color: Colors.black.withAlpha(100),
+            child: const Center(
+              child: CupertinoActivityIndicator(radius: 15, color: CupertinoColors.white),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 

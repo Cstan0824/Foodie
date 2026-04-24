@@ -18,34 +18,33 @@ class Profile {
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) {
-    final name = json['name'] as String;
+    final name = (json['name'] as String?) ?? 'user';
     final username = (json['username'] as String?)?.trim();
+    final createdAtRaw = (json['created_At'] ?? json['created_at']) as String?;
 
     // Handle nested image_url from UserImage or user_images join
-    String? imageUrl = json['image_url'] as String?;
-    if (imageUrl == null) {
-      final userImages = json['UserImage'] ?? json['user_images'];
-      if (userImages != null) {
-        if (userImages is List && userImages.isNotEmpty) {
-          imageUrl = userImages[0]['image_url'] as String?;
-        } else if (userImages is Map) {
-          imageUrl = userImages['image_url'] as String?;
-        }
+    String? imageUrl;
+    final userImages = json['UserImage'] ?? json['user_images'];
+    if (userImages != null) {
+      if (userImages is List && userImages.isNotEmpty) {
+        imageUrl = userImages[0]['image_url'] as String?;
+      } else if (userImages is Map) {
+        imageUrl = userImages['image_url'] as String?;
       }
     }
     
-    // Fallback to avatar_url if still null
-    imageUrl ??= json['avatar_url'] as String?;
+    // Default avatar if none exists
+    imageUrl ??= 'https://ctaxmblonofmfsyvlbsh.supabase.co/storage/v1/object/public/user_images/avatars/default_avatar.png';
 
     return Profile(
-      userId: json['user_Id'] as String,
+      userId: (json['user_Id'] ?? json['user_id']) as String,
       name: name,
       username: (username != null && username.isNotEmpty)
           ? username
           : name.replaceAll(' ', '').toLowerCase(),
       bio: json['bio'] as String?,
       role: json['role'] as String? ?? 'user',
-      createdAt: DateTime.parse(json['created_At'] as String),
+      createdAt: createdAtRaw != null ? DateTime.parse(createdAtRaw) : DateTime.now(),
       imageUrl: imageUrl,
     );
   }
