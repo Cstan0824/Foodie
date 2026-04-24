@@ -5,10 +5,14 @@ import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/data/repositories/notification_repository.dart';
 
 class PostRepository {
   PostRepository._();
   static final PostRepository instance = PostRepository._();
+
+  final _notifRepo = NotificationRepository(SupabaseService.client);
 
   /// Fetches the latest posts for the Discover feed.
   /// Supports offset-based pagination: pass [offset] to load the next page.
@@ -17,18 +21,28 @@ class PostRepository {
     int limit = 20,
     int offset = 0,
   }) async {
-    final response = await SupabaseService.client
-        .from('Post')
-        .select(publicPostSelect)
-        .eq('isRemoved', false)
-        .eq('isBlocked', false)
-        .eq('isPending', false)
-        .order('created_At', ascending: false)
-        .range(offset, offset + limit - 1);
+    try {
+      final response = await SupabaseService.client
+          .from('Post')
+          .select(publicPostSelect)
+          .eq('isRemoved', false)
+          .eq('isBlocked', false)
+          .eq('isPending', false)
+          .order('created_At', ascending: false)
+          .range(offset, offset + limit - 1);
 
-    return (response as List<dynamic>)
-        .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
-        .toList();
+      return (response as List<dynamic>)
+          .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+          .toList();
+    } on PostgrestException catch (e) {
+      print('❌ [PostRepository.fetchDiscoverPosts] ERROR: ${e.code} - ${e.message}');
+      print('📝 Hint: ${e.hint}');
+      print('📊 Details: ${e.details}');
+      rethrow;
+    } catch (e) {
+      print('❌ [PostRepository.fetchDiscoverPosts] UNKNOWN ERROR: $e');
+      rethrow;
+    }
   }
 
   /// Fetches posts from accounts the current user follows.
@@ -98,6 +112,7 @@ class PostRepository {
         .select(publicPostSelect)
         .eq('user_Id', userId)
         .eq('isRemoved', true)
+        .eq('visible_to_owner', true)
         .order('created_At', ascending: false);
 
     return (response as List<dynamic>)
@@ -129,15 +144,24 @@ class PostRepository {
         .toList();
   }
 
-  /// Fetches a single public post by ID.
-  Future<PostModel?> fetchPostById(String postId) async {
-    final response = await SupabaseService.client
+  /// Fetches a single post by ID.
+  ///
+  /// By default this only returns visible public posts. Set [includeRemoved]
+  /// for owner-only archive flows that need to read a soft-deleted post.
+  Future<PostModel?> fetchPostById(
+    String postId, {
+    bool includeRemoved = false,
+  }) async {
+    final baseQuery = SupabaseService.client
         .from('Post')
         .select(publicPostSelect)
         .eq('post_Id', postId)
-        .eq('isRemoved', false)
         .eq('isBlocked', false)
-        .eq('isPending', false)
+        .eq('isPending', false);
+
+    final response = await (includeRemoved
+            ? baseQuery
+            : baseQuery.eq('isRemoved', false))
         .maybeSingle();
 
     if (response == null) return null;
@@ -164,10 +188,7 @@ class PostRepository {
     }
     final normalizedHashtags = _normalizeAndValidateHashtags(hashtags);
 
-    await ensurePostAvailable(
-      postId,
-      errorMessage: 'This post is no longer available.',
-    );
+    await _ensurePostEditable(postId);
 
     final postImageRecords = <Map<String, dynamic>>[];
     for (final bytes in newImages) {
@@ -231,10 +252,61 @@ class PostRepository {
 
   /// User soft delete.
   Future<void> deletePost(String postId) async {
-    await SupabaseService.client
+    final currentUserId = SupabaseService.requireCurrentUserId();
+
+    final response = await SupabaseService.client
         .from('Post')
-        .update({'isRemoved': true})
-        .eq('post_Id', postId);
+        .update({
+          'isRemoved': true,
+          'visible_to_owner': true,
+        })
+        .eq('post_Id', postId)
+        .eq('user_Id', currentUserId)
+        .select('post_Id')
+        .maybeSingle();
+
+    if (response == null) {
+      throw Exception('This post is no longer available.');
+    }
+  }
+
+  /// Restore a soft-deleted post back to the normal profile/feed state.
+  Future<void> restorePost(String postId) async {
+    final currentUserId = SupabaseService.requireCurrentUserId();
+
+    final response = await SupabaseService.client
+        .from('Post')
+        .update({
+          'isRemoved': false,
+          'visible_to_owner': true,
+        })
+        .eq('post_Id', postId)
+        .eq('user_Id', currentUserId)
+        .select('post_Id')
+        .maybeSingle();
+
+    if (response == null) {
+      throw Exception('This post could not be recovered.');
+    }
+  }
+
+  /// Hide a previously deleted post from the owner's archive while keeping it
+  /// available for admin/audit access.
+  Future<void> hideDeletedPostFromOwner(String postId) async {
+    final currentUserId = SupabaseService.requireCurrentUserId();
+
+    final response = await SupabaseService.client
+        .from('Post')
+        .update({'visible_to_owner': false})
+        .eq('post_Id', postId)
+        .eq('user_Id', currentUserId)
+        .eq('isRemoved', true)
+        .select('post_Id')
+        .maybeSingle();
+
+    if (response == null) {
+      throw Exception('This post could not be removed from your archive.');
+    }
   }
 
   /// Admin block.
@@ -298,6 +370,7 @@ class PostRepository {
       'title': title,
       'caption': caption,
       'isRemoved': false,
+      'visible_to_owner': true,
       'isBlocked': false,
       'isPending': false,
       'likeCount': 0,
@@ -432,6 +505,9 @@ class PostRepository {
         'post_Id': postId,
         'user_Id': userId,
       });
+
+      // Trigger notification
+      _triggerLikeNotification(postId, userId);
       return;
     }
 
@@ -440,6 +516,25 @@ class PostRepository {
         .delete()
         .eq('post_Id', postId)
         .eq('user_Id', userId);
+  }
+
+  Future<void> _triggerLikeNotification(String postId, String userId) async {
+    try {
+      final postData = await SupabaseService.client
+          .from('Post')
+          .select('user_Id')
+          .eq('post_Id', postId)
+          .maybeSingle();
+      
+      final postOwnerId = postData?['user_Id'] as String?;
+      if (postOwnerId != null) {
+        await _notifRepo.notifyLike(
+          likerId: userId, 
+          postOwnerId: postOwnerId, 
+          postId: postId,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<bool> checkIsLiked(String postId, String userId) async {
@@ -485,6 +580,20 @@ class PostRepository {
         throw Exception('You cannot report your own post.');
       }
       rethrow;
+    }
+  }
+
+  Future<void> _ensurePostEditable(String postId) async {
+    final response = await SupabaseService.client
+        .from('Post')
+        .select('post_Id')
+        .eq('post_Id', postId)
+        .eq('isBlocked', false)
+        .eq('isPending', false)
+        .maybeSingle();
+
+    if (response == null) {
+      throw Exception('This post is no longer available.');
     }
   }
 }

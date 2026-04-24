@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -12,6 +13,7 @@ import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 import 'package:taste_spot/features/restaurant/screens/blind_box_screen.dart';
 import 'package:app_links/app_links.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:taste_spot/core/services/account_service.dart';
 
 // Global key for navigation without context
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -49,12 +51,48 @@ class FoodiApp extends StatefulWidget {
 class _FoodiAppState extends State<FoodiApp> {
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
+  StreamSubscription<AuthState>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
     _initDeepLinks();
     _requestNotificationPermissions();
+    _initAuthListener();
+  }
+
+  void _initAuthListener() {
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      final session = data.session;
+      if (session != null) {
+        try {
+          final response = await Supabase.instance.client
+              .from('User')
+              .select('name, username, role, UserImage(image_url)')
+              .eq('user_Id', session.user.id)
+              .maybeSingle();
+          
+          if (response != null) {
+            String? imageUrl;
+            final userImages = response['UserImage'];
+            if (userImages != null && userImages is List && userImages.isNotEmpty) {
+              imageUrl = userImages[0]['image_url'];
+            }
+
+            await AccountService.saveAccount(
+              userId: session.user.id,
+              name: response['name'],
+              username: response['username'],
+              avatarUrl: imageUrl,
+              role: response['role'] ?? 'user',
+              sessionJson: jsonEncode(session.toJson()),
+            );
+          }
+        } catch (e) {
+          debugPrint('Error syncing session to AccountService: $e');
+        }
+      }
+    });
   }
 
   Future<void> _requestNotificationPermissions() async {
@@ -67,7 +105,6 @@ class _FoodiAppState extends State<FoodiApp> {
   void _initDeepLinks() {
     _appLinks = AppLinks();
 
-    // 1. Handle initial link if app was closed
     _appLinks.getInitialLink().then((uri) {
       if (uri != null) {
         debugPrint('Deep Link (Initial): $uri');
@@ -75,7 +112,6 @@ class _FoodiAppState extends State<FoodiApp> {
       }
     });
 
-    // 2. Listen for links while app is running
     _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
       debugPrint('Deep Link (Stream): $uri');
       _handleDeepLink(uri);
@@ -83,41 +119,26 @@ class _FoodiAppState extends State<FoodiApp> {
   }
 
   void _scheduleDeepLinkHandling(Uri uri) {
-    // Wait for the navigator to be built
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handleDeepLink(uri);
     });
   }
 
   void _handleDeepLink(Uri uri) {
-    debugPrint('--- Deep Link Received ---');
-    debugPrint('Full URI: $uri');
-    
     if (uri.scheme == 'io.supabase.tastespot' || uri.scheme == 'tastespot') {
       String? userId;
-      
-      // 1. Try to find 'id' in query parameters (Safe for both Safari & Chrome)
       if (uri.queryParameters.containsKey('id')) {
         userId = uri.queryParameters['id'];
       }
-      
-      // 2. Fallback: Check path segments for ID (Look for uuid-like pattern or segment after 'profile')
       if (userId == null || userId.isEmpty) {
         final segments = uri.pathSegments;
         if (segments.contains('profile')) {
           final idx = segments.indexOf('profile');
-          if (idx + 1 < segments.length) {
-            userId = segments[idx + 1];
-          }
-        } else if (segments.isNotEmpty) {
-          // Check if first segment looks like a UUID
-          final first = segments.first;
-          if (first.length > 20) userId = first; 
+          if (idx + 1 < segments.length) userId = segments[idx + 1];
         }
       }
 
       if (userId != null && userId.isNotEmpty) {
-        debugPrint('Navigating to Profile: $userId');
         _navigateToProfile(userId);
       }
     }
@@ -125,19 +146,14 @@ class _FoodiAppState extends State<FoodiApp> {
 
   void _navigateToProfile(String userId) {
     final session = Supabase.instance.client.auth.currentSession;
-
     if (session == null) {
-      // Not signed in -> Redirect to login
       navigatorKey.currentState?.pushAndRemoveUntil(
         CupertinoPageRoute(builder: (_) => const LoginScreen()),
         (route) => false,
       );
     } else {
-      // Signed in -> Navigate to the specific profile
       navigatorKey.currentState?.push(
-        CupertinoPageRoute(
-          builder: (_) => ProfileScreen(userId: userId),
-        ),
+        CupertinoPageRoute(builder: (_) => ProfileScreen(userId: userId)),
       );
     }
   }
@@ -145,6 +161,7 @@ class _FoodiAppState extends State<FoodiApp> {
   @override
   void dispose() {
     _linkSubscription?.cancel();
+    _authSubscription?.cancel();
     super.dispose();
   }
 
@@ -159,9 +176,7 @@ class _FoodiAppState extends State<FoodiApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('en', 'US')],
       theme: const CupertinoThemeData(
         brightness: Brightness.light,
         primaryColor: AppColors.primary,
@@ -184,19 +199,18 @@ class _MainShellState extends State<MainShell> {
   final GlobalKey<ProfileScreenState> profileKey = GlobalKey();
   final GlobalKey<CollectionScreenState> collectionKey = GlobalKey();
 
-  int _selectedTab = 0;
+  late final CupertinoTabController _tabController;
 
-  int get _screenIndex {
-    switch (_selectedTab) {
-      case 1:
-        return 1;
-      case 3:
-        return 2;
-      case 4:
-        return 3;
-      default:
-        return 0;
-    }
+  @override
+  void initState() {
+    super.initState();
+    _tabController = CupertinoTabController(initialIndex: 0);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   void _showAddPost() async {
@@ -207,7 +221,7 @@ class _MainShellState extends State<MainShell> {
       ),
     );
     if (result == true && mounted) {
-      setState(() => _selectedTab = 0);
+      _tabController.index = 0;
       homeKey.currentState?.loadPosts();
       profileKey.currentState?.loadUserPosts();
     }
@@ -215,112 +229,76 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      child: Column(
-        children: [
-          Expanded(
-            child: IndexedStack(
-              index: _screenIndex,
-              children: [
-                HomeScreen(key: homeKey),
-                CollectionScreen(key: collectionKey),
-                const BlindBoxScreen(),
-                ProfileScreen(key: profileKey),
-              ],
+    return CupertinoTabScaffold(
+      controller: _tabController,
+      tabBar: CupertinoTabBar(
+        backgroundColor: CupertinoColors.white,
+        activeColor: AppColors.primary,
+        inactiveColor: AppColors.textLight,
+        border: const Border(top: BorderSide(color: AppColors.tabBarBorder, width: 0.5)),
+        onTap: (index) {
+          if (index == 2) {
+            _showAddPost();
+          } else if (index == _tabController.index) {
+            if (index == 0) {
+              Navigator.of(homeKey.currentContext!).popUntil((r) => r.isFirst);
+            } else {
+              final key = _getNavigatorKey(index);
+              key?.currentState?.popUntil((r) => r.isFirst);
+            }
+          }
+        },
+        items: [
+          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.house), activeIcon: Icon(CupertinoIcons.house_fill), label: 'Home'),
+          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.bookmark), activeIcon: Icon(CupertinoIcons.bookmark_fill), label: 'Collection'),
+          BottomNavigationBarItem(
+            icon: Container(
+              width: 46,
+              height: 32,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppColors.primary, AppColors.accent],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(CupertinoIcons.add, color: CupertinoColors.white, size: 22),
             ),
+            label: '',
           ),
-          _buildTabBar(),
+          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.gift), activeIcon: Icon(CupertinoIcons.gift_fill), label: 'Blind Box'),
+          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.person), activeIcon: Icon(CupertinoIcons.person_fill), label: 'Profile'),
         ],
       ),
+      tabBuilder: (context, index) {
+        return CupertinoTabView(
+          navigatorKey: _getNavigatorKey(index),
+          builder: (context) {
+            switch (index) {
+              case 0: return HomeScreen(key: homeKey);
+              case 1: return CollectionScreen(key: collectionKey);
+              case 3: return const BlindBoxScreen();
+              case 4: return ProfileScreen(key: profileKey);
+              default: return HomeScreen(key: homeKey);
+            }
+          },
+        );
+      },
     );
   }
 
-  Widget _buildTabBar() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: CupertinoColors.white,
-        border: Border(top: BorderSide(color: AppColors.tabBarBorder, width: 0.5)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 49,
-          child: Row(
-            children: [
-              _navItem(0, CupertinoIcons.house, CupertinoIcons.house_fill, 'Home'),
-              _navItem(1, CupertinoIcons.bookmark, CupertinoIcons.bookmark_fill, 'Collection'),
-              _addButton(),
-              _navItem(3, CupertinoIcons.gift, CupertinoIcons.gift_fill, 'Blind Box'),
-              _navItem(4, CupertinoIcons.person, CupertinoIcons.person_fill, 'Profile'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  final List<GlobalKey<NavigatorState>> _navKeys = [
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+    GlobalKey<NavigatorState>(),
+  ];
 
-  Widget _navItem(int tab, IconData icon, IconData activeIcon, String label) {
-    final isActive = _selectedTab == tab;
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          setState(() => _selectedTab = tab);
-          if (tab == 0) homeKey.currentState?.loadPosts(silent: true);
-          if (tab == 1) collectionKey.currentState?.refreshCollections();
-          if (tab == 4) profileKey.currentState?.loadUserPosts(silent: true);
-        },
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              isActive ? activeIcon : icon,
-              size: 24,
-              color: isActive ? AppColors.primary : AppColors.textLight,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: isActive ? AppColors.primary : AppColors.textLight,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _addButton() {
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _showAddPost,
-        child: Center(
-          child: Container(
-            width: 46,
-            height: 32,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.accent],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withAlpha(80),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Icon(CupertinoIcons.add, color: CupertinoColors.white, size: 22),
-          ),
-        ),
-      ),
-    );
+  GlobalKey<NavigatorState>? _getNavigatorKey(int index) {
+    if (index < 0 || index >= _navKeys.length) return null;
+    return _navKeys[index];
   }
 }
 

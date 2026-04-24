@@ -2,29 +2,56 @@ import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
+import 'package:taste_spot/data/repositories/notification_repository.dart';
+import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
+import 'package:taste_spot/features/collection/screens/collection_detail_screen.dart';
+import 'package:taste_spot/data/models/collection_model.dart';
+import 'package:taste_spot/data/repositories/post_repository.dart';
+import 'package:taste_spot/data/repositories/collection_repository.dart';
 
-class _NotifItem {
+class NotifItem {
   final String id;
   final String content;
   final String? redirectTo;
   final DateTime createdAt;
+  final String? avatarUrl;
   bool isRead;
 
-  _NotifItem({
+  NotifItem({
     required this.id,
     required this.content,
     this.redirectTo,
     required this.createdAt,
+    this.avatarUrl,
     required this.isRead,
   });
 
-  factory _NotifItem.fromJson(Map<String, dynamic> j) => _NotifItem(
-        id: j['id'] as String,
-        content: (j['content'] as String?) ?? '',
-        redirectTo: j['redirect_To'] as String?,
-        createdAt: DateTime.parse(j['created_At'] as String),
-        isRead: (j['isRead'] as bool?) ?? false,
-      );
+  factory NotifItem.fromJson(Map<String, dynamic> j) {
+    // Priority: 'sender' alias, then standard 'User' alias
+    final user = (j['sender'] ?? j['User'] ?? j['user']) as Map<String, dynamic>?;
+    
+    // Parse avatar URL from UserImage join (robust parsing)
+    String? avatar;
+    if (user != null) {
+      final userImages = (user['UserImage'] ?? user['user_images']);
+      if (userImages != null) {
+        if (userImages is List && userImages.isNotEmpty) {
+          avatar = userImages[0]['image_url'] as String?;
+        } else if (userImages is Map) {
+          avatar = userImages['image_url'] as String?;
+        }
+      }
+    }
+
+    return NotifItem(
+      id: j['id'] as String,
+      content: (j['content'] as String?) ?? '',
+      redirectTo: j['redirect_To'] as String?,
+      createdAt: DateTime.parse(j['created_At'] as String),
+      avatarUrl: avatar,
+      isRead: (j['isRead'] as bool?) ?? false,
+    );
+  }
 
   String get inferredType {
     final c = content.toLowerCase();
@@ -43,7 +70,8 @@ class NotificationScreen extends StatefulWidget {
 }
 
 class _NotificationScreenState extends State<NotificationScreen> {
-  List<_NotifItem> _notifications = [];
+  final NotificationRepository _notifRepo = NotificationRepository(Supabase.instance.client);
+  List<NotifItem> _notifications = [];
   bool _isLoading = true;
   String? _error;
 
@@ -67,16 +95,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
         return;
       }
 
-      final response = await Supabase.instance.client
-          .from('Notification')
-          .select('id, content, redirect_To, created_At, isRead')
-          .eq('user_id', userId)
-          .order('created_At', ascending: false)
-          .limit(100);
-
-      final items = (response as List<dynamic>)
-          .map((e) => _NotifItem.fromJson(e as Map<String, dynamic>))
-          .toList();
+      print('📡 Fetching notifications for user: $userId...');
+      final response = await _notifRepo.fetchNotifications(userId);
+      print('✅ Notifications fetched successfully. Count: ${response.length}');
+      
+      final items = response.map((e) => NotifItem.fromJson(e)).toList();
 
       if (mounted) {
         setState(() {
@@ -86,6 +109,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         _markAllRead(userId);
       }
     } catch (e) {
+      print('❌ [NotificationScreen._loadNotifications] ERROR: $e');
       if (mounted) {
         setState(() {
           _error = e.toString();
@@ -97,12 +121,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Future<void> _markAllRead(String userId) async {
     try {
-      await Supabase.instance.client
-          .from('Notification')
-          .update({'isRead': true})
-          .eq('user_id', userId)
-          .eq('isRead', false);
-
+      await _notifRepo.markAllAsRead(userId);
       if (mounted) {
         setState(() {
           for (final n in _notifications) {
@@ -113,8 +132,52 @@ class _NotificationScreenState extends State<NotificationScreen> {
     } catch (_) {}
   }
 
-  Map<String, List<_NotifItem>> _groupNotifications(List<_NotifItem> items) {
-    final groups = <String, List<_NotifItem>>{};
+  Future<void> _onNotifTap(NotifItem notif) async {
+    final redirect = notif.redirectTo;
+    if (redirect == null || redirect.isEmpty) return;
+
+    try {
+      final parts = redirect.split(':');
+      if (parts.length < 2) return;
+
+      final type = parts[0].toLowerCase();
+      final id = parts[1];
+
+      if (type == 'post') {
+        final post = await PostRepository.instance.fetchPostById(id);
+        if (post != null && mounted) {
+          Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)));
+        }
+      } else if (type == 'collection') {
+        final collRepo = CollectionRepository(Supabase.instance.client);
+        final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+        if (currentUserId == null) return;
+        
+        // Fetch collections to find the matching one
+        final collections = await collRepo.getUserCollections(currentUserId);
+        Collection? collection;
+        try {
+          collection = collections.firstWhere((c) => c.collectionId == id);
+        } catch (_) {
+          // If not in own, try shared
+          final shared = await collRepo.getSharedCollections(currentUserId);
+          try {
+            collection = shared.firstWhere((c) => c.collectionId == id);
+          } catch (_) {}
+        }
+
+        final Collection? finalCollection = collection;
+        if (finalCollection != null && mounted) {
+          Navigator.of(context).push(CupertinoPageRoute(builder: (_) => CollectionDetailScreen(collection: finalCollection)));
+        }
+      }
+    } catch (e) {
+      print('Error navigating to notification target: $e');
+    }
+  }
+
+  Map<String, List<NotifItem>> _groupNotifications(List<NotifItem> items) {
+    final groups = <String, List<NotifItem>>{};
     final now = DateTime.now();
 
     for (final item in items) {
@@ -150,7 +213,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ),
         leading: CupertinoNavigationBarBackButton(
           color: AppColors.textPrimary,
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pop(true), // Return true to trigger refresh
         ),
       ),
       child: SafeArea(
@@ -227,65 +290,72 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  Widget _buildNotifTile(_NotifItem notif) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: notif.isRead ? CupertinoColors.white : AppColors.primary.withAlpha(5),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildAvatarStack(notif),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.4),
-                    children: [
-                      TextSpan(
-                        text: notif.content,
-                        style: TextStyle(fontWeight: notif.isRead ? FontWeight.w500 : FontWeight.w700, letterSpacing: -0.2),
-                      ),
-                    ],
+  Widget _buildNotifTile(NotifItem notif) {
+    return GestureDetector(
+      onTap: () => _onNotifTap(notif),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: notif.isRead ? CupertinoColors.white : AppColors.primary.withAlpha(5),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAvatarStack(notif),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.4),
+                      children: [
+                        TextSpan(
+                          text: notif.content,
+                          style: TextStyle(fontWeight: notif.isRead ? FontWeight.w500 : FontWeight.w700, letterSpacing: -0.2),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _timeAgo(notif.createdAt),
-                  style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    _timeAgo(notif.createdAt),
+                    style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
             ),
-          ),
-          if (!notif.isRead)
-            Container(
-              width: 7,
-              height: 7,
-              margin: const EdgeInsets.only(top: 6, left: 8),
-              decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-            ),
-        ],
+            if (!notif.isRead)
+              Container(
+                width: 7,
+                height: 7,
+                margin: const EdgeInsets.only(top: 6, left: 8),
+                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildAvatarStack(_NotifItem notif) {
+  Widget _buildAvatarStack(NotifItem notif) {
     IconData icon;
     Color color;
     switch (notif.inferredType) {
       case 'like':
         icon = CupertinoIcons.heart_fill;
         color = AppColors.primary;
+        break;
       case 'comment':
         icon = CupertinoIcons.chat_bubble_fill;
         color = CupertinoColors.activeBlue;
+        break;
       case 'follow':
         icon = CupertinoIcons.person_fill;
         color = CupertinoColors.activeGreen;
+        break;
       default:
         icon = CupertinoIcons.bell_fill;
         color = AppColors.textSecondary;
@@ -298,11 +368,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
           height: 52,
           decoration: const BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
           child: ClipOval(
-            child: Image.network(
-              'https://i.pravatar.cc/200?u=${notif.id}',
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, color: AppColors.textLight, size: 28),
-            ),
+            child: (notif.avatarUrl != null && notif.avatarUrl!.isNotEmpty)
+                ? Image.network(
+                    notif.avatarUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, color: AppColors.textLight, size: 28),
+                  )
+                : const Icon(CupertinoIcons.person_fill, color: AppColors.textLight, size: 28),
           ),
         ),
         Positioned(

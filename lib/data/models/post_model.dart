@@ -67,11 +67,18 @@ class PostModel {
 
   /// Maps a Supabase `Post` row with joined `User` + `Restaurant`.
   factory PostModel.fromJson(Map<String, dynamic> json) {
-    // Supabase returns the joined User under the FK name when disambiguated
-    final user =
-        (json['User!Post_user_Id_fkey'] ?? json['User'])
-            as Map<String, dynamic>?;
+    // Check both possible keys for the joined user
+    final user = (json['User'] ?? json['User!Post_user_Id_fkey']) as Map<String, dynamic>?;
     final authorName = (user?['name'] as String?) ?? 'Unknown';
+
+    // Parse avatar URL from UserImage join
+    String authorAvatar = '';
+    if (user != null) {
+      final userImages = user['UserImage'] as List<dynamic>?;
+      if (userImages != null && userImages.isNotEmpty) {
+        authorAvatar = (userImages[0]['image_url'] as String?) ?? '';
+      }
+    }
 
     final restaurant = json['Restaurant'] as Map<String, dynamic>?;
     final restaurantName = (restaurant?['restaurant_name'] as String?) ?? '';
@@ -114,7 +121,7 @@ class PostModel {
       title: (json['title'] as String?) ?? '',
       description: (json['caption'] as String?) ?? '',
       authorName: authorName,
-      authorAvatar: '',
+      authorAvatar: authorAvatar,
       likes: (json['likeCount'] as num?)?.toInt() ?? 0,
       saveCount: (json['saveCount'] as num?)?.toInt() ?? 0,
       restaurantName: restaurantName,

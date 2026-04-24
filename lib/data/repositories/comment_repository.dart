@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
+import 'package:taste_spot/data/repositories/notification_repository.dart';
 
 const String _commentSelect = '''
   comment_Id,
@@ -10,12 +11,14 @@ const String _commentSelect = '''
   user_Id,
   content,
   created_At,
-  User!Comment_user_Id_fkey(user_Id, name)
+  User:user_Id(user_Id, name, UserImage(image_url))
 ''';
 
 class CommentRepository {
   CommentRepository._();
   static final CommentRepository instance = CommentRepository._();
+
+  final _notifRepo = NotificationRepository(SupabaseService.client);
 
   /// Fetches all visible comments for a given post, newest first.
   Future<List<CommentModel>> fetchComments(String postId) async {
@@ -65,7 +68,32 @@ class CommentRepository {
         .eq('comment_Id', commentId)
         .single();
 
-    return CommentModel.fromJson(response);
+    final model = CommentModel.fromJson(response);
+    
+    // Trigger notification
+    _triggerPostCommentNotification(postId, userId, content);
+
+    return model;
+  }
+
+  Future<void> _triggerPostCommentNotification(String postId, String userId, String content) async {
+    try {
+      final postData = await SupabaseService.client
+          .from('Post')
+          .select('user_Id')
+          .eq('post_Id', postId)
+          .maybeSingle();
+      
+      final postOwnerId = postData?['user_Id'] as String?;
+      if (postOwnerId != null) {
+        await _notifRepo.notifyComment(
+          commenterId: userId, 
+          postOwnerId: postOwnerId, 
+          postId: postId, 
+          commentSnippet: content,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<CommentModel> updateComment({

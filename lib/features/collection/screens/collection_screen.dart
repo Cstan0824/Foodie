@@ -376,8 +376,9 @@ class CollectionScreenState extends State<CollectionScreen> {
   }
 
   Widget _buildCollectionCard(Collection collection) {
-    final isShared = _selectedTab == 1;
-    final primaryColor = AppColors.primary; // Use back the default brand color
+    final isOwnTab = _selectedTab == 0;
+    final cardColor = AppColors.background; 
+    final images = collection.latestItemImages;
     
     return GestureDetector(
       onTap: () async {
@@ -402,7 +403,7 @@ class CollectionScreenState extends State<CollectionScreen> {
                   top: -8, left: 14, right: 14, bottom: 8,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: primaryColor.withAlpha(40),
+                      color: cardColor.withAlpha(150),
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
@@ -411,7 +412,7 @@ class CollectionScreenState extends State<CollectionScreen> {
                   top: -4, left: 7, right: 7, bottom: 4,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: primaryColor.withAlpha(80),
+                      color: cardColor.withAlpha(200),
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
@@ -420,36 +421,52 @@ class CollectionScreenState extends State<CollectionScreen> {
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    color: CupertinoColors.white,
+                    color: cardColor,
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: primaryColor.withAlpha(25),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
+                        color: Colors.black.withAlpha(12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
                     ],
-                    border: Border.all(color: primaryColor.withAlpha(30), width: 1),
+                    border: Border.all(color: AppColors.divider.withAlpha(60), width: 1),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Container(
-                      color: primaryColor.withAlpha(10),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              collection.collectionType == 'RESTAURANT' 
-                                  ? CupertinoIcons.house_fill 
-                                  : CupertinoIcons.square_favorites_fill,
-                              size: 44, 
-                              color: primaryColor,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (images.isEmpty) 
+                        Center(
+                          child: Icon(
+                            collection.collectionType == 'RESTAURANT' 
+                                ? CupertinoIcons.house_fill 
+                                : CupertinoIcons.square_favorites_fill,
+                            size: 44, 
+                            color: AppColors.textPrimary.withAlpha(180),
+                          ),
+                        )
+                      else ...[
+                        // Second latest image (bottom/back card)
+                        if (images.length > 1)
+                          Positioned(
+                            top: -10, right: -12,
+                            bottom: 12, left: 28,
+                            child: Transform.rotate(
+                              angle: 0.12,
+                              child: _buildItemPreview(images[1]),
                             ),
-                          ],
+                          ),
+                        // Latest image (top/front card)
+                        Positioned(
+                          top: -6, left: -14,
+                          bottom: 16, right: 24,
+                          child: Transform.rotate(
+                            angle: -0.06,
+                            child: _buildItemPreview(images[0]),
+                          ),
                         ),
-                      ),
-                    ),
+                      ],
+                    ],
                   ),
                 ),
                 // Indicators
@@ -462,13 +479,22 @@ class CollectionScreenState extends State<CollectionScreen> {
                       child: const Icon(CupertinoIcons.lock_fill, size: 10, color: CupertinoColors.white),
                     ),
                   ),
-                if (collection.isDefault)
+                if (collection.isDefault && isOwnTab)
                   Positioned(
-                    top: 12, left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(8)),
-                      child: const Text('DEFAULT', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
+                    top: 12, left: 6,
+                    child: Transform.rotate(
+                      angle: -0.06, // Match the front card rotation
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary, 
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 8, offset: const Offset(0, 2)),
+                          ],
+                        ),
+                        child: const Text('DEFAULT', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
+                      ),
                     ),
                   ),
               ],
@@ -478,15 +504,19 @@ class CollectionScreenState extends State<CollectionScreen> {
           Text(
             collection.name,
             maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4),
           ),
           const SizedBox(height: 4),
-          if (isShared && collection.owner != null)
+          if (!isOwnTab && collection.owner != null)
             Row(
               children: [
                 Container(
                   width: 18, height: 18,
-                  decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle, border: Border.all(color: AppColors.divider, width: 0.5)),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface, 
+                    shape: BoxShape.circle, 
+                    border: Border.all(color: AppColors.divider, width: 0.5)
+                  ),
                   child: ClipOval(
                     child: (collection.owner!.imageUrl != null && collection.owner!.imageUrl!.isNotEmpty)
                         ? Image.network(collection.owner!.imageUrl!, fit: BoxFit.cover, 
@@ -497,9 +527,9 @@ class CollectionScreenState extends State<CollectionScreen> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'by ${collection.owner!.name}',
+                    collection.owner!.name,
                     maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -507,9 +537,30 @@ class CollectionScreenState extends State<CollectionScreen> {
           else
             Text(
               collection.collectionType == 'RESTAURANT' ? 'Restaurant List' : 'Post Gallery',
-              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildItemPreview(String url) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 12, offset: const Offset(0, 6)),
+        ],
+        border: Border.all(color: CupertinoColors.white, width: 2.5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(11.5),
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
       ),
     );
   }
@@ -634,24 +685,6 @@ class CollectionScreenState extends State<CollectionScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 28),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Public Collection', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-                      Text('Others can see this collection', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
-                    ],
-                  ),
-                  CupertinoSwitch(
-                    value: isPublic,
-                    activeTrackColor: AppColors.primary,
-                    onChanged: (val) => setSheetState(() => isPublic = val),
-                  ),
-                ],
-              ),
               const SizedBox(height: 40),
               CupertinoButton(
                 padding: EdgeInsets.zero,
@@ -671,7 +704,7 @@ class CollectionScreenState extends State<CollectionScreen> {
                         userId: user.id, 
                         name: name, 
                         collectionType: type,
-                        isPublic: isPublic,
+                        isPublic: false, // Default to false as user choice is removed
                       );
                       if (context.mounted) { Navigator.pop(context); _loadAllData(); }
                     }
