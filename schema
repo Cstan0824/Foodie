@@ -66,6 +66,7 @@ CREATE TABLE public.Post (
   likeCount integer DEFAULT 0,
   saveCount integer DEFAULT 0,
   isRemoved boolean DEFAULT false,
+  visible_to_owner boolean NOT NULL DEFAULT true,
   title text,
   isBlocked boolean NOT NULL DEFAULT false,
   isPending boolean NOT NULL DEFAULT false,

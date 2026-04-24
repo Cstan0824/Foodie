@@ -30,6 +30,7 @@ class ProfileScreen extends StatefulWidget {
 
 class ProfileScreenState extends State<ProfileScreen> {
   int _selectedTab = 0;
+  int _selectedArchiveTab = 0;
   bool _isLoading = true;
   bool _isSettingsMenuOpen = false;
 
@@ -47,6 +48,21 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   List<String> get _tabs =>
       _isCurrentUser ? ['Posts', 'Archived', 'Liked'] : ['Posts', 'Liked'];
+
+  static const List<_PendingApprovalPreview> _pendingApprovalPreviews = [
+    _PendingApprovalPreview(
+      restaurantName: 'Nasi Lemak Corner',
+      submittedLabel: 'Submitted 2h ago',
+      address: 'Jalan SS15, Subang Jaya',
+      note: 'Waiting for restaurant verification before your post goes live.',
+    ),
+    _PendingApprovalPreview(
+      restaurantName: 'Kyo Matcha House',
+      submittedLabel: 'Submitted yesterday',
+      address: 'Bukit Bintang, Kuala Lumpur',
+      note: 'Cuisine and map details are being reviewed by the team.',
+    ),
+  ];
 
   @override
   void initState() {
@@ -119,6 +135,14 @@ class ProfileScreenState extends State<ProfileScreen> {
       _likedPosts = await PostRepository.instance.fetchLikedPosts(
         userId: targetUserId,
       );
+
+      if (_isCurrentUser) {
+        _archivedPosts = await PostRepository.instance.fetchArchivedPosts(
+          userId: targetUserId,
+        );
+      } else {
+        _archivedPosts = [];
+      }
 
       if (_isCurrentUser && _userProfile != null) {
         final session = Supabase.instance.client.auth.currentSession;
@@ -243,7 +267,10 @@ class ProfileScreenState extends State<ProfileScreen> {
   void _shareProfile() {
     final userId = _userProfile?.userId;
     if (userId == null) return;
-    final String deepLink = 'io.supabase.tastespot://login-callback/profile?id=$userId';
+
+    // Using Supabase as a redirector to avoid NXDOMAIN errors in browsers
+    final String deepLink = 'https://wjwfqwvrynyfqbjkqmah.supabase.co/auth/v1/callback?redirect_to=io.supabase.tastespot://profile/$userId';
+
     Share.share(
       'Check out my food journey on Taste Spot!\n$deepLink',
       subject: 'Taste Spot Profile',
@@ -276,6 +303,15 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  bool get _showsArchivedDesign => _isCurrentUser && _selectedTab == 1;
+
+  void _handleMainTabChanged(int index) {
+    setState(() {
+      _selectedTab = index;
+      if (index != 1) {
+        _selectedArchiveTab = 0;
+      }
+    });
   void _showImagePreview(String? imageUrl) {
     if (imageUrl == null || imageUrl.isEmpty) return;
 
@@ -338,8 +374,8 @@ class ProfileScreenState extends State<ProfileScreen> {
                 padding: EdgeInsets.zero,
                 onPressed: () => setState(() => _isSettingsMenuOpen = !_isSettingsMenuOpen),
                 child: Icon(
-                  _isSettingsMenuOpen ? CupertinoIcons.xmark : CupertinoIcons.bars, 
-                  color: AppColors.textPrimary, 
+                  _isSettingsMenuOpen ? CupertinoIcons.xmark : CupertinoIcons.bars,
+                  color: AppColors.textPrimary,
                   size: 24
                 ),
               )
@@ -362,15 +398,15 @@ class ProfileScreenState extends State<ProfileScreen> {
               ),
               slivers: [
                 SliverToBoxAdapter(child: _buildProfileSection(context)),
-                SliverPersistentHeader(
+              SliverPersistentHeader(
                   pinned: true,
                   delegate: _TextTabBarDelegate(
                     selectedTab: _selectedTab,
-                    onTabChanged: (i) => setState(() => _selectedTab = i),
+                    onTabChanged: _handleMainTabChanged,
                     tabs: _tabs,
                   ),
                 ),
-                _buildSliverGrid(context),
+                ..._buildContentSlivers(context),
                 const SliverToBoxAdapter(child: SizedBox(height: 90)),
               ],
             ),
@@ -411,7 +447,11 @@ class ProfileScreenState extends State<ProfileScreen> {
           ),
           if (_isCurrentUser) ...[
             const SizedBox(width: 2),
-            const Icon(CupertinoIcons.chevron_down, size: 12, color: AppColors.textPrimary),
+            Icon(
+              _isAccountsMenuOpen ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
+              size: 12,
+              color: AppColors.textPrimary
+            ),
           ],
         ],
       ),
@@ -673,7 +713,155 @@ class ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildSliverGrid(BuildContext context) {
+  Widget _buildAvatar() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
+      ),
+      child: Container(
+        width: 76,
+        height: 76,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.surface,
+        ),
+        child: ClipOval(
+          child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
+              ? Image.network(
+                  _profileImageUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
+                )
+              : const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildContentSlivers(BuildContext context) {
+    if (_showsArchivedDesign) {
+      return _buildArchivedSlivers(context);
+    }
+
+    return [_buildPostsSliver(context)];
+  }
+
+  List<Widget> _buildArchivedSlivers(BuildContext context) {
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: _ArchiveSegmentedControl(
+            selectedIndex: _selectedArchiveTab,
+            pendingCount: _pendingApprovalPreviews.length,
+            deletedCount: _archivedPosts.length,
+            onChanged: (index) => setState(() => _selectedArchiveTab = index),
+          ),
+        ),
+      ),
+      if (_selectedArchiveTab == 0)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Posts linked to restaurants outside our database will wait here until the place is verified.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                ..._pendingApprovalPreviews.map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _PendingApprovalCard(item: item),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        )
+      else
+        _buildDeletedPostsSliver(context),
+    ];
+  }
+
+  Widget _buildDeletedPostsSliver(BuildContext context) {
+    if (_archivedPosts.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.archivebox,
+                    size: 30,
+                    color: AppColors.textLight,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Deleted posts will appear here',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Soft-deleted posts stay here until you recover them back to your profile.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.all(10),
+      sliver: SliverToBoxAdapter(
+        child: _ProfileMasonryGrid(
+          posts: _archivedPosts,
+          archived: true,
+          showAuthor: true,
+          onPostTap: (post) async {
+            final result = await Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => PostDetailScreen(post: post, archived: true),
+              ),
+            );
+            if (result == true) _fetchProfileData(silent: true);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPostsSliver(BuildContext context) {
     if (_isLoading) return const _GridSkeleton();
     final posts = _currentPosts;
     if (posts.isEmpty) {
@@ -683,8 +871,17 @@ class ProfileScreenState extends State<ProfileScreen> {
               Text(_selectedTab == 0 ? 'No posts yet' : 'No posts found', style: const TextStyle(color: AppColors.textLight, fontSize: 14)),
             ])));
     }
-    return SliverPadding(padding: const EdgeInsets.all(10), sliver: SliverToBoxAdapter(child: _ProfileMasonryGrid(posts: posts, onPostTap: (post) async {
-            final result = await Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)));
+
+    return SliverPadding(
+      padding: const EdgeInsets.all(10),
+      sliver: SliverToBoxAdapter(
+        child: _ProfileMasonryGrid(
+          posts: posts,
+          showAuthor: _isCurrentUser && _selectedTab == 0,
+          onPostTap: (post) async {
+            final result = await Navigator.of(context).push(
+              CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
+            );
             if (result == true) _fetchProfileData(silent: true);
           })));
   }
@@ -740,20 +937,365 @@ class _ActionPill extends StatelessWidget {
   }
 }
 
+class _ArchiveSegmentedControl extends StatelessWidget {
+  final int selectedIndex;
+  final int pendingCount;
+  final int deletedCount;
+  final ValueChanged<int> onChanged;
+
+  const _ArchiveSegmentedControl({
+    required this.selectedIndex,
+    required this.pendingCount,
+    required this.deletedCount,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final labels = ['Pending Approval', 'Deleted Posts'];
+    final counts = [pendingCount, deletedCount];
+
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          final tabW = constraints.maxWidth / labels.length;
+          return Stack(
+            children: [
+              // ── Sliding white pill ──
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOut,
+                left: selectedIndex * tabW + 2,
+                top: 2,
+                width: tabW - 4,
+                height: constraints.maxHeight - 4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF000000).withAlpha(18),
+                        blurRadius: 6,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // ── Labels row (always on top) ──
+              Row(
+                children: List.generate(labels.length, (i) {
+                  final isSelected = i == selectedIndex;
+                  final count = counts[i];
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => onChanged(i),
+                      child: Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedDefaultTextStyle(
+                              duration: const Duration(milliseconds: 180),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                              ),
+                              child: Text(labels[i]),
+                            ),
+                            if (count > 0) ...[
+                              const SizedBox(width: 5),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? AppColors.primary.withAlpha(20)
+                                      : AppColors.textLight.withAlpha(50),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  '$count',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected
+                                        ? AppColors.primary
+                                        : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PendingApprovalCard extends StatelessWidget {
+  final _PendingApprovalPreview item;
+
+  const _PendingApprovalCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: CupertinoColors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.divider, width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(8),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4E8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  CupertinoIcons.clock_fill,
+                  size: 20,
+                  color: Color(0xFFFF9500),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.restaurantName,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.address,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4E8),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'Under Review',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFFF9500),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            item.note,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.45,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Icon(
+                CupertinoIcons.info_circle,
+                size: 14,
+                color: AppColors.textLight,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                item.submittedLabel,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textLight,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingApprovalPreview {
+  final String restaurantName;
+  final String submittedLabel;
+  final String address;
+  final String note;
+
+  const _PendingApprovalPreview({
+    required this.restaurantName,
+    required this.submittedLabel,
+    required this.address,
+    required this.note,
+  });
+}
+
 class _ProfileMasonryGrid extends StatelessWidget {
   final List<PostModel> posts;
+  final bool archived;
+  final bool showAuthor;
   final void Function(PostModel post) onPostTap;
-  const _ProfileMasonryGrid({required this.posts, required this.onPostTap});
+
+  const _ProfileMasonryGrid({
+    required this.posts,
+    required this.onPostTap,
+    this.archived = false,
+    this.showAuthor = false,
+  });
+
   @override
   Widget build(BuildContext context) {
     final leftCol = <PostModel>[];
     final rightCol = <PostModel>[];
-    for (int i = 0; i < posts.length; i++) { (i.isEven ? leftCol : rightCol).add(posts[i]); }
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: Column(children: leftCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 10), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList())),
+    for (int i = 0; i < posts.length; i++) {
+      (i.isEven ? leftCol : rightCol).add(posts[i]);
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            children: leftCol
+                .map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _ProfilePostTile(
+                      post: p,
+                      archived: archived,
+                      showAuthor: showAuthor,
+                      onTap: () => onPostTap(p),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
         const SizedBox(width: 10),
-        Expanded(child: Column(children: rightCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 10), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList())),
-      ]);
+        Expanded(
+          child: Column(
+            children: rightCol
+                .map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _ProfilePostTile(
+                      post: p,
+                      archived: archived,
+                      showAuthor: showAuthor,
+                      onTap: () => onPostTap(p),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfilePostTile extends StatelessWidget {
+  final PostModel post;
+  final bool archived;
+  final bool showAuthor;
+  final VoidCallback onTap;
+
+  const _ProfilePostTile({
+    required this.post,
+    required this.archived,
+    required this.showAuthor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!archived) {
+      return PostCard(post: post, showAuthor: showAuthor, onTap: onTap);
+    }
+
+    return Stack(
+      children: [
+        Opacity(
+          opacity: 0.82,
+          child: PostCard(post: post, showAuthor: showAuthor, onTap: onTap),
+        ),
+        Positioned(
+          top: 10,
+          right: 10,
+          child: IgnorePointer(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withAlpha(155),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text(
+                'Deleted',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: CupertinoColors.white,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -764,17 +1306,68 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
   const _TextTabBarDelegate({required this.selectedTab, required this.onTabChanged, required this.tabs});
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(color: CupertinoColors.white, child: Column(children: [
-          Expanded(child: Row(children: List.generate(tabs.length, (i) {
-                final active = i == selectedTab;
-                return Expanded(child: GestureDetector(onTap: () => onTabChanged(i), behavior: HitTestBehavior.opaque, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Text(tabs[i], style: TextStyle(fontSize: 14, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.textPrimary : AppColors.textSecondary)),
-                          const SizedBox(height: 12),
-                          Opacity(opacity: active ? 1.0 : 0.0, child: Container(width: 24, height: 2.5, decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2)),)),
-                        ]))));
-              }))),
-          Container(height: 1, color: AppColors.divider),
-        ]));
+    return Container(
+      color: CupertinoColors.white,
+      child: Column(
+        children: [
+          Expanded(
+            child: LayoutBuilder(
+              builder: (ctx, constraints) {
+                final tabW = constraints.maxWidth / tabs.length;
+                // center the 24-px indicator under each tab
+                final indicatorLeft = selectedTab * tabW + (tabW / 2) - 12;
+                return Stack(
+                  children: [
+                    // ── Sliding red underline ──
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeInOut,
+                      left: indicatorLeft,
+                      bottom: 0,
+                      child: Container(
+                        width: 24,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    // ── Tab labels ──
+                    Row(
+                      children: List.generate(tabs.length, (i) {
+                        final active = i == selectedTab;
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () => onTabChanged(i),
+                            behavior: HitTestBehavior.opaque,
+                            child: Center(
+                              child: AnimatedDefaultTextStyle(
+                                duration: const Duration(milliseconds: 180),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight:
+                                      active ? FontWeight.w700 : FontWeight.w500,
+                                  color: active
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
+                                ),
+                                child: Text(tabs[i]),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          Container(height: 0.5, color: AppColors.divider),
+        ],
+      ),
+    );
   }
   @override double get maxExtent => 44;
   @override double get minExtent => 44;
