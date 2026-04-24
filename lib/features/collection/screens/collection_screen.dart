@@ -19,12 +19,16 @@ class CollectionScreenState extends State<CollectionScreen> {
     Supabase.instance.client,
   );
   List<Collection> _collections = [];
+  List<Collection> _sharedCollections = [];
   bool _isLoading = true;
   String? _error;
   
   // 0: All, 1: Restaurants, 2: Posts
   int _selectedCategory = 0; 
   bool _isMenuOpen = false;
+  
+  // 0: My, 1: Shared
+  int _selectedTab = 0;
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
@@ -34,7 +38,7 @@ class CollectionScreenState extends State<CollectionScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(() => setState(() => _searchQuery = _searchController.text));
-    _loadCollections();
+    _loadAllData();
   }
 
   @override
@@ -44,22 +48,39 @@ class CollectionScreenState extends State<CollectionScreen> {
     super.dispose();
   }
 
-  void refreshCollections() => _loadCollections();
+  void refreshCollections() => _loadAllData();
 
-  Future<void> _loadCollections() async {
-    final userId = Supabase.instance.client.auth.currentUser?.id ?? '00000000-0000-0000-0000-000000000001';
+  Future<void> _loadAllData() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      if (mounted) setState(() { _error = "User not logged in"; _isLoading = false; });
+      return;
+    }
+    
     if (mounted) setState(() => _isLoading = true);
 
     try {
-      final collections = await _collectionRepository.getUserCollections(userId);
-      if (mounted) setState(() { _collections = collections; _isLoading = false; });
+      final results = await Future.wait([
+        _collectionRepository.getUserCollections(userId),
+        _collectionRepository.getSharedCollections(userId),
+      ]);
+      
+      if (mounted) {
+        setState(() {
+          _collections = results[0];
+          _sharedCollections = results[1];
+          _isLoading = false;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _isLoading = false; });
     }
   }
 
   List<Collection> get _filteredCollections {
-    var list = _collections;
+    var list = _selectedTab == 0 ? _collections : _sharedCollections;
+    
     if (_selectedCategory == 1) {
       list = list.where((c) => c.collectionType == 'RESTAURANT').toList();
     } else if (_selectedCategory == 2) {
@@ -84,13 +105,14 @@ class CollectionScreenState extends State<CollectionScreen> {
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoColors.white,
+        backgroundColor: CupertinoColors.white.withAlpha(240),
         border: null,
-        middle: const Text('Collections', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.8, fontSize: 18)),
+        middle: const Text('Collections', 
+          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -1.0, fontSize: 22, color: AppColors.textPrimary)),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: () => _showCreateCollectionSheet(context),
-          child: const Icon(CupertinoIcons.add, color: AppColors.textPrimary, size: 24),
+          child: const Icon(CupertinoIcons.plus_circle_fill, color: AppColors.primary, size: 28),
         ),
       ),
       child: SafeArea(
@@ -98,6 +120,7 @@ class CollectionScreenState extends State<CollectionScreen> {
           children: [
             Column(
               children: [
+                _buildTabToggle(),
                 _buildSearchBar(),
                 Expanded(child: _buildContent()),
               ],
@@ -121,31 +144,67 @@ class CollectionScreenState extends State<CollectionScreen> {
     );
   }
 
+  Widget _buildTabToggle() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: CupertinoSlidingSegmentedControl<int>(
+        groupValue: _selectedTab,
+        backgroundColor: AppColors.surface,
+        thumbColor: CupertinoColors.white,
+        padding: const EdgeInsets.all(4),
+        children: {
+          0: _buildTabItem('My Items', 0),
+          1: _buildTabItem('Shared', 1),
+        },
+        onValueChanged: (val) {
+          if (val != null) setState(() => _selectedTab = val);
+        },
+      ),
+    );
+  }
+
+  Widget _buildTabItem(String label, int index) {
+    final isSelected = _selectedTab == index;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+          color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
       child: Row(
         children: [
           Expanded(
             child: Container(
-              height: 44,
+              height: 48,
               decoration: BoxDecoration(
                 color: AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.divider.withAlpha(50), width: 1),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  const Icon(CupertinoIcons.search, size: 20, color: AppColors.textLight),
-                  const SizedBox(width: 10),
+                  const Icon(CupertinoIcons.search, size: 18, color: AppColors.textLight),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: CupertinoTextField(
                       controller: _searchController,
                       focusNode: _searchFocus,
                       placeholder: 'Search collections...',
-                      placeholderStyle: const TextStyle(color: AppColors.textLight, fontSize: 15),
+                      placeholderStyle: const TextStyle(color: AppColors.textLight, fontSize: 16, fontWeight: FontWeight.w500),
                       decoration: null,
-                      style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+                      style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
                       clearButtonMode: OverlayVisibilityMode.editing,
                     ),
                   ),
@@ -158,35 +217,30 @@ class CollectionScreenState extends State<CollectionScreen> {
             onTap: () => setState(() => _isMenuOpen = !_isMenuOpen),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
                 color: _isMenuOpen ? AppColors.textPrimary : AppColors.surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: _selectedCategory != 0 && !_isMenuOpen ? AppColors.primary.withAlpha(100) : Colors.transparent, 
-                  width: 1.5
-                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: _isMenuOpen ? [
+                  BoxShadow(color: AppColors.textPrimary.withAlpha(40), blurRadius: 10, offset: const Offset(0, 4))
+                ] : [],
               ),
               child: Row(
                 children: [
                   Text(
                     _categoryLabel,
                     style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: _isMenuOpen 
-                        ? CupertinoColors.white 
-                        : (_selectedCategory != 0 ? AppColors.primary : AppColors.textSecondary),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      color: _isMenuOpen ? CupertinoColors.white : AppColors.textPrimary,
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  const SizedBox(width: 6),
                   Icon(
                     _isMenuOpen ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
                     size: 14,
-                    color: _isMenuOpen 
-                        ? CupertinoColors.white 
-                        : (_selectedCategory != 0 ? AppColors.primary : AppColors.textLight),
+                    color: _isMenuOpen ? CupertinoColors.white : AppColors.textPrimary,
                   ),
                 ],
               ),
@@ -199,35 +253,32 @@ class CollectionScreenState extends State<CollectionScreen> {
 
   Widget _buildCustomDropdownMenu() {
     return AnimatedPositioned(
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutBack,
-      top: _isMenuOpen ? 60 : 40,
-      right: 16,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutQuart,
+      top: _isMenuOpen ? 120 : 100,
+      right: 20,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
         opacity: _isMenuOpen ? 1.0 : 0.0,
         child: IgnorePointer(
           ignoring: !_isMenuOpen,
           child: Container(
-            width: 180,
+            width: 190,
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: CupertinoColors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(25),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
+                BoxShadow(color: Colors.black.withAlpha(30), blurRadius: 30, offset: const Offset(0, 15)),
               ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildMenuOption('All', 0, CupertinoIcons.square_grid_2x2),
-                _buildMenuOption('Restaurants', 1, CupertinoIcons.house),
-                _buildMenuOption('Posts', 2, CupertinoIcons.doc_text),
+                _buildMenuOption('All Items', 0, CupertinoIcons.square_grid_2x2_fill),
+                const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Divider(height: 1, color: AppColors.divider)),
+                _buildMenuOption('Restaurants', 1, CupertinoIcons.house_fill),
+                _buildMenuOption('Posts', 2, CupertinoIcons.doc_text_fill),
               ],
             ),
           ),
@@ -247,31 +298,27 @@ class CollectionScreenState extends State<CollectionScreen> {
       },
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.primary.withAlpha(15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
-            Icon(
-              icon, 
-              size: 18, 
-              color: isSelected ? AppColors.primary : AppColors.textSecondary
-            ),
-            const SizedBox(width: 12),
+            Icon(icon, size: 20, color: isSelected ? AppColors.primary : AppColors.textSecondary),
+            const SizedBox(width: 14),
             Expanded(
               child: Text(
                 label,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  fontSize: 15,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                   color: isSelected ? AppColors.primary : AppColors.textPrimary,
                 ),
               ),
             ),
             if (isSelected)
-              const Icon(CupertinoIcons.checkmark_alt, size: 14, color: AppColors.primary),
+              const Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppColors.primary),
           ],
         ),
       ),
@@ -289,11 +336,25 @@ class CollectionScreenState extends State<CollectionScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(CupertinoIcons.folder_badge_plus, size: 64, color: AppColors.surface),
-            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+              child: Icon(
+                _searchQuery.isEmpty ? CupertinoIcons.folder_badge_plus : CupertinoIcons.search, 
+                size: 64, color: AppColors.textLight.withAlpha(100)
+              ),
+            ),
+            const SizedBox(height: 24),
             Text(
-              _searchQuery.isEmpty ? 'No collections matching this type' : 'No results found',
-              style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+              _searchQuery.isEmpty ? 'No collections here yet' : 'No matches for "$_searchQuery"',
+              style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _searchQuery.isEmpty 
+                ? 'Create your first one to get started!' 
+                : 'Try adjusting your search query',
+              style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w500, fontSize: 14),
             ),
           ],
         ),
@@ -301,13 +362,13 @@ class CollectionScreenState extends State<CollectionScreen> {
     }
 
     return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 24,
-        childAspectRatio: 0.85,
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 28,
+        childAspectRatio: 0.82,
       ),
       itemCount: items.length,
       itemBuilder: (context, index) => _buildCollectionCard(items[index]),
@@ -315,6 +376,9 @@ class CollectionScreenState extends State<CollectionScreen> {
   }
 
   Widget _buildCollectionCard(Collection collection) {
+    final isShared = _selectedTab == 1;
+    final primaryColor = AppColors.primary; // Use back the default brand color
+    
     return GestureDetector(
       onTap: () async {
         if (_isMenuOpen) {
@@ -324,7 +388,7 @@ class CollectionScreenState extends State<CollectionScreen> {
         final result = await Navigator.of(context).push(
           CupertinoPageRoute(builder: (_) => CollectionDetailScreen(collection: collection)),
         );
-        if (result == true) _loadCollections();
+        if (result == true) _loadAllData();
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,76 +397,118 @@ class CollectionScreenState extends State<CollectionScreen> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
+                // Folder Back Stack Effect
                 Positioned(
-                  top: -6, left: 10, right: 10, bottom: 6,
+                  top: -8, left: 14, right: 14, bottom: 8,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppColors.surface.withAlpha(120),
-                      borderRadius: BorderRadius.circular(12),
+                      color: primaryColor.withAlpha(40),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
                 Positioned(
-                  top: -3, left: 5, right: 5, bottom: 3,
+                  top: -4, left: 7, right: 7, bottom: 4,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
+                      color: primaryColor.withAlpha(80),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
                 ),
+                // Main Card
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: CupertinoColors.white,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+                        color: primaryColor.withAlpha(25),
+                        blurRadius: 15,
+                        offset: const Offset(0, 8),
                       ),
                     ],
+                    border: Border.all(color: primaryColor.withAlpha(30), width: 1),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(18),
                     child: Container(
-                      color: AppColors.surface,
+                      color: primaryColor.withAlpha(10),
                       child: Center(
-                        child: Icon(
-                          collection.collectionType == 'RESTAURANT' 
-                              ? CupertinoIcons.house_fill 
-                              : CupertinoIcons.square_favorites_fill,
-                          size: 32, 
-                          color: AppColors.textLight.withAlpha(150),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              collection.collectionType == 'RESTAURANT' 
+                                  ? CupertinoIcons.house_fill 
+                                  : CupertinoIcons.square_favorites_fill,
+                              size: 44, 
+                              color: primaryColor,
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ),
+                // Indicators
                 if (!collection.isPublic)
                   Positioned(
-                    top: 8, right: 8,
+                    top: 12, right: 12,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(color: Colors.black.withAlpha(120), shape: BoxShape.circle),
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(color: Colors.black.withAlpha(140), shape: BoxShape.circle),
                       child: const Icon(CupertinoIcons.lock_fill, size: 10, color: CupertinoColors.white),
+                    ),
+                  ),
+                if (collection.isDefault)
+                  Positioned(
+                    top: 12, left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: primaryColor, borderRadius: BorderRadius.circular(8)),
+                      child: const Text('DEFAULT', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Text(
             collection.name,
             maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary, letterSpacing: -0.2),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.4),
           ),
-          const SizedBox(height: 2),
-          Text(
-            collection.collectionType == 'RESTAURANT' ? 'Restaurants' : 'Posts',
-            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
-          ),
+          const SizedBox(height: 4),
+          if (isShared && collection.owner != null)
+            Row(
+              children: [
+                Container(
+                  width: 18, height: 18,
+                  decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle, border: Border.all(color: AppColors.divider, width: 0.5)),
+                  child: ClipOval(
+                    child: (collection.owner!.imageUrl != null && collection.owner!.imageUrl!.isNotEmpty)
+                        ? Image.network(collection.owner!.imageUrl!, fit: BoxFit.cover, 
+                            errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 10, color: AppColors.textLight))
+                        : const Icon(CupertinoIcons.person_fill, size: 10, color: AppColors.textLight),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'by ${collection.owner!.name}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            )
+          else
+            Text(
+              collection.collectionType == 'RESTAURANT' ? 'Restaurant List' : 'Post Gallery',
+              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+            ),
         ],
       ),
     );
@@ -410,20 +516,38 @@ class CollectionScreenState extends State<CollectionScreen> {
 
   Widget _buildErrorState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text('Failed to load collections', style: TextStyle(color: AppColors.textSecondary)),
-          CupertinoButton(onPressed: _loadCollections, child: const Text('Try again')),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(CupertinoIcons.exclamationmark_triangle_fill, size: 48, color: CupertinoColors.systemRed),
+            const SizedBox(height: 20),
+            const Text('Connection Problem', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(height: 8),
+            Text(_error ?? 'Unable to fetch your collections', 
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 32),
+            CupertinoButton(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(16),
+              onPressed: _loadAllData, 
+              child: const Text('Try Reloading', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   void _showCreateCollectionSheet(BuildContext context) {
     final TextEditingController nameController = TextEditingController();
+    final FocusNode nameFocusNode = FocusNode();
     String type = 'POST';
+    bool isPublic = true;
     bool isCreating = false;
+    String? nameError;
 
     showCupertinoModalPopup(
       context: context,
@@ -431,12 +555,12 @@ class CollectionScreenState extends State<CollectionScreen> {
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) => Container(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom + 32,
-            top: 20, left: 24, right: 24,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 40,
+            top: 12, left: 24, right: 24,
           ),
           decoration: const BoxDecoration(
             color: CupertinoColors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -444,72 +568,134 @@ class CollectionScreenState extends State<CollectionScreen> {
             children: [
               Center(
                 child: Container(
-                  width: 36, height: 4,
-                  decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
+                  width: 40, height: 5,
+                  decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2.5)),
                 ),
               ),
+              const SizedBox(height: 32),
+              const Text('Create Collection', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -0.5)),
               const SizedBox(height: 24),
-              const Text('New Collection', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-              const SizedBox(height: 20),
-              CupertinoTextField(
-                controller: nameController,
-                placeholder: 'Collection Name',
-                autofocus: true,
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+              const Text('COLLECTION NAME', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textLight, letterSpacing: 0.5)),
+              const SizedBox(height: 8),
+              
+              // Animated container for border and shadow effect
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
                   color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: nameError != null 
+                        ? CupertinoColors.destructiveRed 
+                        : (nameFocusNode.hasFocus ? AppColors.primary : AppColors.divider.withAlpha(50)),
+                    width: nameError != null || nameFocusNode.hasFocus ? 1.5 : 1,
+                  ),
                 ),
-                style: const TextStyle(fontSize: 16),
+                child: CupertinoTextField(
+                  controller: nameController,
+                  focusNode: nameFocusNode,
+                  placeholder: 'e.g. Weekend Brunch Plans',
+                  autofocus: true,
+                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                  decoration: null,
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                  onChanged: (val) {
+                    if (nameError != null) setSheetState(() => nameError = null);
+                  },
+                ),
               ),
-              const SizedBox(height: 24),
-              const Text('What are you saving?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+              
+              if (nameError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 4),
+                  child: Text(
+                    nameError!,
+                    style: const TextStyle(color: CupertinoColors.destructiveRed, fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                ),
+
+              const SizedBox(height: 28),
+              const Text('TYPE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textLight, letterSpacing: 0.5)),
               const SizedBox(height: 12),
               Row(
                 children: [
                   _TypeOption(
-                    icon: CupertinoIcons.doc_text,
+                    icon: CupertinoIcons.doc_text_fill,
                     label: 'Posts',
                     isSelected: type == 'POST',
                     onTap: () => setSheetState(() => type = 'POST'),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 16),
                   _TypeOption(
-                    icon: CupertinoIcons.house,
-                    label: 'Restaurants',
+                    icon: CupertinoIcons.house_fill,
+                    label: 'Places',
                     isSelected: type == 'RESTAURANT',
                     onTap: () => setSheetState(() => type = 'RESTAURANT'),
                   ),
                 ],
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Public Collection', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      Text('Others can see this collection', style: TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                  CupertinoSwitch(
+                    value: isPublic,
+                    activeTrackColor: AppColors.primary,
+                    onChanged: (val) => setSheetState(() => isPublic = val),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 40),
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: isCreating ? null : () async {
                   final name = nameController.text.trim();
-                  if (name.isEmpty) return;
+                  if (name.isEmpty) {
+                    setSheetState(() => nameError = 'Please enter a collection name');
+                    nameFocusNode.requestFocus();
+                    return;
+                  }
+                  
                   setSheetState(() => isCreating = true);
                   try {
                     final user = Supabase.instance.client.auth.currentUser;
                     if (user != null) {
-                      await _collectionRepository.createCollection(userId: user.id, name: name, collectionType: type);
-                      if (context.mounted) { Navigator.pop(context); _loadCollections(); }
+                      await _collectionRepository.createCollection(
+                        userId: user.id, 
+                        name: name, 
+                        collectionType: type,
+                        isPublic: isPublic,
+                      );
+                      if (context.mounted) { Navigator.pop(context); _loadAllData(); }
                     }
                   } catch (e) {
-                    setSheetState(() => isCreating = false);
+                    setSheetState(() {
+                      isCreating = false;
+                      nameError = 'Failed to create. Please try again.';
+                    });
                   }
                 },
                 child: Container(
                   width: double.infinity,
-                  height: 50,
+                  height: 56,
                   decoration: BoxDecoration(
                     color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(25),
+                    borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(color: AppColors.primary.withAlpha(80), blurRadius: 15, offset: const Offset(0, 8)),
+                    ],
                   ),
                   alignment: Alignment.center,
                   child: isCreating 
                       ? const CupertinoActivityIndicator(color: CupertinoColors.white)
-                      : const Text('Create Collection', style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.w700)),
+                      : const Text('Create Collection', style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.w800, fontSize: 17)),
                 ),
               ),
             ],
@@ -534,18 +720,26 @@ class _TypeOption extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(vertical: 20),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary.withAlpha(20) : AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: isSelected ? AppColors.primary : Colors.transparent, width: 1.5),
+            color: isSelected ? AppColors.primary : AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: isSelected ? [
+              BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 12, offset: const Offset(0, 6))
+            ] : [],
           ),
           child: Column(
             children: [
-              Icon(icon, color: isSelected ? AppColors.primary : AppColors.textSecondary, size: 24),
-              const SizedBox(height: 8),
-              Text(label, style: TextStyle(fontSize: 13, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: isSelected ? AppColors.primary : AppColors.textSecondary)),
+              Icon(icon, color: isSelected ? CupertinoColors.white : AppColors.textSecondary, size: 28),
+              const SizedBox(height: 10),
+              Text(label, style: TextStyle(
+                fontSize: 14, 
+                fontWeight: FontWeight.w800, 
+                color: isSelected ? CupertinoColors.white : AppColors.textSecondary,
+                letterSpacing: 0.2
+              )),
             ],
           ),
         ),
@@ -560,21 +754,36 @@ class _CollectionSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 24, childAspectRatio: 0.85,
+        crossAxisCount: 2, crossAxisSpacing: 20, mainAxisSpacing: 28, childAspectRatio: 0.82,
       ),
       itemCount: 4,
       itemBuilder: (context, index) => const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Skeleton(borderRadius: 12)),
-          SizedBox(height: 12),
-          Skeleton(width: 100, height: 16),
-          SizedBox(height: 4),
-          Skeleton(width: 60, height: 12),
+          Expanded(child: Skeleton(borderRadius: 18)),
+          SizedBox(height: 14),
+          Skeleton(width: 120, height: 18, borderRadius: 4),
+          SizedBox(height: 6),
+          Skeleton(width: 80, height: 14, borderRadius: 4),
         ],
       ),
+    );
+  }
+}
+
+class Divider extends StatelessWidget {
+  final double height;
+  final Color color;
+
+  const Divider({super.key, required this.height, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      color: color,
     );
   }
 }

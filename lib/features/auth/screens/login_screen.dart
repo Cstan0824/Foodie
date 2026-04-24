@@ -12,6 +12,7 @@ import 'package:taste_spot/features/admin/screens/admin_screen.dart';
 import 'package:taste_spot/core/services/account_service.dart';
 import 'package:taste_spot/main.dart';
 import 'dart:convert';
+import 'package:taste_spot/core/widgets/feedback_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -49,7 +50,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   event == AuthChangeEvent.initialSession)) {
             final isNewUser = await _ensureProfileExists(session.user);
             
-            // Save account for multi-account support
             final profileResponse = await Supabase.instance.client
                 .from('User')
                 .select('name, username, role')
@@ -59,20 +59,20 @@ class _LoginScreenState extends State<LoginScreen> {
             String? avatarUrl;
             try {
               final imageResponse = await Supabase.instance.client
-                  .from('user_images')
+                  .from('UserImage')
                   .select('image_url')
                   .eq('user_Id', session.user.id)
                   .maybeSingle();
               avatarUrl = imageResponse?['image_url'];
               
               if (avatarUrl == null) {
-                // Fallback to UserImage
-                final fallback = await Supabase.instance.client
-                  .from('UserImage')
-                  .select('image_url')
-                  .eq('user_Id', session.user.id)
-                  .maybeSingle();
-                avatarUrl = fallback?['image_url'];
+                // Fallback to avatar_url on User table
+                final userResponse = await Supabase.instance.client
+                    .from('User')
+                    .select('avatar_url')
+                    .eq('user_Id', session.user.id)
+                    .maybeSingle();
+                avatarUrl = userResponse?['avatar_url'];
               }
             } catch (_) {}
 
@@ -92,9 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
             if (!mounted) return;
             if (isNewUser) {
               Navigator.of(context).pushReplacement(
-                CupertinoPageRoute(
-                  builder: (_) => const CompleteProfileScreen(),
-                ),
+                CupertinoPageRoute(builder: (_) => const CompleteProfileScreen()),
               );
             } else {
               if (role == 'admin') {
@@ -118,55 +116,24 @@ class _LoginScreenState extends State<LoginScreen> {
           .select()
           .eq('user_Id', user.id)
           .maybeSingle();
-
-      if (response == null) {
-        final provider = user.appMetadata['provider'];
-
-        if (provider == 'google' || provider == 'apple') {
-          final rawMeta = user.userMetadata;
-
-          final fallbackName =
-              (rawMeta?['full_name'] as String?) ??
-              (rawMeta?['name'] as String?) ??
-              ((user.email != null && user.email!.contains('@'))
-                  ? user.email!.split('@').first
-                  : 'New Foodie');
-
-          final fallbackUsername = await _buildUniqueUsername(fallbackName);
-
-          final avatarUrl =
-              (rawMeta?['avatar_url'] as String?) ??
-              (rawMeta?['picture'] as String?);
-
-          await Supabase.instance.client.from('User').insert({
-            'user_Id': user.id,
-            'name': fallbackName,
-            'username': fallbackUsername,
-            if (avatarUrl != null && avatarUrl.isNotEmpty)
-              'avatar_url': avatarUrl,
-          });
-          return true;
-        }
-      }
-      return false;
+      return response == null;
     } catch (e) {
-      print('Error ensuring profile exists: $e');
       return false;
     }
   }
 
-  Future<String> _buildUniqueUsername(String seed) async {
-    final sanitized = seed.trim().replaceAll(RegExp(r'\s+'), '').toLowerCase();
-    final base = sanitized.isEmpty ? 'foodie' : sanitized;
-    var candidate = base;
-
-    for (var i = 0; i < 20; i++) {
-      final available = await _authRepo.isUsernameAvailable(candidate);
-      if (available) return candidate;
-      candidate = '$base${1000 + Random().nextInt(9000)}';
+  String _mapAuthError(Object error) {
+    final message = error.toString();
+    if (message.contains('Invalid login credentials')) {
+      return 'Incorrect email or password. Please check your details and try again.';
     }
-
-    return '$base${DateTime.now().millisecondsSinceEpoch % 100000}';
+    if (message.contains('over_email_send_rate_limit')) {
+      return 'Too many attempts. Please wait a few minutes before trying again.';
+    }
+    if (message.contains('network_error')) {
+      return 'Connection problem. Please check your internet and try again.';
+    }
+    return 'Something went wrong when trying to sign in. Please try again later.';
   }
 
   Future<void> _login() async {
@@ -174,7 +141,11 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text;
 
     if (identifier.isEmpty || password.isEmpty) {
-      _showErrorAlert('Please enter your email/phone and password.');
+      FeedbackDialog.show(
+        context: context,
+        title: 'Sign In',
+        message: 'Please enter both your email and password.',
+      );
       return;
     }
 
@@ -184,10 +155,10 @@ class _LoginScreenState extends State<LoginScreen> {
       await _authRepo.signIn(identifier: identifier, password: password);
     } on AuthException catch (e) {
       if (!mounted) return;
-      _showErrorAlert(e.message);
+      FeedbackDialog.show(context: context, title: 'Sign In Failed', message: _mapAuthError(e));
     } catch (e) {
       if (!mounted) return;
-      _showErrorAlert('An unexpected error occurred. Please try again.');
+      FeedbackDialog.show(context: context, title: 'Sign In Problem', message: _mapAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -199,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await _authRepo.signInWithGoogle();
     } catch (e) {
       if (!mounted) return;
-      _showErrorAlert('An error occurred during Google Login.');
+      FeedbackDialog.show(context: context, title: 'Google Sign In', message: _mapAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -211,26 +182,10 @@ class _LoginScreenState extends State<LoginScreen> {
       await _authRepo.signInWithApple();
     } catch (e) {
       if (!mounted) return;
-      _showErrorAlert('An error occurred during Apple Login.');
+      FeedbackDialog.show(context: context, title: 'Apple Sign In', message: _mapAuthError(e));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showErrorAlert(String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('Login Error'),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('OK'),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -249,29 +204,20 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: CupertinoColors.white,
       child: Stack(
         children: [
-          // Background soft gradient
           Positioned(
             top: -100,
             right: -100,
             child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.primary.withAlpha(15),
-              ),
+              width: 300, height: 300,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.primary.withAlpha(15)),
             ),
           ),
           Positioned(
             bottom: -50,
             left: -50,
             child: Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: CupertinoColors.activeBlue.withAlpha(10),
-              ),
+              width: 200, height: 200,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: CupertinoColors.activeBlue.withAlpha(10)),
             ),
           ),
           
@@ -289,7 +235,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         children: [
                           const SizedBox(height: 50),
 
-                          // App Branding
                           Center(
                             child: Column(
                               children: [
@@ -299,37 +244,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                     color: AppColors.primary,
                                     borderRadius: BorderRadius.circular(24),
                                     boxShadow: [
-                                      BoxShadow(
-                                        color: AppColors.primary.withAlpha(80),
-                                        blurRadius: 20,
-                                        offset: const Offset(0, 8),
-                                      ),
+                                      BoxShadow(color: AppColors.primary.withAlpha(80), blurRadius: 20, offset: const Offset(0, 8)),
                                     ],
                                   ),
-                                  child: const Icon(
-                                    CupertinoIcons.flame_fill,
-                                    color: CupertinoColors.white,
-                                    size: 40,
-                                  ),
+                                  child: const Icon(CupertinoIcons.flame_fill, color: CupertinoColors.white, size: 40),
                                 ),
                                 const SizedBox(height: 24),
                                 const Text(
                                   'Taste Spot',
-                                  style: TextStyle(
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w900,
-                                    color: AppColors.textPrimary,
-                                    letterSpacing: -1.2,
-                                  ),
+                                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -1.2),
                                 ),
                                 const SizedBox(height: 8),
                                 const Text(
                                   'Discover your next favorite flavor',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    color: AppColors.textSecondary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
+                                  style: TextStyle(fontSize: 15, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
                                 ),
                               ],
                             ),
@@ -337,7 +265,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           
                           const SizedBox(height: 60),
 
-                          // Input Fields
                           _buildModernTextField(
                             controller: _emailController,
                             focusNode: _emailFocus,
@@ -361,20 +288,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               onPressed: () => Navigator.of(context).push(
                                 CupertinoPageRoute(builder: (_) => const ForgotPasswordScreen()),
                               ),
-                              child: const Text(
-                                'Forgot Password?',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
+                              child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700)),
                             ),
                           ),
                           
                           const SizedBox(height: 24),
 
-                          // Login Button
                           CupertinoButton(
                             padding: EdgeInsets.zero,
                             onPressed: _isLoading ? null : _login,
@@ -384,11 +303,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 color: AppColors.primary,
                                 borderRadius: BorderRadius.circular(27),
                                 boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primary.withAlpha(60),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 6),
-                                  ),
+                                  BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 15, offset: const Offset(0, 6)),
                                 ],
                               ),
                               child: Center(
@@ -396,12 +311,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ? const CupertinoActivityIndicator(color: CupertinoColors.white)
                                     : const Text(
                                         'Sign In',
-                                        style: TextStyle(
-                                          color: CupertinoColors.white,
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: -0.2,
-                                        ),
+                                        style: TextStyle(color: CupertinoColors.white, fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2),
                                       ),
                               ),
                             ),
@@ -409,7 +319,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           
                           const SizedBox(height: 40),
 
-                          // Social Login
                           Row(
                             children: [
                               Expanded(child: Container(height: 1, color: AppColors.divider)),
@@ -443,7 +352,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                           const Spacer(),
                           
-                          // Sign up link
                           Center(
                             child: CupertinoButton(
                               onPressed: () => Navigator.of(context).push(
@@ -463,27 +371,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                          
-                          const SizedBox(height: 16),
-                          
-                          // Admin Entry
-                          Center(
-                            child: CupertinoButton(
-                              onPressed: () => Navigator.of(context).push(
-                                CupertinoPageRoute(builder: (_) => AdminScreen()),
-                              ),
-                              child: Text(
-                                'ADMIN ACCESS',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textLight.withAlpha(150),
-                                  letterSpacing: 1.5,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 24),
                         ],
                       ),
                     ),
@@ -512,10 +400,7 @@ class _LoginScreenState extends State<LoginScreen> {
       decoration: BoxDecoration(
         color: hasFocus ? CupertinoColors.white : AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: hasFocus ? AppColors.primary : Colors.transparent,
-          width: 1.5,
-        ),
+        border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 1.5),
         boxShadow: hasFocus ? [
           BoxShadow(color: AppColors.primary.withAlpha(15), blurRadius: 10, offset: const Offset(0, 4)),
         ] : [],
@@ -552,11 +437,7 @@ class _LoginScreenState extends State<LoginScreen> {
           color: CupertinoColors.white,
           shape: BoxShape.circle,
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(10),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-            ),
+            BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 15, offset: const Offset(0, 5)),
           ],
           border: Border.all(color: AppColors.divider, width: 0.5),
         ),

@@ -64,12 +64,17 @@ class AuthRepository {
   Future<bool> isEmailRegistered(String email) async {
     final normalized = email.trim().toLowerCase();
     if (normalized.isEmpty) return false;
-    final response = await _supabase
-        .from('User')
-        .select('user_Id')
-        .ilike('email', normalized)
-        .limit(1);
-    return (response as List<dynamic>).isNotEmpty;
+    
+    try {
+      // Use the RPC function we created in Supabase
+      final bool exists = await _supabase.rpc('check_email_exists', params: {'email_to_check': normalized});
+      return exists;
+    } catch (e) {
+      // If RPC fails (e.g. not created yet), return false immediately to prevent UI hang.
+      // Do NOT fallback to User table as it lacks the email column.
+      print('Email check skipped: Ensure "check_email_exists" RPC is created in Supabase. Error: $e');
+      return false; 
+    }
   }
 
   // Sign Up
@@ -77,25 +82,30 @@ class AuthRepository {
     required String email,
     required String password,
     required String name,
+    String? emailRedirectTo,
   }) async {
+    // 1. Double check username availability
     final usernameAvailable = await isUsernameAvailable(name);
     if (!usernameAvailable) {
       throw Exception('USERNAME_TAKEN');
     }
 
+    // 2. Auth signup
     final response = await _supabase.auth.signUp(
       email: email,
       password: password,
+      emailRedirectTo: emailRedirectTo ?? 'io.supabase.tastespot://login-callback/',
     );
 
-    // If signup is successful and we have a user, create their profile
+    // 3. Create profile if auth was successful
     if (response.user != null) {
       try {
         await _supabase.from('User').insert({
           'user_Id': response.user!.id,
           'name': name,
-          'username': name,
-          'email': email.trim().toLowerCase(),
+          'username': name.toLowerCase().trim(),
+          // We removed 'email' here because it belongs to auth.users, not public.User
+          'password': 'SUPABASE_AUTH_USER', 
         });
 
         // Create default collections
@@ -106,23 +116,22 @@ class AuthRepository {
             'name': 'Saved Posts',
             'is_public': false,
             'collection_type': 'POST',
+            'is_default': true,
           },
           {
             'collection_Id': const Uuid().v4(),
             'user_Id': response.user!.id,
-            'name': 'Restaurant',
+            'name': 'Saved Restaurants',
             'is_public': false,
-            'collection_type': 'POST',
+            'collection_type': 'RESTAURANT',
+            'is_default': true,
           }
         ]);
       } on PostgrestException catch (e) {
-        if (e.code == '23505' &&
-            (e.message.contains('User_username_key') ||
-                (e.details?.toString().contains('(username)=') ?? false))) {
-          throw Exception('USERNAME_TAKEN');
-        }
+        print('Profile creation error: ${e.message}');
+        if (e.code == '23505') throw Exception('USERNAME_TAKEN');
         throw Exception('PROFILE_CREATE_FAILED');
-      } catch (_) {
+      } catch (e) {
         throw Exception('PROFILE_CREATE_FAILED');
       }
     }
@@ -155,5 +164,37 @@ class AuthRepository {
       email: email,
       token: token,
     );
+  }
+
+  // Verify Recovery OTP (for Password Reset)
+  Future<AuthResponse> verifyRecoveryOtp({
+    required String email,
+    required String token,
+  }) async {
+    return await _supabase.auth.verifyOTP(
+      type: OtpType.recovery,
+      email: email,
+      token: token,
+    );
+  }
+
+  // Update Password
+  Future<UserResponse> updatePassword(String newPassword) async {
+    return await _supabase.auth.updateUser(
+      UserAttributes(password: newPassword),
+    );
+  }
+
+  // Delete Account
+  Future<void> deleteAccount() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
+    // 1. Delete the public profile first
+    await _supabase.from('User').delete().eq('user_Id', user.id);
+
+    // 2. Sign out (The actual auth user deletion usually requires an Edge Function or Admin API)
+    // For this prototype, we'll delete the profile and sign out.
+    await _supabase.auth.signOut();
   }
 }
