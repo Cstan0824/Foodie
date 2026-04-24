@@ -10,7 +10,7 @@ class ProfileRepository {
   Future<Profile?> getProfile(String userId) async {
     final response = await _supabase
         .from('User')
-        .select('user_Id, name, username, bio, created_At')
+        .select('user_Id, name, username, bio, role, created_At')
         .eq('user_Id', userId)
         .maybeSingle();
 
@@ -34,30 +34,57 @@ class ProfileRepository {
     String userId,
     Uint8List imageBytes,
   ) async {
-    // Keep one image row per user by reusing userId as image_id.
     try {
-      await _supabase.from('UserImage').upsert({
+      final fileName = 'avatar_$userId.png';
+      final path = 'avatars/$fileName';
+
+      // 1. Upload to Supabase Storage bucket 'user_images'
+      await _supabase.storage.from('user_images').uploadBinary(
+            path,
+            imageBytes,
+            fileOptions: const FileOptions(upsert: true, contentType: 'image/png'),
+          );
+
+      // 2. Get the public URL
+      final imageUrl = _supabase.storage.from('user_images').getPublicUrl(path);
+
+      // 3. Update the user_images table with the new URL
+      await _supabase.from('user_images').upsert({
         'image_id': userId,
         'user_Id': userId,
-        'profile_image': imageBytes,
+        'image_url': imageUrl,
       }, onConflict: 'image_id');
-      return "Success";
+
+      return imageUrl;
     } catch (e) {
       print('Image Upload Error: $e');
       return null;
     }
   }
 
-  Future<Uint8List?> getProfileImage(String userId) async {
-    final response = await _supabase
-        .from('UserImage')
-        .select('profile_image')
-        .eq('user_Id', userId)
-        .maybeSingle();
+  Future<String?> getProfileImageUrl(String userId) async {
+    try {
+      final response = await _supabase
+          .from('user_images')
+          .select('image_url')
+          .eq('user_Id', userId)
+          .maybeSingle();
 
-    if (response == null || response['profile_image'] == null) return null;
-    // Assuming binary data returned as List<int>
-    return Uint8List.fromList(List<int>.from(response['profile_image']));
+      if (response == null || response['image_url'] == null) return null;
+      return response['image_url'] as String;
+    } catch (e) {
+      // If user_images fails, try UserImage (fallback for schema variations)
+      try {
+        final fallback = await _supabase
+            .from('UserImage')
+            .select('image_url')
+            .eq('user_Id', userId)
+            .maybeSingle();
+        return fallback?['image_url'] as String?;
+      } catch (_) {
+        return null;
+      }
+    }
   }
 
   Future<int> getFollowersCount(String userId) async {
@@ -79,7 +106,7 @@ class ProfileRepository {
   Future<List<Profile>> getFollowers(String userId) async {
     final response = await _supabase
         .from('Follower')
-        .select('follower_Id, User!Follower_follower_Id_fkey(user_Id, name, username, bio, created_At)')
+        .select('follower_Id, User!Follower_follower_Id_fkey(user_Id, name, username, bio, role, created_At)')
         .eq('following_Id', userId);
 
     return (response as List).map((row) {
@@ -91,7 +118,7 @@ class ProfileRepository {
   Future<List<Profile>> getFollowing(String userId) async {
     final response = await _supabase
         .from('Follower')
-        .select('following_Id, User!Follower_following_Id_fkey(user_Id, name, username, bio, created_At)')
+        .select('following_Id, User!Follower_following_Id_fkey(user_Id, name, username, bio, role, created_At)')
         .eq('follower_Id', userId);
 
     return (response as List).map((row) {
