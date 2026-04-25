@@ -481,14 +481,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     return null;
   }
 
-  String get _rating {
+  String? get _ratingText {
     if (_detail != null) {
-      return _detail!.restaurant.rating?.toString() ?? '-';
+      final rating = _detail!.restaurant.rating;
+      return rating == null ? null : rating.toString();
     }
     if (widget.restaurant != null) {
-      return widget.restaurant!['rating']?.toString() ?? '-';
+      final raw = widget.restaurant!['rating']?.toString().trim();
+      return raw == null || raw.isEmpty || raw == '-' ? null : raw;
     }
-    return '-';
+    return null;
   }
 
   List<String> get _images {
@@ -585,6 +587,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     final descriptionText =
         _description ?? 'No description available for this place yet.';
     final images = _images;
+    final ratingText = _ratingText;
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
@@ -699,26 +702,28 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                         children: [
                           Row(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  _rating,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
+                              if (ratingText != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    ratingText,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
-                              ),
                               if (_distanceText != null) ...[
-                                const SizedBox(width: 8),
+                                if (ratingText != null)
+                                  const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
@@ -871,12 +876,23 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                     borderRadius: BorderRadius.circular(10),
                                     onPressed: () =>
                                         _openExternalUrl(_mapsUrl!),
-                                    child: const Text(
-                                      'Open in Maps',
-                                      style: TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          CupertinoIcons.map,
+                                          size: 16,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Open in Maps',
+                                          style: TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 if (_websiteUrl != null)
@@ -889,12 +905,23 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                     borderRadius: BorderRadius.circular(10),
                                     onPressed: () =>
                                         _openExternalUrl(_websiteUrl!),
-                                    child: const Text(
-                                      'Visit their website',
-                                      style: TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          CupertinoIcons.globe,
+                                          size: 16,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Visit their website',
+                                          style: TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                               ],
