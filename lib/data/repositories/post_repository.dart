@@ -35,7 +35,9 @@ class PostRepository {
           .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
           .toList();
     } on PostgrestException catch (e) {
-      print('❌ [PostRepository.fetchDiscoverPosts] ERROR: ${e.code} - ${e.message}');
+      print(
+        '❌ [PostRepository.fetchDiscoverPosts] ERROR: ${e.code} - ${e.message}',
+      );
       print('📝 Hint: ${e.hint}');
       print('📊 Details: ${e.details}');
       rethrow;
@@ -104,9 +106,7 @@ class PostRepository {
   }
 
   /// Fetches posts the user has archived (soft-deleted) — isRemoved = true.
-  Future<List<PostModel>> fetchArchivedPosts({
-    required String userId,
-  }) async {
+  Future<List<PostModel>> fetchArchivedPosts({required String userId}) async {
     final response = await SupabaseService.client
         .from('Post')
         .select(publicPostSelect)
@@ -159,10 +159,9 @@ class PostRepository {
         .eq('isBlocked', false)
         .eq('isPending', false);
 
-    final response = await (includeRemoved
-            ? baseQuery
-            : baseQuery.eq('isRemoved', false))
-        .maybeSingle();
+    final response =
+        await (includeRemoved ? baseQuery : baseQuery.eq('isRemoved', false))
+            .maybeSingle();
 
     if (response == null) return null;
     return PostModel.fromJson(response);
@@ -218,14 +217,17 @@ class PostRepository {
 
       // Best-effort: clean up Storage blobs (swallow errors — orphaned blobs are
       // not fatal and can be cleaned up by a maintenance job later).
-      final pathsToDelete = deletedImageUrls.map((url) {
-        final segments = Uri.parse(url).pathSegments;
-        final idx = segments.indexOf('post_images');
-        if (idx != -1 && idx + 1 < segments.length) {
-          return segments.sublist(idx + 1).join('/');
-        }
-        return '';
-      }).where((p) => p.isNotEmpty).toList();
+      final pathsToDelete = deletedImageUrls
+          .map((url) {
+            final segments = Uri.parse(url).pathSegments;
+            final idx = segments.indexOf('post_images');
+            if (idx != -1 && idx + 1 < segments.length) {
+              return segments.sublist(idx + 1).join('/');
+            }
+            return '';
+          })
+          .where((p) => p.isNotEmpty)
+          .toList();
 
       if (pathsToDelete.isNotEmpty) {
         try {
@@ -237,11 +239,14 @@ class PostRepository {
     }
 
     // 3. Only now update the Post row — all image work has already succeeded.
-    await SupabaseService.client.from('Post').update({
-      'title': title,
-      'caption': caption,
-      'restaurant_Id': restaurantId,
-    }).eq('post_Id', postId);
+    await SupabaseService.client
+        .from('Post')
+        .update({
+          'title': title,
+          'caption': caption,
+          'restaurant_Id': restaurantId,
+        })
+        .eq('post_Id', postId);
 
     if (postImageRecords.isNotEmpty) {
       await SupabaseService.client.from('Post_Image').insert(postImageRecords);
@@ -256,10 +261,7 @@ class PostRepository {
 
     final response = await SupabaseService.client
         .from('Post')
-        .update({
-          'isRemoved': true,
-          'visible_to_owner': true,
-        })
+        .update({'isRemoved': true, 'visible_to_owner': true})
         .eq('post_Id', postId)
         .eq('user_Id', currentUserId)
         .select('post_Id')
@@ -276,10 +278,7 @@ class PostRepository {
 
     final response = await SupabaseService.client
         .from('Post')
-        .update({
-          'isRemoved': false,
-          'visible_to_owner': true,
-        })
+        .update({'isRemoved': false, 'visible_to_owner': true})
         .eq('post_Id', postId)
         .eq('user_Id', currentUserId)
         .select('post_Id')
@@ -330,15 +329,29 @@ class PostRepository {
   /// Long term this should move to Supabase-generated UUIDs via a server-side flow.
   Future<String> createPost({
     required String userId,
-    required String restaurantId,
+    String? restaurantId,
+    String? restaurantApprovalId,
     required String title,
     required String caption,
     List<String> hashtags = const [],
     List<Uint8List> images = const [],
   }) async {
-    if (restaurantId.trim().isEmpty) {
-      throw Exception('A post must be tied to a restaurant.');
+    final hasRestaurant =
+        restaurantId != null && restaurantId.trim().isNotEmpty;
+    final hasApproval =
+        restaurantApprovalId != null && restaurantApprovalId.trim().isNotEmpty;
+
+    if (!hasRestaurant && !hasApproval) {
+      throw Exception(
+        'A post must be tied to a restaurant or pending restaurant approval.',
+      );
     }
+    if (hasRestaurant && hasApproval) {
+      throw Exception(
+        'Post cannot use both an approved restaurant and pending restaurant approval.',
+      );
+    }
+
     final normalizedHashtags = _normalizeAndValidateHashtags(hashtags);
 
     final postId = _generateUUID();
@@ -366,13 +379,14 @@ class PostRepository {
     await SupabaseService.client.from('Post').insert({
       'post_Id': postId,
       'user_Id': userId,
-      'restaurant_Id': restaurantId,
+      'restaurant_Id': hasRestaurant ? restaurantId : null,
+      'restaurant_approval_id': hasApproval ? restaurantApprovalId : null,
       'title': title,
       'caption': caption,
       'isRemoved': false,
       'visible_to_owner': true,
       'isBlocked': false,
-      'isPending': false,
+      'isPending': hasApproval,
       'likeCount': 0,
       'saveCount': 0,
     });
@@ -416,8 +430,9 @@ class PostRepository {
         .range(0, limit - 1);
 
     final normalizedResults = HashtagUtils.normalizeAll(
-      (response as List<dynamic>)
-          .map((row) => (row as Map<String, dynamic>)['name']?.toString() ?? ''),
+      (response as List<dynamic>).map(
+        (row) => (row as Map<String, dynamic>)['name']?.toString() ?? '',
+      ),
     ).where((tag) => tag.contains(normalizedQuery)).toList();
 
     normalizedResults.sort((a, b) {
@@ -456,7 +471,9 @@ class PostRepository {
       return;
     }
 
-    await SupabaseService.client.from('hashtag').upsert(
+    await SupabaseService.client
+        .from('hashtag')
+        .upsert(
           hashtags.map((tag) => {'name': tag}).toList(),
           onConflict: 'name',
         );
@@ -476,12 +493,16 @@ class PostRepository {
       }
     }
 
-    final missingTags = hashtags.where((tag) => !hashtagIdsByName.containsKey(tag));
+    final missingTags = hashtags.where(
+      (tag) => !hashtagIdsByName.containsKey(tag),
+    );
     if (missingTags.isNotEmpty) {
       throw Exception('Failed to save hashtags.');
     }
 
-    await SupabaseService.client.from('post_hashtag').insert(
+    await SupabaseService.client
+        .from('post_hashtag')
+        .insert(
           hashtags
               .map(
                 (tag) => {
@@ -525,12 +546,12 @@ class PostRepository {
           .select('user_Id')
           .eq('post_Id', postId)
           .maybeSingle();
-      
+
       final postOwnerId = postData?['user_Id'] as String?;
       if (postOwnerId != null) {
         await _notifRepo.notifyLike(
-          likerId: userId, 
-          postOwnerId: postOwnerId, 
+          likerId: userId,
+          postOwnerId: postOwnerId,
           postId: postId,
         );
       }

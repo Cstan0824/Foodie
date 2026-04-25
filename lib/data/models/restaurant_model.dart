@@ -1,7 +1,10 @@
+
 class RestaurantModel {
   final String restaurantId;
   final String name;
   final String? mainCuisineId;
+  final String? description;
+  final String? priceRange;
   final String? address;
   final double? latitude;
   final double? longitude;
@@ -11,6 +14,7 @@ class RestaurantModel {
   final String? infoUrl;
   final bool isDisabled;
   final double? rating;
+
   /// this is a list of image URLs from the restaurant_image table, not the main restaurant table, so it can be empty
   final List<String> imageUrls;
 
@@ -18,6 +22,8 @@ class RestaurantModel {
     required this.restaurantId,
     required this.name,
     this.mainCuisineId,
+    this.description,
+    this.priceRange,
     this.address,
     this.latitude,
     this.longitude,
@@ -43,6 +49,8 @@ class RestaurantModel {
           (mainCuisine?['desc'] as String?) ??
           json['main_cuisine_id']?.toString() ??
           json['categoryCuisine'] as String?,
+      description: json['description'] as String?,
+      priceRange: json['price_range'] as String?,
       address: json['address'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
@@ -64,9 +72,7 @@ class RestaurantModel {
           final bCover = b['isCover'] == true ? 0 : 1;
           return aCover.compareTo(bCover);
         });
-        return images
-            .map((img) => img['image_url'] as String)
-            .toList();
+        return images.map((img) => img['image_url'] as String).toList();
       }(),
     );
   }
@@ -76,6 +82,8 @@ class RestaurantModel {
       'restaurant_Id': restaurantId,
       'restaurant_name': name,
       'main_cuisine_id': mainCuisineId,
+      'description': description,
+      'price_range': priceRange,
       'address': address,
       'latitude': latitude,
       'longitude': longitude,

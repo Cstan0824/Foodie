@@ -1,5 +1,3 @@
-
-
 # Search Suggestions Design Plan
 
 ## Goal
@@ -156,6 +154,39 @@ Optional later:
 
 ---
 
+## Suggestion Type 2B — Hashtag suggestions
+These are quick hashtag-based query suggestions.
+
+Examples:
+- `#sushi`
+- `#ramen`
+- `#omakase`
+
+### Purpose
+Help the user quickly search posts by hashtag when they are thinking in topic/tag form rather than full restaurant or sentence form.
+
+### Behavior
+When the user types a normal query such as:
+- `sushi`
+- `ramen`
+- `dessert`
+
+Taste Spot may offer a hashtag suggestion by simply prefixing the normalized query with `#`.
+
+Examples:
+- input: `sushi` -> hashtag suggestion: `#sushi`
+- input: `ramen` -> hashtag suggestion: `#ramen`
+
+This suggestion is not necessarily pulled from a separate hashtag table in the first version.
+It can be generated from the typed query itself.
+
+### First-version recommendation
+For the first version, it is acceptable to always include one hashtag suggestion when the typed query is non-empty and meaningful.
+
+This hashtag suggestion should appear as one of the compact suggestion rows, not as a special separate UI block.
+
+---
+
 ## Suggestion Type 3 — Place/address driven suggestions
 This is optional for later.
 
@@ -172,9 +203,10 @@ If implemented later, it can be derived from:
 
 # First-Version Recommendation
 
-For the first version, implement only:
+For the first version, implement:
 - restaurant suggestions
 - post title suggestions
+- one generated hashtag suggestion
 
 This is already enough to make the typed experience useful.
 
@@ -183,7 +215,7 @@ That means:
 - no complicated NLP extraction
 - no heavy inference logic
 
-Just real data-backed suggestions from the database.
+Just real data-backed suggestions from the database, plus one lightweight generated hashtag suggestion.
 
 ---
 
@@ -263,8 +295,9 @@ Show about:
 - **6 suggestions total**
 
 ### Recommended distribution
-- up to 3 restaurant suggestions
-- up to 3 post title suggestions
+- up to 2 or 3 restaurant suggestions
+- up to 2 or 3 post title suggestions
+- up to 1 hashtag suggestion
 
 This is enough to feel helpful without making the list too long.
 
@@ -338,6 +371,9 @@ Do NOT use the full heavy search query on every keystroke.
 
 Instead, implement a dedicated lightweight repository method for typed suggestions.
 
+In addition, hashtag suggestion does not need a heavy repository query in the first version.
+It can be generated cheaply from the user’s typed query.
+
 ## Recommended repository method
 Something like:
 - `fetchSearchSuggestions(String query)`
@@ -359,7 +395,7 @@ Example conceptual structure:
 
 ```text
 SearchSuggestion
-- type: restaurant | post
+- type: restaurant | post | hashtag
 - displayText: String
 - queryText: String
 - restaurantId: optional
@@ -367,7 +403,7 @@ SearchSuggestion
 ```
 
 ## Meaning
-- `type` tells the UI what icon/style to use
+- `type` tells the UI what icon/style to use, including hashtag-style suggestion rows
 - `displayText` is what the user sees in the row
 - `queryText` is what gets inserted into the search bar / submitted
 - `restaurantId` / `postId` are optional future hooks if later needed
@@ -392,6 +428,13 @@ So suggestions are still query shortcuts, not direct detail-page deep links.
 ## Step 2 — Short-query guard
 If query length < 2:
 - return empty suggestions
+
+## Step 2B — Generate hashtag suggestion
+If the normalized query is meaningful and non-empty:
+- generate one hashtag suggestion like `#<normalized query>`
+- example: `sushi` -> `#sushi`
+
+This does not need a heavy database lookup in the first version.
 
 ## Step 3 — Fetch restaurant candidates
 Query a limited set of matching restaurants using:
@@ -438,6 +481,9 @@ When the user taps a suggestion:
 5. navigate to SearchResultScreen
 
 This keeps behavior consistent with the rest of ExploreScreen.
+
+This same behavior also applies to hashtag suggestions.
+If the user taps `#sushi`, the search bar should be populated with `#sushi`, then submitted normally.
 
 ---
 
@@ -543,6 +589,8 @@ First version can succeed with only:
 - debounce
 - local screen state
 
+A lightweight generated hashtag suggestion is acceptable and useful in the first version.
+
 ---
 
 # Recommended First-Version Implementation Plan
@@ -561,6 +609,7 @@ Add lightweight method:
 This method should return:
 - top restaurant suggestions
 - top post-title suggestions
+- one hashtag suggestion generated from the typed query
 
 ## UI
 Replace fake generated suggestions like:
@@ -585,6 +634,7 @@ TYPE -> SHORT PAUSE -> QUERY DATABASE -> SHOW REAL SUGGESTIONS
 ### Suggestion types
 - restaurant suggestions
 - post title suggestions
+- hashtag suggestion
 
 ### Display style
 - one mixed compact list with icons
@@ -595,3 +645,52 @@ TYPE -> SHORT PAUSE -> QUERY DATABASE -> SHOW REAL SUGGESTIONS
 - navigate to results
 
 This is the best first-version suggestion design for your current project stage.
+
+---
+
+# Hashtag-Aware Search Result Behavior
+
+Hashtag suggestions should also affect how the final search result page behaves.
+
+## If query starts with `#`
+When the final submitted query starts with `#`, Taste Spot should treat it as a hashtag-intent query.
+
+Examples:
+- `#sushi`
+- `#ramen`
+- `#omakase`
+
+## Expected first-version behavior
+When the query starts with `#`:
+1. normalize the hashtag text
+   - example: `#Sushi` -> `sushi`
+2. check posts for exact hashtag matches
+3. if exact hashtag matches exist:
+   - prioritize those posts first
+   - allow them to outrank ordinary text matches
+4. if no exact hashtag matches exist:
+   - continue with the normal search behavior
+
+## Restaurant preview behavior for hashtag queries
+Restaurant preview should remain strict.
+
+However, if the hashtag query already has strong exact hashtag post matches, restaurant preview should not take priority over those hashtag-matched posts.
+
+In other words:
+- exact hashtag post matches first
+- restaurant preview should not override them
+
+## Suggestion-to-result consistency
+This keeps the behavior consistent:
+- user types `sushi`
+- user sees suggestion `#sushi`
+- user taps `#sushi`
+- result page prioritizes posts with exact hashtag `sushi`
+- if none exist, normal search flow still works
+
+## First-version scope
+For the first version, this hashtag-aware result behavior is enough:
+- exact hashtag match gets priority in post ranking
+- if none exist, fall back to normal search rules
+
+This does not require a fully separate hashtag-only search system yet.

@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/collection_model.dart';
 import 'package:taste_spot/data/models/post_model.dart';
+import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
+import 'package:taste_spot/features/restaurant/screens/restaurant_detail_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/data/repositories/collection_repository.dart';
 import 'package:taste_spot/data/models/profile_model.dart';
@@ -25,6 +27,7 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
   String _searchQuery = '';
 
   List<PostModel> _posts = [];
+  List<RestaurantModel> _restaurants = [];
   bool _isLoading = true;
   bool _isCloning = false;
   String? _error;
@@ -45,7 +48,11 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
         _searchQuery = _searchController.text;
       });
     });
-    _loadPosts();
+    if (widget.collection.collectionType == 'RESTAURANT') {
+      _loadRestaurants();
+    } else {
+      _loadPosts();
+    }
   }
 
   @override
@@ -114,6 +121,48 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
     return _posts.where((p) =>
         p.title.toLowerCase().contains(lowerQuery) ||
         p.restaurantName.toLowerCase().contains(lowerQuery)).toList();
+  }
+
+  Future<void> _loadRestaurants() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final restaurants = await _collectionRepository.getRestaurantsInCollection(widget.collection.collectionId);
+
+      if (mounted) {
+        setState(() {
+          _restaurants = restaurants;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  List<RestaurantModel> get _filteredRestaurants {
+    if (_searchQuery.isEmpty) return _restaurants;
+    final lowerQuery = _searchQuery.toLowerCase();
+    return _restaurants.where((r) =>
+        r.name.toLowerCase().contains(lowerQuery) ||
+        (r.mainCuisineId?.toLowerCase().contains(lowerQuery) ?? false) ||
+        (r.address?.toLowerCase().contains(lowerQuery) ?? false)).toList();
+  }
+
+  Future<void> _refreshCollection() async {
+    if (widget.collection.collectionType == 'RESTAURANT') {
+      await _loadRestaurants();
+    } else {
+      await _loadPosts();
+    }
   }
 
   Future<void> _cloneCollection() async {
@@ -304,65 +353,306 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
   }
 
   Widget _buildGrid() {
+    final isRestaurant = widget.collection.collectionType == 'RESTAURANT';
+
     if (_isLoading) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 0.75,
+      if (isRestaurant) {
+        return CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
-          itemCount: 4,
-          itemBuilder: (context, index) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Expanded(child: Skeleton(borderRadius: 12)),
-              const SizedBox(height: 8),
-              const Skeleton(width: 100, height: 14),
-            ],
-          ),
+          slivers: [
+            CupertinoSliverRefreshControl(onRefresh: _refreshCollection),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.divider, width: 0.6),
+                      ),
+                      child: const Row(
+                        children: [
+                          Skeleton(width: 56, height: 56, borderRadius: 8),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Skeleton(width: 120, height: 14),
+                                SizedBox(height: 6),
+                                Skeleton(width: 180, height: 12),
+                                SizedBox(height: 8),
+                                Skeleton(width: 60, height: 18, borderRadius: 99),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  childCount: 6,
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
         ),
+        slivers: [
+          CupertinoSliverRefreshControl(onRefresh: _refreshCollection),
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.75,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: Skeleton(borderRadius: 12)),
+                    SizedBox(height: 8),
+                    Skeleton(width: 100, height: 14),
+                  ],
+                ),
+                childCount: 4,
+              ),
+            ),
+          ),
+        ],
       );
     }
 
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Failed to load posts',
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
+        ),
+        slivers: [
+          CupertinoSliverRefreshControl(onRefresh: _refreshCollection),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isRestaurant ? 'Failed to load restaurants' : 'Failed to load posts',
+                    style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 8),
+                  CupertinoButton(
+                    onPressed: isRestaurant ? _loadRestaurants : _loadPosts,
+                    child: const Text('Try again'),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            CupertinoButton(
-              onPressed: _loadPosts,
-              child: const Text('Try again'),
+          ),
+        ],
+      );
+    }
+
+    if (isRestaurant) {
+      final restaurantsToShow = _filteredRestaurants;
+
+      if (restaurantsToShow.isEmpty) {
+        return CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          slivers: [
+            CupertinoSliverRefreshControl(onRefresh: _refreshCollection),
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(CupertinoIcons.building_2_fill, size: 48, color: AppColors.surface),
+                    const SizedBox(height: 16),
+                    Text(
+                      _restaurants.isEmpty ? 'No saved restaurants yet' : 'No matches found',
+                      style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
+        );
+      }
+
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
         ),
+        slivers: [
+          CupertinoSliverRefreshControl(onRefresh: _refreshCollection),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final r = restaurantsToShow[index];
+                  final coverUrl = r.imageUrls.isNotEmpty ? r.imageUrls.first : null;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () async {
+                        final result = await Navigator.of(context).push(
+                          CupertinoPageRoute(
+                            builder: (_) => RestaurantDetailScreen(restaurantId: r.restaurantId),
+                          ),
+                        );
+                        if (result == true && mounted) _loadRestaurants();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.divider, width: 0.6),
+                        ),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: coverUrl != null
+                                  ? Image.network(
+                                      coverUrl,
+                                      width: 56,
+                                      height: 56,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        width: 56,
+                                        height: 56,
+                                        color: AppColors.surface,
+                                        child: const Icon(
+                                          CupertinoIcons.photo,
+                                          size: 18,
+                                          color: AppColors.textLight,
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      width: 56,
+                                      height: 56,
+                                      color: AppColors.surface,
+                                      child: const Icon(
+                                        CupertinoIcons.photo,
+                                        size: 18,
+                                        color: AppColors.textLight,
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    r.name,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    r.address ?? '-',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 5),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 7,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                    child: Text(
+                                      r.mainCuisineId ?? '-',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              CupertinoIcons.chevron_right,
+                              size: 14,
+                              color: AppColors.textLight,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                childCount: restaurantsToShow.length,
+              ),
+            ),
+          ),
+        ],
       );
     }
 
     final postsToShow = _filteredPosts;
 
     if (postsToShow.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(CupertinoIcons.square_favorites, size: 48, color: AppColors.surface),
-            const SizedBox(height: 16),
-            Text(
-              _posts.isEmpty ? 'This collection is empty' : 'No matches found',
-              style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
-            ),
-          ],
+      return CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
         ),
+        slivers: [
+          CupertinoSliverRefreshControl(onRefresh: _refreshCollection),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(CupertinoIcons.square_favorites, size: 48, color: AppColors.surface),
+                  const SizedBox(height: 16),
+                  Text(
+                    _posts.isEmpty ? 'This collection is empty' : 'No matches found',
+                    style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       );
     }
 
@@ -372,47 +662,56 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
       (i.isEven ? leftCol : rightCol).add(postsToShow[i]);
     }
 
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              children: leftCol.map((post) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: PostCard(
-                  post: post,
-                  onTap: () async {
-                    final result = await Navigator.of(context).push(
-                      CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
-                    );
-                    if (result == true && mounted) _loadPosts();
-                  },
-                ),
-              )).toList(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              children: rightCol.map((post) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: PostCard(
-                  post: post,
-                  onTap: () async {
-                    final result = await Navigator.of(context).push(
-                      CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
-                    );
-                    if (result == true && mounted) _loadPosts();
-                  },
-                ),
-              )).toList(),
-            ),
-          ),
-        ],
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
       ),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _refreshCollection),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+          sliver: SliverToBoxAdapter(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    children: leftCol.map((post) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: PostCard(
+                        post: post,
+                        onTap: () async {
+                          final result = await Navigator.of(context).push(
+                            CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
+                          );
+                          if (result == true && mounted) _loadPosts();
+                        },
+                      ),
+                    )).toList(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    children: rightCol.map((post) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: PostCard(
+                        post: post,
+                        onTap: () async {
+                          final result = await Navigator.of(context).push(
+                            CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
+                          );
+                          if (result == true && mounted) _loadPosts();
+                        },
+                      ),
+                    )).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

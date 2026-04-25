@@ -55,9 +55,19 @@ class Collection {
           }
         } else {
           final rest = item['Restaurant'] as Map<String, dynamic>?;
-          // Note: Restaurant model currently doesn't have a direct image list in schema 
-          // but usually uses source or maps image. For now fallback to maps_url or placeholder
-          // Actually, let's check restaurant repository for how it handles images.
+          if (rest != null) {
+            final restImages = rest['Restaurant_Image'] as List<dynamic>?;
+            if (restImages != null && restImages.isNotEmpty) {
+              String? coverUrl;
+              for (final img in restImages) {
+                if (img['isCover'] == true) {
+                  coverUrl = img['image_url'] as String?;
+                  break;
+                }
+              }
+              url = coverUrl ?? restImages[0]['image_url'] as String?;
+            }
+          }
         }
         if (url != null && url.isNotEmpty) images.add(url);
       }

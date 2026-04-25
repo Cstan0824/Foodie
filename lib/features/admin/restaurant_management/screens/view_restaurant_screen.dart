@@ -61,13 +61,7 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
   RestaurantModel? get _restaurant => _detail?.restaurant;
 
   String? get _coverImageUrl {
-    final images = _detail?.images ?? [];
-    if (images.isEmpty) return null;
-    try {
-      return images.firstWhere((img) => img.isCover).imageUrl;
-    } catch (_) {
-      return images.first.imageUrl;
-    }
+    return _detail?.coverImageUrl;
   }
 
   String _formatDate(DateTime? d) {
@@ -189,7 +183,10 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
               ),
               const SizedBox(height: 16),
               CupertinoButton(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
                 color: AppColors.primary,
                 borderRadius: BorderRadius.circular(8),
                 onPressed: _loadDetail,
@@ -282,7 +279,9 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
                     ),
                     if (r.mainCuisineId != null)
                       Text(
-                        r.mainCuisineId!,
+                        r.mainCuisineId!.trim().isEmpty
+                            ? '—'
+                            : r.mainCuisineId!,
                         style: TextStyle(
                           fontSize: 14,
                           color: CupertinoColors.white.withAlpha(200),
@@ -304,11 +303,7 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
     return Container(
       color: AppColors.surface,
       child: const Center(
-        child: Icon(
-          CupertinoIcons.photo,
-          size: 48,
-          color: AppColors.textLight,
-        ),
+        child: Icon(CupertinoIcons.photo, size: 48, color: AppColors.textLight),
       ),
     );
   }
@@ -379,6 +374,8 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
           const SizedBox(height: 16),
           _InfoRow(label: 'ID', value: r.restaurantId),
           _InfoRow(label: 'Name', value: r.name),
+          _InfoRow(label: 'Description', value: r.description ?? '—'),
+          _InfoRow(label: 'Price Range', value: r.priceRange ?? '—'),
           _InfoRow(label: 'Address', value: r.address ?? '—'),
           _InfoRow(
             label: 'Latitude',
@@ -449,10 +446,7 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
                   color: AppColors.textSecondary,
                 ),
               ),
-              _CuisineTag(
-                name: r.mainCuisineId ?? '—',
-                isPrimary: true,
-              ),
+              _CuisineTag(name: r.mainCuisineId ?? '—', isPrimary: true),
             ],
           ),
           if (extraCuisines.isNotEmpty) ...[
@@ -470,7 +464,9 @@ class _ViewRestaurantScreenState extends State<ViewRestaurantScreen> {
               spacing: 6,
               runSpacing: 6,
               children: extraCuisines
-                  .map((c) => _CuisineTag(name: c.description, isPrimary: false))
+                  .map(
+                    (c) => _CuisineTag(name: c.description, isPrimary: false),
+                  )
                   .toList(),
             ),
           ],
@@ -640,10 +636,7 @@ class _ActionButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: effectiveColor.withAlpha(18),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: effectiveColor.withAlpha(50),
-            width: 0.5,
-          ),
+          border: Border.all(color: effectiveColor.withAlpha(50), width: 0.5),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -721,8 +714,9 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        isDisabled ? const Color(0xFFFF3B30) : const Color(0xFF34C759);
+    final color = isDisabled
+        ? const Color(0xFFFF3B30)
+        : const Color(0xFF34C759);
     final label = isDisabled ? 'Disabled' : 'Active';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

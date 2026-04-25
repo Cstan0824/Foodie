@@ -3,9 +3,14 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:appinio_swiper/appinio_swiper.dart';
+
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/models/restaurant_model.dart';
+import 'package:taste_spot/data/repositories/blind_box_repository.dart';
 import 'restaurant_detail_screen.dart';
 
 class BlindBoxScreen extends StatefulWidget {
@@ -25,94 +30,10 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
 
   // ── Swiper Logic ──
   final AppinioSwiperController _swiperController = AppinioSwiperController();
-  final List<Map<String, dynamic>> _restaurants = [
-    {
-      'name': 'Sakura Sushi Bar',
-      'images': [
-        'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?q=80&w=800&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1553621042-f6e147245754?q=80&w=800&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1583623025817-d180a2221d0a?q=80&w=800&auto=format&fit=crop',
-      ],
-      'rating': 4.8,
-      'cuisine': 'Japanese • Sushi',
-      'distance': '0.5 km',
-      'price': '\$\$\$',
-      'menu': [
-        {'name': 'Omakase Set', 'price': '\$85'},
-        {'name': 'Dragon Roll', 'price': '\$18'},
-        {'name': 'Spicy Tuna', 'price': '\$14'},
-      ],
-      'locationUrl': 'https://maps.google.com/?q=Sakura+Sushi+Bar',
-    },
-    {
-      'name': 'The Burger Lab',
-      'images': [
-        'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=800&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1550547660-d9450f859349?q=80&w=800&auto=format&fit=crop',
-      ],
-      'rating': 4.5,
-      'cuisine': 'American • Burgers',
-      'distance': '1.2 km',
-      'price': '\$\$',
-      'menu': [
-        {'name': 'Classic Cheeseburger', 'price': '\$12'},
-        {'name': 'Truffle Fries', 'price': '\$8'},
-        {'name': 'Milkshake', 'price': '\$6'},
-      ],
-      'locationUrl': 'https://maps.google.com/?q=The+Burger+Lab',
-    },
-    {
-      'name': 'Mama\'s Pasta',
-      'images': [
-        'https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?q=80&w=800&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1551183053-bf91a1d81141?q=80&w=800&auto=format&fit=crop',
-      ],
-      'rating': 4.7,
-      'cuisine': 'Italian • Pasta',
-      'distance': '2.4 km',
-      'price': '\$\$',
-      'menu': [
-        {'name': 'Carbonara', 'price': '\$16'},
-        {'name': 'Margherita Pizza', 'price': '\$18'},
-        {'name': 'Tiramisu', 'price': '\$9'},
-      ],
-      'locationUrl': 'https://maps.google.com/?q=Mamas+Pasta',
-    },
-    {
-      'name': 'Spicy Wok',
-      'images': [
-        'https://images.unsplash.com/photo-1555126634-323283e090fa?q=80&w=800&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1541614101331-1a5a3a194e92?q=80&w=800&auto=format&fit=crop',
-      ],
-      'rating': 4.2,
-      'cuisine': 'Chinese • Spicy',
-      'distance': '0.8 km',
-      'price': '\$',
-      'menu': [
-        {'name': 'Kung Pao Chicken', 'price': '\$14'},
-        {'name': 'Mapo Tofu', 'price': '\$12'},
-        {'name': 'Spring Rolls', 'price': '\$6'},
-      ],
-      'locationUrl': 'https://maps.google.com/?q=Spicy+Wok',
-    },
-    {
-      'name': 'Café  Mocha',
-      'images': [
-        'https://images.unsplash.com/photo-1521017432531-fbd92d768814?q=80&w=800&auto=format&fit=crop',
-        'https://images.unsplash.com/photo-1497935586351-b67a49e012bf?q=80&w=800&auto=format&fit=crop',
-      ],
-      'rating': 4.6,
-      'cuisine': 'Café • Coffee',
-      'distance': '0.3 km',
-      'price': '\$',
-      'menu': [
-        {'name': 'Latte', 'price': '\$5'},
-        {'name': 'Avocado Toast', 'price': '\$11'},
-        {'name': 'Croissant', 'price': '\$4'},
-      ],
-      'locationUrl': 'https://maps.google.com/?q=Cafe+Mocha',
-    },
-  ];
+  List<RestaurantModel> _restaurants = [];
+  String? _errorMessage;
+  double? _userLatitude;
+  double? _userLongitude;
 
   @override
   void initState() {
@@ -144,24 +65,64 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
     _accelerometerSubscription?.cancel();
   }
 
-  void _handleShake() {
+  Future<Position?> _getCurrentLocation() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      return null;
+    }
+
+    return await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+  }
+
+  Future<void> _handleShake() async {
     // Prevent multiple triggers
     if (_isFinding || _hasFound) return;
 
     setState(() {
       _isFinding = true; // Show loading animation
       _isListening = false; // Stop listening
+      _errorMessage = null;
     });
 
-    // Simulate network delay / "Finding" animation
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          _isFinding = false;
-          _hasFound = true; // Show card stack
-        });
-      }
-    });
+    try {
+      final position = await _getCurrentLocation();
+      final userId = SupabaseService.client.auth.currentUser?.id ?? '';
+
+      final restaurants = await BlindBoxRepository.instance.fetchRecommendations(
+        userId: userId,
+        userLatitude: position?.latitude,
+        userLongitude: position?.longitude,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _userLatitude = position?.latitude;
+        _userLongitude = position?.longitude;
+        _restaurants = restaurants;
+        _isFinding = false;
+        _hasFound = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isFinding = false;
+        _hasFound = false;
+        _errorMessage = 'Unable to load recommendations. Please try again.';
+      });
+    }
   }
 
   // Reset to initial state
@@ -170,6 +131,8 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
       _hasFound = false;
       _isFinding = false;
       _isListening = true;
+      _errorMessage = null;
+      _restaurants = [];
     });
   }
 
@@ -193,7 +156,11 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
       child: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 500),
-          child: _hasFound ? _buildCardStack() : _isFinding ? _buildFindingAnimation() : _buildShakePrompt(),
+          child: _hasFound 
+              ? _buildCardStack() 
+              : _isFinding 
+                  ? _buildFindingAnimation() 
+                  : _buildShakePrompt(),
         ),
       ),
     );
@@ -208,7 +175,7 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
+          const Icon(
             CupertinoIcons.device_phone_portrait,
             size: 100,
             color: AppColors.textSecondary,
@@ -232,6 +199,17 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
               height: 1.4,
             ),
           ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: CupertinoColors.destructiveRed, fontSize: 14),
+              ),
+            ),
+          ],
           const SizedBox(height: 48),
           // Fallback button for simulator testing
           CupertinoButton.filled(
@@ -254,14 +232,14 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
   // UI 2: FINDING ANIMATION
   // ══════════════════════════════════════════
   Widget _buildFindingAnimation() {
-    return Center(
-      key: const ValueKey('Finding'),
+    return const Center(
+      key: ValueKey('Finding'),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CupertinoActivityIndicator(radius: 20),
-          const SizedBox(height: 24),
-          const Text(
+          CupertinoActivityIndicator(radius: 20),
+          SizedBox(height: 24),
+          Text(
             'Finding nearby gems...',
             style: TextStyle(
               fontSize: 18,
@@ -278,42 +256,102 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
   // UI 3: CARD STACK (TINDER-LIKE)
   // ══════════════════════════════════════════
   Widget _buildCardStack() {
+    if (_restaurants.isEmpty) {
+      return Center(
+        key: const ValueKey('EmptyStack'),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'No restaurants found yet.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Try again later.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+              ),
+              const SizedBox(height: 24),
+              CupertinoButton.filled(
+                onPressed: _reset,
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Column(
       key: const ValueKey('CardStack'),
       children: [
-        // Removed top spacing to stretch vertically
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10), // Added back horizontal spacing
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             child: AppinioSwiper(
               controller: _swiperController,
               cardCount: _restaurants.length,
-              backgroundCardCount: 0, // Turn off background cards stack
-              maxAngle: 30, // Rotation during swipe
-              loop: true,   // Loop back when finished
-              
+              backgroundCardCount: 0,
+              maxAngle: 30,
+              loop: true,
+              onSwipeEnd: (previousIndex, targetIndex, activity) {
+                if (activity is Swipe) {
+                  final restaurant = _restaurants[previousIndex];
+                  final userId = SupabaseService.client.auth.currentUser?.id ?? '';
+                  if (userId.isEmpty) return; // Silent if no user
+
+                  if (activity.direction == AxisDirection.left) {
+                    // Skip
+                    BlindBoxRepository.instance.recordSwipe(
+                      userId: userId,
+                      restaurantId: restaurant.restaurantId,
+                    ).catchError((_) {}); 
+                  } else if (activity.direction == AxisDirection.right) {
+                    // Save
+                    BlindBoxRepository.instance.recordSwipe(
+                      userId: userId,
+                      restaurantId: restaurant.restaurantId,
+                    ).catchError((_) {});
+                    
+                    BlindBoxRepository.instance.saveRestaurantToCollection(
+                      userId: userId,
+                      restaurantId: restaurant.restaurantId,
+                    ).catchError((_) {});
+                  }
+                }
+              },
               cardBuilder: (context, index) {
                 final restaurant = _restaurants[index];
                 return _RestaurantCard(
-                  key: ValueKey(restaurant['name']), // Add key to force rebuild on new card
+                  key: ValueKey(restaurant.restaurantId),
                   restaurant: restaurant,
+                  userLatitude: _userLatitude,
+                  userLongitude: _userLongitude,
                 );
               },
             ),
           ),
         ),
-        // Removed bottom spacing to stretch vertically
       ],
     );
   }
-
-  // Removed _buildActionButton since buttons are hidden
 }
 
 class _RestaurantCard extends StatefulWidget {
-  final Map<String, dynamic> restaurant;
+  final RestaurantModel restaurant;
+  final double? userLatitude;
+  final double? userLongitude;
 
-  const _RestaurantCard({super.key, required this.restaurant});
+  const _RestaurantCard({
+    super.key, 
+    required this.restaurant,
+    this.userLatitude,
+    this.userLongitude,
+  });
 
   @override
   State<_RestaurantCard> createState() => _RestaurantCardState();
@@ -325,7 +363,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
   void _handleTap(TapUpDetails details, BoxConstraints constraints) {
     final double tapPosition = details.localPosition.dx;
     final double width = constraints.maxWidth;
-    final List<String> images = List<String>.from(widget.restaurant['images'] ?? []);
+    final images = widget.restaurant.imageUrls;
 
     if (tapPosition < width * 0.3) {
       // Tap left: previous image
@@ -346,7 +384,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
       Navigator.of(context).push(
         CupertinoPageRoute(
           builder: (context) => RestaurantDetailScreen(
-            restaurant: widget.restaurant,
+            restaurantId: widget.restaurant.restaurantId,
             initialImageIndex: _currentImageIndex,
           ),
         ),
@@ -354,9 +392,45 @@ class _RestaurantCardState extends State<_RestaurantCard> {
     }
   }
 
+  String? _getDistance() {
+    if (widget.userLatitude == null || widget.userLongitude == null || 
+        widget.restaurant.latitude == null || widget.restaurant.longitude == null) {
+      return null;
+    }
+    
+    const earthRadiusKm = 6371.0;
+    double degToRad(double degree) => degree * pi / 180.0;
+
+    final userLat = widget.userLatitude!;
+    final userLng = widget.userLongitude!;
+    final restLat = widget.restaurant.latitude!;
+    final restLng = widget.restaurant.longitude!;
+
+    final dLat = degToRad(restLat - userLat);
+    final dLng = degToRad(restLng - userLng);
+
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(degToRad(userLat)) *
+            cos(degToRad(restLat)) *
+            sin(dLng / 2) *
+            sin(dLng / 2);
+
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    final distanceKm = earthRadiusKm * c;
+
+    if (distanceKm < 1) {
+      return '${(distanceKm * 1000).round()} m';
+    }
+    return '${distanceKm.toStringAsFixed(1)} km';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final List<String> images = List<String>.from(widget.restaurant['images'] ?? []);
+    final images = widget.restaurant.imageUrls;
+    final distance = _getDistance();
+    final rating = widget.restaurant.rating?.toStringAsFixed(1) ?? 'New';
+    final cuisine = widget.restaurant.mainCuisineId ?? 'Restaurant';
+    final priceRange = widget.restaurant.priceRange ?? '';
     
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -382,13 +456,32 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                   Positioned.fill(
                     child: images.isNotEmpty
                         ? Hero(
-                            tag: 'restaurant_image_${widget.restaurant['name']}',
+                            tag: 'restaurant_image_${widget.restaurant.restaurantId}',
                             child: Image.network(
                               images[_currentImageIndex],
                               fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                color: AppColors.surface,
+                                child: const Center(
+                                  child: Icon(
+                                    CupertinoIcons.photo,
+                                    size: 50,
+                                    color: AppColors.textLight,
+                                  ),
+                                ),
+                              ),
                             ),
                           )
-                        : const SizedBox(),
+                        : Container(
+                            color: AppColors.surface,
+                            child: const Center(
+                              child: Icon(
+                                CupertinoIcons.photo,
+                                size: 50,
+                                color: AppColors.textLight,
+                              ),
+                            ),
+                          ),
                   ),
                   
                   // Image Indicators (Bars at the top)
@@ -451,7 +544,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
-                                '${widget.restaurant['rating']}',
+                                rating,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -459,27 +552,29 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                widget.restaurant['distance'],
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
+                            if (distance != null) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  distance,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          widget.restaurant['name'],
+                          widget.restaurant.name,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 28,
@@ -489,7 +584,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '${widget.restaurant['cuisine']} • ${widget.restaurant['price']}',
+                          '$cuisine${priceRange.isNotEmpty ? ' • $priceRange' : ''}',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.9),
                             fontSize: 16,
