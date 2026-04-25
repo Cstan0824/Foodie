@@ -15,6 +15,17 @@ const String publicPostSelect = '''
   )
 ''';
 
+String getPostSelectWithStatus(String? currentUserId) {
+  if (currentUserId == null || currentUserId.isEmpty) {
+    return publicPostSelect;
+  }
+  return '''
+    $publicPostSelect,
+    Likes(user_Id).eq(user_Id, $currentUserId),
+    collections_item(id).limit(1)
+  ''';
+}
+
 Future<void> ensurePostAvailable(
   String postId, {
   required String errorMessage,

@@ -22,53 +22,22 @@ class PostCard extends StatefulWidget {
 
 class _PostCardState extends State<PostCard> {
   late PostModel _currentPost;
-  bool _isLiked = false;
   bool _isLiking = false;
 
   @override
   void initState() {
     super.initState();
     _currentPost = widget.post;
-    _checkLikeStatus();
   }
 
   @override
   void didUpdateWidget(PostCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.post.id != widget.post.id) {
-      setState(() {
-        _currentPost = widget.post;
-        _isLiked = false; // Reset visually until DB check finishes
-      });
-      _checkLikeStatus();
-    } else if (oldWidget.post != widget.post) {
-      // If the post is the same ID but updated (like count changed externally)
+    if (oldWidget.post != widget.post) {
       setState(() {
         _currentPost = widget.post;
       });
     }
-  }
-
-  Future<void> _checkLikeStatus() async {
-    final currentUserId = SupabaseService.currentUserId;
-    if (currentUserId == null || currentUserId.isEmpty) {
-      if (mounted) {
-        setState(() => _isLiked = false);
-      }
-      return;
-    }
-
-    try {
-      final isLiked = await PostRepository.instance.checkIsLiked(
-        _currentPost.id,
-        currentUserId,
-      );
-      if (mounted) {
-        setState(() {
-          _isLiked = isLiked;
-        });
-      }
-    } catch (_) {}
   }
 
   Future<void> _toggleLike() async {
@@ -79,14 +48,16 @@ class _PostCardState extends State<PostCard> {
     }
     setState(() => _isLiking = true);
 
-    final newIsLiked = !_isLiked;
+    final newIsLiked = !_currentPost.isLiked;
     // ensure likes never drop below 0 just as a pure safety guard
     final rawNewCount = _currentPost.likes + (newIsLiked ? 1 : -1);
     final newCount = rawNewCount < 0 ? 0 : rawNewCount;
 
     setState(() {
-      _isLiked = newIsLiked;
-      _currentPost = _currentPost.copyWith(likes: newCount);
+      _currentPost = _currentPost.copyWith(
+        likes: newCount,
+        isLiked: newIsLiked,
+      );
     });
 
     try {
@@ -98,9 +69,9 @@ class _PostCardState extends State<PostCard> {
     } catch (_) {
       if (mounted) {
         setState(() {
-          _isLiked = !_isLiked;
           _currentPost = _currentPost.copyWith(
             likes: newCount + (newIsLiked ? -1 : 1),
+            isLiked: !newIsLiked,
           );
         });
       }
@@ -227,11 +198,11 @@ class _PostCardState extends State<PostCard> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _isLiked
+                          _currentPost.isLiked
                               ? CupertinoIcons.heart_fill
                               : CupertinoIcons.heart,
                           size: 14,
-                          color: _isLiked
+                          color: _currentPost.isLiked
                               ? AppColors.primary
                               : AppColors.textSecondary,
                         ),
@@ -241,7 +212,7 @@ class _PostCardState extends State<PostCard> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
-                            color: _isLiked ? AppColors.primary : AppColors.textSecondary,
+                            color: _currentPost.isLiked ? AppColors.primary : AppColors.textSecondary,
                           ),
                         ),
                       ],

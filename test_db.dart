@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:taste_spot/core/services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

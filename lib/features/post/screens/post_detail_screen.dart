@@ -34,17 +34,17 @@ class PostDetailScreen extends StatefulWidget {
 class _PostDetailScreenState extends State<PostDetailScreen> {
   static final RegExp _captionHashtagPattern = RegExp(r'#[a-zA-Z0-9_]+');
   static final RegExp _captionWhitespacePattern = RegExp(r'\s');
+late PostModel _currentPost;
+bool _wasEdited = false;
+bool _isLiked = false;
+bool _isSaved = false;
+bool _isFollowing = false;
+Set<String> _savedInCollectionIds = {};
+bool _isFollowUpdating = false;
 
-  late PostModel _currentPost;
-  bool _wasEdited = false;
-  bool _isLiked = false;
-  bool _isSaved = false;
-  bool _isFollowing = false;
-  bool _isFollowUpdating = false;
-
-  int _currentImageIndex = 0;
-  final _commentController = TextEditingController();
-  final _scrollController = ScrollController();
+int _currentImageIndex = 0;
+final _commentController = TextEditingController();
+final _scrollController = ScrollController();
 
   // Comments state
   List<CommentModel> _comments = [];
@@ -191,17 +191,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _checkSaveStatus() async {
     try {
-      final currentUserId =
-          Supabase.instance.client.auth.currentUser?.id ??
-          '00000000-0000-0000-0000-000000000001';
+      final currentUserId = SupabaseService.currentUserId;
+      if (currentUserId == null) return;
 
-      final collectionRepo = CollectionRepository(Supabase.instance.client);
-      final savedPostIds = await collectionRepo.getSavedPostIdsForUser(
-        currentUserId,
-      );
+      // Get all collections that contain this post
+      final response = await Supabase.instance.client
+          .from('collections_item')
+          .select('collection_Id')
+          .eq('post_id', _currentPost.id);
+      
+      final savedInIds = (response as List)
+          .map((item) => item['collection_Id'] as String)
+          .toSet();
 
-      if (mounted)
-        setState(() => _isSaved = savedPostIds.contains(_currentPost.id));
+      if (mounted) {
+        setState(() {
+          _savedInCollectionIds = savedInIds;
+          _isSaved = savedInIds.isNotEmpty;
+        });
+      }
     } catch (_) {}
   }
 
@@ -209,6 +217,172 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   void _toggleSave() {
     _showSaveSheet(context);
+  }
+
+  void _showSaveSheet(BuildContext context) {
+    final currentUserId = SupabaseService.currentUserId;
+    if (currentUserId == null) {
+      _showAuthRequiredDialog();
+      return;
+    }
+    final collectionRepo = CollectionRepository(Supabase.instance.client);
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (modalContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Container(
+          height: MediaQuery.of(context).size.height * 0.55,
+          decoration: const BoxDecoration(
+            color: CupertinoColors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 5,
+                  margin: const EdgeInsets.only(top: 10, bottom: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(2.5),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    'Save to Collection',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Expanded(
+                  child: FutureBuilder<List<Collection>>(
+                    future: collectionRepo.getUserCollections(currentUserId),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CupertinoActivityIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return const Center(child: Text('Error loading collections'));
+                      }
+
+                      final collections =
+                          snapshot.data
+                              ?.where((c) => c.collectionType == 'POST')
+                              .toList() ??
+                          [];
+
+                      if (collections.isEmpty) {
+                        return const Center(child: Text('No collections found.'));
+                      }
+
+                      return ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: collections.length,
+                        separatorBuilder: (_, _) => Container(
+                          height: 1,
+                          color: CupertinoColors.systemGrey5.withAlpha(50),
+                        ),
+                        itemBuilder: (context, index) {
+                          final collection = collections[index];
+                          final isAlreadyIn = _savedInCollectionIds.contains(collection.collectionId);
+
+                          return CupertinoButton(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                            onPressed: _isSaving ? null : () async {
+                              if (isAlreadyIn) {
+                                await _unsaveFromSpecificCollection(collection.collectionId);
+                              } else {
+                                await _saveToSpecificCollection(collection.collectionId);
+                              }
+                              setSheetState(() {}); // Refresh sheet UI
+                            },
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: isAlreadyIn ? AppColors.primary.withAlpha(20) : AppColors.surface,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    isAlreadyIn ? CupertinoIcons.checkmark_seal_fill : CupertinoIcons.folder_fill,
+                                    color: isAlreadyIn ? AppColors.primary : AppColors.textLight,
+                                    size: 24,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        collection.name,
+                                        style: TextStyle(
+                                          color: AppColors.textPrimary,
+                                          fontSize: 16,
+                                          fontWeight: isAlreadyIn ? FontWeight.w700 : FontWeight.w500,
+                                        ),
+                                      ),
+                                      if (collection.isDefault)
+                                        const Text(
+                                          'Default Collection',
+                                          style: TextStyle(color: AppColors.textLight, fontSize: 12),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                if (isAlreadyIn)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      'SAVED',
+                                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _unsaveFromSpecificCollection(String collectionId) async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final collectionRepo = CollectionRepository(Supabase.instance.client);
+      await collectionRepo.removePostFromCollection(collectionId, _currentPost.id);
+
+      setState(() {
+        _savedInCollectionIds.remove(collectionId);
+        _isSaved = _savedInCollectionIds.isNotEmpty;
+        _currentPost = _currentPost.copyWith(
+          saveCount: (_currentPost.saveCount - 1).clamp(0, 999999),
+        );
+        _wasEdited = true;
+      });
+    } catch (e) {
+      debugPrint('Unsave error: $e');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   Future<void> _checkLikeStatus() async {
@@ -219,12 +393,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     try {
-      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-      if (currentUserId == null) {
-        if (mounted) setState(() => _isLiked = false);
-        return;
-      }
-
       final isLiked = await PostRepository.instance.checkIsLiked(
         _currentPost.id,
         currentUserId,
@@ -250,7 +418,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     setState(() {
       _isLiked = newIsLiked;
-      _currentPost = _currentPost.copyWith(likes: newCount);
+      _currentPost = _currentPost.copyWith(
+        likes: newCount,
+        isLiked: newIsLiked,
+      );
       _wasEdited = true;
     });
 
@@ -266,6 +437,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _isLiked = !_isLiked;
           _currentPost = _currentPost.copyWith(
             likes: newCount + (newIsLiked ? -1 : 1),
+            isLiked: !newIsLiked,
           );
         });
       }
@@ -400,7 +572,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 _isLoadingComments
                     ? SliverList(
                         delegate: SliverChildBuilderDelegate(
-                          (_, i) => const _CommentSkeleton(),
+                          (_, _) => const _CommentSkeleton(),
                           childCount: 3,
                         ),
                       )
@@ -429,7 +601,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        Navigator.of(context).pop(_wasEdited ? true : null);
+        Navigator.of(context).pop(_wasEdited ? _currentPost : null);
       },
       child: scaffold,
     );
@@ -445,7 +617,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: () =>
-                  Navigator.of(context).pop(_wasEdited ? true : null),
+                  Navigator.of(context).pop(_wasEdited ? _currentPost : null),
               child: const Icon(
                 CupertinoIcons.chevron_back,
                 color: AppColors.textPrimary,
@@ -852,7 +1024,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             SizedBox(width: 10),
             Expanded(
               child: Text(
-                'This post is in Deleted Posts. Use the menu above to recover it.',
+                'This post is in Archived Posts. Use the menu above to recover it.',
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.4,
@@ -905,7 +1077,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ? Image.network(
                           comment.authorAvatar!,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Center(
+                          errorBuilder: (_, _, _) => Center(
                             child: Text(
                               comment.initials,
                               style: const TextStyle(
@@ -1077,7 +1249,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ? Image.network(
                             _currentUserAvatar!,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
+                            errorBuilder: (_, _, _) => const Icon(
                               CupertinoIcons.person_fill,
                               color: AppColors.textLight,
                               size: 20,
@@ -1257,109 +1429,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-  void _showSaveSheet(BuildContext context) {
-    final currentUserId =
-        Supabase.instance.client.auth.currentUser?.id ??
-        '00000000-0000-0000-0000-000000000001';
-    final collectionRepo = CollectionRepository(Supabase.instance.client);
-
-    showCupertinoModalPopup(
-      context: context,
-      builder: (modalContext) => Container(
-        height: MediaQuery.of(context).size.height * 0.5,
-        decoration: const BoxDecoration(
-          color: CupertinoColors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              Container(
-                width: 40,
-                height: 5,
-                margin: const EdgeInsets.only(top: 10, bottom: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE0E0E0),
-                  borderRadius: BorderRadius.circular(2.5),
-                ),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 16),
-                child: Text(
-                  'Save to Collection',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-                ),
-              ),
-              Expanded(
-                child: FutureBuilder<List<Collection>>(
-                  future: collectionRepo.getUserCollections(currentUserId),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CupertinoActivityIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return const Center(child: Text('Error loading collections'));
-                    }
-
-                    final collections =
-                        snapshot.data
-                            ?.where((c) => c.collectionType == 'POST')
-                            .toList() ??
-                        [];
-
-                    if (collections.isEmpty) {
-                      return const Center(child: Text('No collections found.'));
-                    }
-
-                    return ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: collections.length,
-                      separatorBuilder: (_, __) => Container(
-                        height: 1,
-                        color: CupertinoColors.systemGrey5,
-                      ),
-                      itemBuilder: (context, index) {
-                        final collection = collections[index];
-                        return CupertinoButton(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          onPressed: () async {
-                            Navigator.pop(modalContext);
-                            await _saveToSpecificCollection(
-                              collection.collectionId,
-                            );
-                          },
-                          child: Row(
-                            children: [
-                              const Icon(
-                                CupertinoIcons.folder_fill,
-                                color: AppColors.primary,
-                                size: 28,
-                              ),
-                              const SizedBox(width: 16),
-                              Text(
-                                collection.name,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _saveToSpecificCollection(String collectionId) async {
     if (_isSaving) return;
     setState(() => _isSaving = true);
@@ -1368,16 +1437,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final collectionRepo = CollectionRepository(Supabase.instance.client);
       await collectionRepo.savePostToCollection(collectionId, _currentPost.id);
 
-      if (!_isSaved) {
-        setState(() {
-          _isSaved = true;
-          _currentPost = _currentPost.copyWith(
-            saveCount: _currentPost.saveCount + 1,
-          );
-          _wasEdited = true;
-        });
-      }
+      setState(() {
+        _savedInCollectionIds.add(collectionId);
+        _isSaved = true;
+        _currentPost = _currentPost.copyWith(
+          saveCount: _currentPost.saveCount + 1,
+        );
+        _wasEdited = true;
+      });
     } catch (e) {
+      debugPrint('Save error: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -1542,8 +1611,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirm = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Delete Post?'),
-        content: const Text('This post will move to your Deleted Posts tab.'),
+        title: const Text('Archive Post?'),
+        content: const Text('This post will move to your Archived Posts tab.'),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(ctx, false),
@@ -1552,7 +1621,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: const Text('Archive'),
           ),
         ],
       ),
@@ -1571,7 +1640,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       showCupertinoDialog(
         context: context,
         builder: (ctx) => CupertinoAlertDialog(
-          title: const Text('Delete Failed'),
+          title: const Text('Archive Failed'),
           content: Text(e.toString()),
           actions: [
             CupertinoDialogAction(
@@ -1590,7 +1659,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Recover Post?'),
         content: const Text(
-          'This post will return to your normal posts and leave Deleted Posts.',
+          'This post will return to your normal posts and leave Archived Posts.',
         ),
         actions: [
           CupertinoDialogAction(
@@ -1652,7 +1721,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Delete Permanently?'),
         content: const Text(
-          'This will remove the post from your Deleted Posts archive. Admins can still access it if needed.',
+          'This will remove the post from your Archived Posts. Admins can still access it if needed.',
         ),
         actions: [
           CupertinoDialogAction(
@@ -1745,57 +1814,6 @@ class _CommentSkeleton extends StatelessWidget {
                 const Skeleton(width: double.infinity, height: 14),
                 const SizedBox(height: 4),
                 const Skeleton(width: 150, height: 14),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PostDetailSkeleton extends StatelessWidget {
-  const _PostDetailSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      physics: const NeverScrollableScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                const SkeletonCircle(size: 36),
-                const SizedBox(width: 10),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Skeleton(width: 100, height: 14),
-                    SizedBox(height: 4),
-                    Skeleton(width: 60, height: 10),
-                  ],
-                ),
-                const Spacer(),
-                Skeleton(width: 70, height: 30, borderRadius: 15),
-              ],
-            ),
-          ),
-          const Skeleton(width: double.infinity, height: 460, borderRadius: 0),
-          const Padding(
-            padding: EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Skeleton(width: 200, height: 18),
-                SizedBox(height: 12),
-                Skeleton(width: double.infinity, height: 14),
-                SizedBox(height: 6),
-                Skeleton(width: double.infinity, height: 14),
-                SizedBox(height: 6),
-                Skeleton(width: 250, height: 14),
               ],
             ),
           ),

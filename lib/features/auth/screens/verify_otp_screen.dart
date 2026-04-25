@@ -69,6 +69,35 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
     }
   }
 
+  Future<void> _resendCode() async {
+    setState(() => _isLoading = true);
+    try {
+      await _authRepo.resendOtp(
+        email: widget.email,
+        type: widget.type == OTPType.signup ? OtpType.signup : OtpType.recovery,
+      );
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('Code Sent'),
+            content: const Text('A new 6-digit verification code has been sent to your email.'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.pop(context),
+              )
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      _showError('Failed to resend code: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   void _showError(String message) {
     showCupertinoDialog(
       context: context,
@@ -134,7 +163,7 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
               const SizedBox(height: 24),
               Center(
                 child: CupertinoButton(
-                  onPressed: () {}, // TODO: Implement resend
+                  onPressed: _isLoading ? null : _resendCode,
                   child: const Text('Resend Code', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 15)),
                 ),
               ),

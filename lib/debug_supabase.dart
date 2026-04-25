@@ -34,7 +34,7 @@ class SupabaseDebugger {
     dev.log('🔔 Testing Notification table...', name: 'DEBUG');
     try {
       final res = await client.from('Notification').select('id').limit(1);
-      dev.log('✅ Notification Table Success', name: 'DEBUG');
+      dev.log('✅ Notification Table Success: $res', name: 'DEBUG');
     } catch (e) {
       _logError('Notification Table', e);
     }

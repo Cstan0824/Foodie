@@ -17,6 +17,8 @@ import 'package:taste_spot/features/profile/screens/privacy_screen.dart';
 import 'package:taste_spot/features/profile/screens/help_feedback_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:taste_spot/core/services/account_service.dart';
+import 'package:taste_spot/data/models/restaurant_approval_model.dart';
+import 'package:taste_spot/data/repositories/restaurant_approval_repository.dart';
 import 'package:taste_spot/main.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -40,6 +42,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   List<PostModel> _myPosts = [];
   List<PostModel> _likedPosts = [];
   List<PostModel> _archivedPosts = [];
+  List<RestaurantApprovalModel> _userApprovals = [];
   List<SavedAccount> _savedAccounts = [];
   int _followersCount = 0;
   int _followingCount = 0;
@@ -47,23 +50,9 @@ class ProfileScreenState extends State<ProfileScreen> {
   bool _isFollowingUser = false;
   bool _isFollowUpdating = false;
 
-  List<String> get _tabs =>
-      _isCurrentUser ? ['Posts', 'Archived', 'Liked'] : ['Posts', 'Liked'];
-
-  static const List<_PendingApprovalPreview> _pendingApprovalPreviews = [
-    _PendingApprovalPreview(
-      restaurantName: 'Nasi Lemak Corner',
-      submittedLabel: 'Submitted 2h ago',
-      address: 'Jalan SS15, Subang Jaya',
-      note: 'Waiting for restaurant verification before your post goes live.',
-    ),
-    _PendingApprovalPreview(
-      restaurantName: 'Kyo Matcha House',
-      submittedLabel: 'Submitted yesterday',
-      address: 'Bukit Bintang, Kuala Lumpur',
-      note: 'Cuisine and map details are being reviewed by the team.',
-    ),
-  ];
+  List<String> get _tabs => _isCurrentUser
+      ? ['Posts', 'Liked', 'Pending', 'Archived']
+      : ['Posts', 'Liked'];
 
   @override
   void initState() {
@@ -141,8 +130,11 @@ class ProfileScreenState extends State<ProfileScreen> {
         _archivedPosts = await PostRepository.instance.fetchArchivedPosts(
           userId: targetUserId,
         );
+        _userApprovals = await RestaurantApprovalRepository.instance
+            .fetchUserPendingApprovals(userId: targetUserId);
       } else {
         _archivedPosts = [];
+        _userApprovals = [];
       }
 
       if (_isCurrentUser && _userProfile != null) {
@@ -187,7 +179,7 @@ class ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         // Reset navigation to MainShell with the new account context
         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-          CupertinoPageRoute(builder: (_) => const MainShell()),
+          CupertinoPageRoute(builder: (_) => MainShell()),
           (route) => false,
         );
       }
@@ -298,9 +290,11 @@ class ProfileScreenState extends State<ProfileScreen> {
     if (_isCurrentUser) {
       switch (_selectedTab) {
         case 1:
-          return _archivedPosts;
-        case 2:
           return _likedPosts;
+        case 2:
+          return []; // Handled by _buildPendingApprovalsSliver
+        case 3:
+          return _archivedPosts;
         default:
           return _myPosts;
       }
@@ -314,14 +308,12 @@ class ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  bool get _showsArchivedDesign => _isCurrentUser && _selectedTab == 1;
+  bool get _showsArchivedDesign => _isCurrentUser && _selectedTab == 3;
+  bool get _showsPendingDesign => _isCurrentUser && _selectedTab == 2;
 
   void _handleMainTabChanged(int index) {
     setState(() {
       _selectedTab = index;
-      if (index != 1) {
-        _selectedArchiveTab = 0;
-      }
     });
   }
 
@@ -425,6 +417,9 @@ class ProfileScreenState extends State<ProfileScreen> {
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               slivers: [
+                CupertinoSliverRefreshControl(
+                  onRefresh: () => _fetchProfileData(silent: true),
+                ),
                 SliverToBoxAdapter(child: _buildProfileSection(context)),
                 SliverPersistentHeader(
                   pinned: true,
@@ -455,6 +450,9 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildUsernameHeader() {
+    if (_isLoading && _userProfile == null) {
+      return const Skeleton(width: 100, height: 16, borderRadius: 4);
+    }
     return GestureDetector(
       onTap: _isCurrentUser ? () => _showAccountsSheet(context) : null,
       behavior: HitTestBehavior.opaque,
@@ -616,7 +614,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                   ? Image.network(
                       avatar,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(
+                      errorBuilder: (_, _, _) => const Icon(
                         CupertinoIcons.person_fill,
                         size: 16,
                         color: AppColors.textLight,
@@ -711,7 +709,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                   onTap: () async {
                     setState(() => _isSettingsMenuOpen = false);
                     await Supabase.instance.client.auth.signOut();
-                    if (mounted)
+                    if (mounted) {
                       Navigator.of(
                         context,
                         rootNavigator: true,
@@ -719,6 +717,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                         CupertinoPageRoute(builder: (_) => const LoginScreen()),
                         (route) => false,
                       );
+                    }
                   },
                 ),
               ],
@@ -827,24 +826,30 @@ class ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _userProfile?.name ?? 'User',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                        letterSpacing: -0.5,
+                    if (_isLoading && _userProfile == null) ...[
+                      const Skeleton(width: 140, height: 22, borderRadius: 4),
+                      const SizedBox(height: 8),
+                      const Skeleton(width: 80, height: 14, borderRadius: 4),
+                    ] else ...[
+                      Text(
+                        _userProfile?.name ?? 'User',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.5,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '@${_userProfile?.username ?? "user"}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textLight,
-                        fontWeight: FontWeight.w500,
+                      const SizedBox(height: 4),
+                      Text(
+                        '@${_userProfile?.username ?? "user"}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textLight,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -963,57 +968,89 @@ class ProfileScreenState extends State<ProfileScreen> {
   
   List<Widget> _buildContentSlivers(BuildContext context) {
     if (_showsArchivedDesign) {
-      return _buildArchivedSlivers(context);
+      return [_buildArchivedPostsSliver(context)];
+    }
+    if (_showsPendingDesign) {
+      return [_buildPendingApprovalsSliver(context)];
     }
 
     return [_buildPostsSliver(context)];
   }
 
-  List<Widget> _buildArchivedSlivers(BuildContext context) {
-    return [
-      SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-          child: _ArchiveSegmentedControl(
-            selectedIndex: _selectedArchiveTab,
-            pendingCount: _pendingApprovalPreviews.length,
-            deletedCount: _archivedPosts.length,
-            onChanged: (index) => setState(() => _selectedArchiveTab = index),
+  Widget _buildPendingApprovalsSliver(BuildContext context) {
+    if (_isLoading && _userApprovals.isEmpty) {
+      return SliverPadding(
+        padding: const EdgeInsets.all(16),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: _PendingApprovalSkeleton(),
+            ),
+            childCount: 3,
           ),
         ),
-      ),
-      if (_selectedArchiveTab == 0)
-        SliverToBoxAdapter(
+      );
+    }
+
+    if (_userApprovals.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.clock,
+                    size: 30,
+                    color: AppColors.textLight,
+                  ),
+                ),
+                const SizedBox(height: 16),
                 const Text(
-                  'Posts linked to restaurants outside our database will wait here until the place is verified.',
+                  'No pending approvals',
                   style: TextStyle(
-                    fontSize: 13,
-                    height: 1.4,
-                    color: AppColors.textSecondary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 14),
-                ..._pendingApprovalPreviews.map(
-                  (item) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _PendingApprovalCard(item: item),
-                  ),
-                ),
+                const SizedBox(height: 8)
               ],
             ),
           ),
-        )
-      else
-        _buildDeletedPostsSliver(context),
-    ];
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _PendingApprovalCard(item: _userApprovals[index]),
+          ),
+          childCount: _userApprovals.length,
+        ),
+      ),
+    );
   }
 
-  Widget _buildDeletedPostsSliver(BuildContext context) {
+  Widget _buildArchivedPostsSliver(BuildContext context) {
+    if (_isLoading && _archivedPosts.isEmpty) {
+      return const _GridSkeleton();
+    }
+
     if (_archivedPosts.isEmpty) {
       return SliverFillRemaining(
         hasScrollBody: false,
@@ -1038,7 +1075,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Deleted posts will appear here',
+                  'Archived posts will appear here',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -1046,15 +1083,6 @@ class ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Soft-deleted posts stay here until you recover them back to your profile.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.45,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
               ],
             ),
           ),
@@ -1121,7 +1149,29 @@ class ProfileScreenState extends State<ProfileScreen> {
             final result = await Navigator.of(context).push(
               CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
             );
-            if (result == true) _fetchProfileData(silent: true);
+            if (result is PostModel && mounted) {
+              setState(() {
+                // Update in all relevant lists
+                final myIdx = _myPosts.indexWhere((p) => p.id == result.id);
+                if (myIdx != -1) _myPosts[myIdx] = result;
+
+                final likedIdx = _likedPosts.indexWhere((p) => p.id == result.id);
+                if (likedIdx != -1) {
+                  if (_isCurrentUser && !result.isLiked) {
+                    _likedPosts.removeAt(likedIdx);
+                  } else {
+                    _likedPosts[likedIdx] = result;
+                  }
+                } else if (_isCurrentUser && result.isLiked) {
+                  _likedPosts.insert(0, result);
+                }
+
+                final archIdx = _archivedPosts.indexWhere((p) => p.id == result.id);
+                if (archIdx != -1) _archivedPosts[archIdx] = result;
+              });
+            } else if (result == true) {
+              _fetchProfileData(silent: true);
+            }
           },
         ),
       ),
@@ -1211,6 +1261,52 @@ class _GridSkeleton extends StatelessWidget {
   }
 }
 
+class _PendingApprovalSkeleton extends StatelessWidget {
+  const _PendingApprovalSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: CupertinoColors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.divider, width: 0.8),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Skeleton(width: 42, height: 42, borderRadius: 12),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Skeleton(width: 120, height: 15),
+                    SizedBox(height: 8),
+                    Skeleton(width: 180, height: 12),
+                  ],
+                ),
+              ),
+              Skeleton(width: 80, height: 24, borderRadius: 999),
+            ],
+          ),
+          SizedBox(height: 16),
+          Row(
+            children: [
+              SkeletonCircle(size: 14),
+              SizedBox(width: 6),
+              Skeleton(width: 100, height: 12),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatItem extends StatelessWidget {
   final String value;
   final String label;
@@ -1285,129 +1381,20 @@ class _ActionPill extends StatelessWidget {
   }
 }
 
-class _ArchiveSegmentedControl extends StatelessWidget {
-  final int selectedIndex;
-  final int pendingCount;
-  final int deletedCount;
-  final ValueChanged<int> onChanged;
-
-  const _ArchiveSegmentedControl({
-    required this.selectedIndex,
-    required this.pendingCount,
-    required this.deletedCount,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final labels = ['Pending Approval', 'Deleted Posts'];
-    final counts = [pendingCount, deletedCount];
-
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.divider, width: 0.5),
-      ),
-      child: LayoutBuilder(
-        builder: (ctx, constraints) {
-          final tabW = constraints.maxWidth / labels.length;
-          return Stack(
-            children: [
-              // ── Sliding white pill ──
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOut,
-                left: selectedIndex * tabW + 2,
-                top: 2,
-                width: tabW - 4,
-                height: constraints.maxHeight - 4,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF000000).withAlpha(18),
-                        blurRadius: 6,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // ── Labels row (always on top) ──
-              Row(
-                children: List.generate(labels.length, (i) {
-                  final isSelected = i == selectedIndex;
-                  final count = counts[i];
-                  return Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => onChanged(i),
-                      child: Center(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AnimatedDefaultTextStyle(
-                              duration: const Duration(milliseconds: 180),
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
-                                color: isSelected
-                                    ? AppColors.textPrimary
-                                    : AppColors.textSecondary,
-                              ),
-                              child: Text(labels[i]),
-                            ),
-                            if (count > 0) ...[
-                              const SizedBox(width: 5),
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 5,
-                                  vertical: 1,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? AppColors.primary.withAlpha(20)
-                                      : AppColors.textLight.withAlpha(50),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  '$count',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: isSelected
-                                        ? AppColors.primary
-                                        : AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _PendingApprovalCard extends StatelessWidget {
-  final _PendingApprovalPreview item;
+  final RestaurantApprovalModel item;
 
   const _PendingApprovalCard({required this.item});
+
+  String _timeAgo(DateTime? date) {
+    if (date == null) return 'Recently';
+    final now = DateTime.now().toUtc();
+    final diff = now.difference(date.toUtc());
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'Just now';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1417,13 +1404,6 @@ class _PendingApprovalCard extends StatelessWidget {
         color: CupertinoColors.white,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppColors.divider, width: 0.8),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withAlpha(8),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1449,7 +1429,7 @@ class _PendingApprovalCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.restaurantName,
+                      item.name,
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
@@ -1458,7 +1438,9 @@ class _PendingApprovalCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      item.address,
+                      item.address ?? 'No address provided',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -1487,15 +1469,6 @@ class _PendingApprovalCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            item.note,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.45,
-              color: AppColors.textPrimary,
-            ),
-          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -1506,7 +1479,7 @@ class _PendingApprovalCard extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                item.submittedLabel,
+                'Submitted ${_timeAgo(item.detectedAt)}',
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.textLight,
@@ -1518,20 +1491,6 @@ class _PendingApprovalCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _PendingApprovalPreview {
-  final String restaurantName;
-  final String submittedLabel;
-  final String address;
-  final String note;
-
-  const _PendingApprovalPreview({
-    required this.restaurantName,
-    required this.submittedLabel,
-    required this.address,
-    required this.note,
-  });
 }
 
 class _ProfileMasonryGrid extends StatelessWidget {
@@ -1634,7 +1593,7 @@ class _ProfilePostTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(999),
               ),
               child: const Text(
-                'Deleted',
+                'Archived',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,

@@ -326,52 +326,74 @@ class CollectionScreenState extends State<CollectionScreen> {
   }
 
   Widget _buildContent() {
-    if (_isLoading) return const _CollectionSkeleton();
-    if (_error != null) return _buildErrorState();
+    if (_isLoading && _collections.isEmpty && _sharedCollections.isEmpty) {
+      return const _CollectionSkeleton();
+    }
+    if (_error != null && _collections.isEmpty && _sharedCollections.isEmpty) {
+      return _buildErrorState();
+    }
 
     final items = _filteredCollections;
     
     if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(32),
-              decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
-              child: Icon(
-                _searchQuery.isEmpty ? CupertinoIcons.folder_badge_plus : CupertinoIcons.search, 
-                size: 64, color: AppColors.textLight.withAlpha(100)
+      return CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          CupertinoSliverRefreshControl(onRefresh: _loadAllData),
+          SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(32),
+                    decoration: const BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+                    child: Icon(
+                      _searchQuery.isEmpty ? CupertinoIcons.folder_badge_plus : CupertinoIcons.search, 
+                      size: 64, color: AppColors.textLight.withAlpha(100)
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    _searchQuery.isEmpty ? 'No collections here yet' : 'No matches for "$_searchQuery"',
+                    style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w700, fontSize: 16),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _searchQuery.isEmpty 
+                      ? 'Create your first one to get started!' 
+                      : 'Try adjusting your search query',
+                    style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w500, fontSize: 14),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              _searchQuery.isEmpty ? 'No collections here yet' : 'No matches for "$_searchQuery"',
-              style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _searchQuery.isEmpty 
-                ? 'Create your first one to get started!' 
-                : 'Try adjusting your search query',
-              style: const TextStyle(color: AppColors.textLight, fontWeight: FontWeight.w500, fontSize: 14),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      physics: const BouncingScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 28,
-        childAspectRatio: 0.82,
-      ),
-      itemCount: items.length,
-      itemBuilder: (context, index) => _buildCollectionCard(items[index]),
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _loadAllData),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 24,
+              mainAxisSpacing: 32,
+              childAspectRatio: 0.82,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildCollectionCard(items[index]),
+              childCount: items.length,
+            ),
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+      ],
     );
   }
 
@@ -449,19 +471,21 @@ class CollectionScreenState extends State<CollectionScreen> {
                         // Second latest image (bottom/back card)
                         if (images.length > 1)
                           Positioned(
-                            top: -10, right: -12,
-                            bottom: 12, left: 28,
+                            top: -6, right: -8,
+                            bottom: 10, left: 24,
                             child: Transform.rotate(
-                              angle: 0.12,
+                              angle: 0.02, // Even subtler angle
                               child: _buildItemPreview(images[1]),
                             ),
                           ),
                         // Latest image (top/front card)
                         Positioned(
-                          top: -6, left: -14,
-                          bottom: 16, right: 24,
+                          top: images.length > 1 ? -4 : 0, 
+                          left: images.length > 1 ? -10 : 0,
+                          bottom: images.length > 1 ? 12 : 0, 
+                          right: images.length > 1 ? 20 : 0,
                           child: Transform.rotate(
-                            angle: -0.06,
+                            angle: images.length > 1 ? -0.01 : 0.0, // No rotation if only one image, even subtler if multiple
                             child: _buildItemPreview(images[0]),
                           ),
                         ),
@@ -483,7 +507,7 @@ class CollectionScreenState extends State<CollectionScreen> {
                   Positioned(
                     top: 12, left: 6,
                     child: Transform.rotate(
-                      angle: -0.06, // Match the front card rotation
+                      angle: images.length > 1 ? -0.01 : 0.0, // Match the front card rotation
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -520,7 +544,7 @@ class CollectionScreenState extends State<CollectionScreen> {
                   child: ClipOval(
                     child: (collection.owner!.imageUrl != null && collection.owner!.imageUrl!.isNotEmpty)
                         ? Image.network(collection.owner!.imageUrl!, fit: BoxFit.cover, 
-                            errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 10, color: AppColors.textLight))
+                            errorBuilder: (_, _, _) => const Icon(CupertinoIcons.person_fill, size: 10, color: AppColors.textLight))
                         : const Icon(CupertinoIcons.person_fill, size: 10, color: AppColors.textLight),
                   ),
                 ),
@@ -596,7 +620,6 @@ class CollectionScreenState extends State<CollectionScreen> {
     final TextEditingController nameController = TextEditingController();
     final FocusNode nameFocusNode = FocusNode();
     String type = 'POST';
-    bool isPublic = true;
     bool isCreating = false;
     String? nameError;
 
