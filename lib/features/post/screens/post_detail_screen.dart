@@ -16,6 +16,7 @@ import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
 import 'package:taste_spot/features/profile/screens/profile_screen.dart';
 import 'package:taste_spot/features/restaurant/screens/restaurant_detail_screen.dart';
 import 'package:taste_spot/features/post/screens/report_form_screen.dart';
+import 'package:taste_spot/features/search/screens/search_result.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final PostModel post;
@@ -279,6 +280,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     Navigator.of(context).push(
       CupertinoPageRoute(
         builder: (_) => ProfileScreen(userId: userId),
+      ),
+    );
+  }
+
+  void _openHashtagSearch(String rawTag) {
+    final trimmed = rawTag.trim();
+    if (trimmed.isEmpty) return;
+
+    final query = trimmed.startsWith('#') ? trimmed : '#$trimmed';
+
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => SearchResultScreen(initialQuery: query),
       ),
     );
   }
@@ -670,24 +684,28 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 1),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF1F4),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: const Color(0xFFFFD4DD),
-                  width: 0.9,
+            padding: const EdgeInsets.fromLTRB(1, 8, 1, 1),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openHashtagSearch(match.group(0) ?? ''),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1F4),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: const Color(0xFFFFD4DD),
+                    width: 0.9,
+                  ),
                 ),
-              ),
-              child: Text(
-                match.group(0) ?? '',
-                style: const TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
-                  letterSpacing: -0.2,
+                child: Text(
+                  match.group(0) ?? '',
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                    letterSpacing: -0.2,
+                  ),
                 ),
               ),
             ),
@@ -721,28 +739,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      padding: const EdgeInsets.fromLTRB(14, 22, 14, 0),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
         children: _currentPost.hashtags.map((tag) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF1F4),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: const Color(0xFFFFD4DD),
-                width: 0.9,
+          final formattedTag = HashtagUtils.format(tag);
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _openHashtagSearch(formattedTag),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1F4),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: const Color(0xFFFFD4DD),
+                  width: 0.9,
+                ),
               ),
-            ),
-            child: Text(
-              HashtagUtils.format(tag),
-              style: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-                letterSpacing: -0.2,
+              child: Text(
+                formattedTag,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
           );
