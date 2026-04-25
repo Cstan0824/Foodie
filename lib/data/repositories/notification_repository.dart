@@ -40,13 +40,11 @@ class NotificationRepository {
 
   Future<List<Map<String, dynamic>>> fetchNotifications(String userId) async {
     try {
-      // We try to join on both recipient (User) and sender (sender:sender_id)
-      // Note: We use aliases to distinguish them clearly.
+      // Use the standard project pattern: join UserImage to get the avatar
       final response = await _supabase
           .from('Notification')
           .select('''
             *,
-            recipient:user_id(name),
             sender:sender_id(
               user_Id, 
               name, 
@@ -57,23 +55,29 @@ class NotificationRepository {
           .order('created_At', ascending: false)
           .limit(100);
       return List<Map<String, dynamic>>.from(response);
+    } on PostgrestException catch (e) {
+      if (e.code == 'PGRST200') {
+        return _fetchNotificationsFallback(userId);
+      }
+      rethrow;
     } catch (e) {
-      // Fallback for when sender_id column is completely missing from schema
-      print('⚠️ Notification join on sender_id failed (likely column missing): $e');
+      return _fetchNotificationsFallback(userId);
+    }
+  }
+
+  /// Fallback for when sender_id column is missing or broken.
+  Future<List<Map<String, dynamic>>> _fetchNotificationsFallback(String userId) async {
+    try {
       final response = await _supabase
           .from('Notification')
-          .select('''
-            *,
-            User:user_id(
-              user_Id, 
-              name, 
-              UserImage(image_url)
-            )
-          ''')
+          .select('*')
           .eq('user_id', userId)
           .order('created_At', ascending: false)
           .limit(100);
       return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('❌ [NotificationRepository] Fatal fetch error: $e');
+      return [];
     }
   }
 

@@ -959,100 +959,6 @@ class _ReportedCommentRow extends StatelessWidget {
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-class _Avatar extends StatelessWidget {
-  final String initial;
-  final double size;
-  final Color? color;
-
-  const _Avatar({required this.initial, required this.size, this.color});
-
-  static const List<Color> _palette = [
-    Color(0xFF5856D6),
-    Color(0xFF34C759),
-    Color(0xFF007AFF),
-    Color(0xFFFF9500),
-    Color(0xFFAF52DE),
-  ];
-
-  Color _colorFor(String s) {
-    final idx = s.codeUnitAt(0) % _palette.length;
-    return color ?? _palette[idx];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: _colorFor(initial),
-        shape: BoxShape.circle,
-      ),
-      child: Center(
-        child: Text(
-          initial.toUpperCase(),
-          style: TextStyle(
-            fontSize: size * 0.42,
-            fontWeight: FontWeight.w700,
-            color: CupertinoColors.white,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ReasonBadge extends StatelessWidget {
-  final String reason;
-
-  const _ReasonBadge({required this.reason});
-
-  static Color _colorFor(String r) {
-    switch (r.toLowerCase()) {
-      case 'spam':
-        return const Color(0xFFFF9500);
-      case 'offensive language':
-      case 'hate speech':
-        return const Color(0xFFFF3B30);
-      case 'misinformation':
-      case 'false claims':
-        return const Color(0xFF5856D6);
-      case 'harassment':
-        return const Color(0xFFFF2D55);
-      default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = _colorFor(reason);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: c.withAlpha(18),
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: c.withAlpha(55), width: 0.5),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(CupertinoIcons.flag_fill, size: 9, color: c),
-          const SizedBox(width: 3),
-          Text(
-            reason,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: c,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _StatusBadge extends StatelessWidget {
   final ReportActionStatus status;
 
@@ -1085,36 +991,6 @@ class _StatusBadge extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w700,
           color: color,
-        ),
-      ),
-    );
-  }
-}
-
-class _TextAction extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  final bool destructive;
-
-  const _TextAction({
-    required this.label,
-    required this.onTap,
-    required this.destructive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: destructive
-              ? const Color(0xFFFF3B30)
-              : AppColors.textSecondary,
         ),
       ),
     );

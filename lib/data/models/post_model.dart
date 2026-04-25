@@ -12,6 +12,8 @@ class PostModel {
   final String authorAvatar;
   final int likes;
   final int saveCount;
+  final bool isLiked;
+  final bool isSaved;
   final String? location;
   final String restaurantName;
   final DateTime? createdAt;
@@ -31,6 +33,8 @@ class PostModel {
     required this.authorAvatar,
     required this.likes,
     this.saveCount = 0,
+    this.isLiked = false,
+    this.isSaved = false,
     this.location,
     this.restaurantName = '',
     this.createdAt,
@@ -42,6 +46,8 @@ class PostModel {
     String? description,
     int? likes,
     int? saveCount,
+    bool? isLiked,
+    bool? isSaved,
     List<String>? hashtags,
   }) {
     return PostModel(
@@ -58,6 +64,8 @@ class PostModel {
       authorAvatar: authorAvatar,
       likes: likes ?? this.likes,
       saveCount: saveCount ?? this.saveCount,
+      isLiked: isLiked ?? this.isLiked,
+      isSaved: isSaved ?? this.isSaved,
       location: location,
       restaurantName: restaurantName,
       createdAt: createdAt,
@@ -110,6 +118,12 @@ class PostModel {
       hashtags.sort();
     }
 
+    final likesList = json['Likes'] as List<dynamic>?;
+    final isLiked = likesList != null && likesList.isNotEmpty;
+
+    final savesList = json['collections_item'] as List<dynamic>?;
+    final isSaved = savesList != null && savesList.isNotEmpty;
+
     return PostModel(
       id: json['post_Id'] as String,
       userId: (user?['user_Id'] as String?) ?? '',
@@ -124,6 +138,8 @@ class PostModel {
       authorAvatar: authorAvatar,
       likes: (json['likeCount'] as num?)?.toInt() ?? 0,
       saveCount: (json['saveCount'] as num?)?.toInt() ?? 0,
+      isLiked: isLiked,
+      isSaved: isSaved,
       restaurantName: restaurantName,
       createdAt:
           createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,

@@ -283,7 +283,7 @@ class _AdminPostReviewScreenState extends State<AdminPostReviewScreen> {
               images[i],
               fit: BoxFit.cover,
               width: double.infinity,
-              errorBuilder: (_, __, ___) => Container(
+              errorBuilder: (_, _, _) => Container(
                 color: AppColors.surface,
                 child: const Center(
                   child: Icon(

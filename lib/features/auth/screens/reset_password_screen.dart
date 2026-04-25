@@ -19,6 +19,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _passFocus = FocusNode();
   final _confirmFocus = FocusNode();
   bool _isLoading = false;
+  bool _passError = false;
+  bool _confirmError = false;
   late final AuthRepository _authRepo = AuthRepository(Supabase.instance.client);
 
   @override
@@ -31,6 +33,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   Future<void> _updatePassword() async {
     final password = _passwordController.text.trim();
     final confirm = _confirmPasswordController.text.trim();
+
+    setState(() {
+      _passError = password.isEmpty || password.length < 8;
+      _confirmError = password != confirm;
+    });
 
     if (password.isEmpty) {
       FeedbackDialog.show(context: context, title: 'New Password', message: 'Please enter a new password.');
@@ -95,6 +102,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 placeholder: 'New Password',
                 icon: CupertinoIcons.lock_fill,
                 obscureText: true,
+                isError: _passError,
+                onChanged: (_) {
+                  if (_passError) setState(() => _passError = false);
+                },
               ),
               const SizedBox(height: 16),
               _buildModernTextField(
@@ -103,6 +114,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 placeholder: 'Confirm Password',
                 icon: CupertinoIcons.checkmark_shield_fill,
                 obscureText: true,
+                isError: _confirmError,
+                onChanged: (_) {
+                  if (_confirmError) setState(() => _confirmError = false);
+                },
               ),
 
               const SizedBox(height: 48),
@@ -129,27 +144,44 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     required String placeholder,
     required IconData icon,
     bool obscureText = false,
+    bool isError = false,
+    ValueChanged<String>? onChanged,
   }) {
     final bool hasFocus = focusNode.hasFocus;
+    final Color borderColor = isError 
+        ? CupertinoColors.systemRed 
+        : (hasFocus ? AppColors.primary : Colors.transparent);
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       height: 56,
       decoration: BoxDecoration(
         color: hasFocus ? CupertinoColors.white : AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 1.5),
-        boxShadow: hasFocus ? [BoxShadow(color: AppColors.primary.withAlpha(15), blurRadius: 10, offset: const Offset(0, 4))] : [],
+        border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: hasFocus || isError ? [
+          BoxShadow(
+            color: (isError ? CupertinoColors.systemRed : AppColors.primary).withAlpha(15), 
+            blurRadius: 10, 
+            offset: const Offset(0, 4)
+          )
+        ] : [],
       ),
       child: Row(
         children: [
           const SizedBox(width: 16),
-          Icon(icon, color: hasFocus ? AppColors.primary : AppColors.textLight, size: 20),
+          Icon(
+            icon, 
+            color: isError ? CupertinoColors.systemRed : (hasFocus ? AppColors.primary : AppColors.textLight), 
+            size: 20
+          ),
           Expanded(
             child: CupertinoTextField(
               controller: controller,
               focusNode: focusNode,
               placeholder: placeholder,
               obscureText: obscureText,
+              onChanged: onChanged,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
               decoration: null,

@@ -173,8 +173,11 @@ class BlindBoxRepository {
 
         // Apply provided cuisineId as an optional boost, not a strict filter
         if (cuisineId != null && cuisineId.isNotEmpty) {
-          if (mainCuisine == cuisineId) score += 15;
-          else if (extras.contains(cuisineId)) score += 5;
+          if (mainCuisine == cuisineId) {
+            score += 15;
+          } else if (extras.contains(cuisineId)) {
+            score += 5;
+          }
         }
       }
 

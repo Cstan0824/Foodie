@@ -532,9 +532,39 @@ class RestaurantApprovalRepository {
     return rows;
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
+  /// Fetches pending approvals for restaurants that were submitted via a specific user's posts.
+  Future<List<RestaurantApprovalModel>> fetchUserPendingApprovals({
+    required String userId,
+  }) async {
+    // 1. Get all pending post approval IDs for this user
+    final postsResponse = await SupabaseService.client
+        .from('Post')
+        .select('restaurant_approval_id')
+        .eq('user_Id', userId)
+        .eq('isPending', true)
+        .not('restaurant_approval_id', 'is', null);
+
+    final approvalIds = (postsResponse as List<dynamic>)
+        .map((row) => row['restaurant_approval_id'] as String)
+        .toSet()
+        .toList();
+
+    if (approvalIds.isEmpty) return [];
+
+    // 2. Fetch those specific approvals
+    final response = await SupabaseService.client
+        .from('RestaurantApproval')
+        .select(_approvalSelect)
+        .inFilter('approval_Id', approvalIds)
+        .eq('status', 0); // Only pending
+
+    return (response as List<dynamic>)
+        .map(
+          (row) =>
+              RestaurantApprovalModel.fromJson(row as Map<String, dynamic>),
+        )
+        .toList();
+  }
 
   static final _secureRand = Random.secure();
 

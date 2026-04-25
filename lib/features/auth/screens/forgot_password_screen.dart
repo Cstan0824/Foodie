@@ -16,6 +16,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _emailController = TextEditingController();
   bool _isLoading = false;
+  bool _emailError = false;
 
   late final AuthRepository _authRepo = AuthRepository(Supabase.instance.client);
 
@@ -32,6 +33,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
+    
+    setState(() {
+      _emailError = email.isEmpty;
+    });
+
     if (email.isEmpty) {
       FeedbackDialog.show(context: context, title: 'Reset Password', message: 'Please enter your email address.');
       return;
@@ -105,6 +111,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 placeholder: 'Email Address',
                 icon: CupertinoIcons.mail,
                 keyboardType: TextInputType.emailAddress,
+                isError: _emailError,
+                onChanged: (_) {
+                  if (_emailError) setState(() => _emailError = false);
+                },
               ),
               const SizedBox(height: 32),
               GestureDetector(
@@ -144,24 +154,34 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     required String placeholder,
     required IconData icon,
     TextInputType? keyboardType,
+    bool isError = false,
+    ValueChanged<String>? onChanged,
   }) {
     return Container(
       height: 50,
       decoration: BoxDecoration(
         color: const Color(0xFFF7F7F9),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.divider, width: 0.5),
+        border: Border.all(
+          color: isError ? CupertinoColors.systemRed : AppColors.divider, 
+          width: isError ? 1.5 : 0.5
+        ),
       ),
       child: CupertinoTextField(
         controller: controller,
         placeholder: placeholder,
         keyboardType: keyboardType,
+        onChanged: onChanged,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
         placeholderStyle: const TextStyle(fontSize: 15, color: AppColors.textLight),
         prefix: Padding(
           padding: const EdgeInsets.only(left: 16.0),
-          child: Icon(icon, color: AppColors.textLight, size: 20),
+          child: Icon(
+            icon, 
+            color: isError ? CupertinoColors.systemRed : AppColors.textLight, 
+            size: 20
+          ),
         ),
         decoration: null,
       ),

@@ -17,10 +17,10 @@ class BlindBoxScreen extends StatefulWidget {
   const BlindBoxScreen({super.key});
 
   @override
-  State<BlindBoxScreen> createState() => _BlindBoxScreenState();
+  State<BlindBoxScreen> createState() => BlindBoxScreenState();
 }
 
-class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProviderStateMixin {
+class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProviderStateMixin {
   // ── Sensor / Shake Logic ──
   StreamSubscription<UserAccelerometerEvent>? _accelerometerSubscription;
   static const double _shakeThreshold = 30.0; // Sensitivity
@@ -126,7 +126,7 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
   }
 
   // Reset to initial state
-  void _reset() {
+  void reset() {
     setState(() {
       _hasFound = false;
       _isFinding = false;
@@ -148,7 +148,7 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
         trailing: _hasFound
             ? CupertinoButton(
                 padding: EdgeInsets.zero,
-                onPressed: _reset,
+                onPressed: reset,
                 child: const Icon(CupertinoIcons.arrow_counterclockwise, size: 22, color: AppColors.textPrimary),
               )
             : null,
@@ -277,7 +277,7 @@ class _BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvid
               ),
               const SizedBox(height: 24),
               CupertinoButton.filled(
-                onPressed: _reset,
+                onPressed: reset,
                 child: const Text('Go Back'),
               ),
             ],
