@@ -14,8 +14,8 @@ import 'package:taste_spot/data/models/collection_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/features/post/screens/edit_post_screen.dart';
 import 'package:taste_spot/features/profile/screens/profile_screen.dart';
+import 'package:taste_spot/features/restaurant/screens/restaurant_detail_screen.dart';
 import 'package:taste_spot/features/post/screens/report_form_screen.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final PostModel post;
@@ -756,16 +756,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
       child: GestureDetector(
-        onTap: () async {
-          final query = Uri.encodeComponent(_currentPost.restaurantName);
-          final url = Uri.parse(
-            'https://www.google.com/maps/search/?api=1&query=$query',
-          );
-          try {
-            if (await canLaunchUrl(url)) {
-              await launchUrl(url, mode: LaunchMode.externalApplication);
-            }
-          } catch (_) {}
+        onTap: () {
+          final restaurantId = _currentPost.restaurantId;
+          if (restaurantId != null && restaurantId.isNotEmpty) {
+            Navigator.of(context).push(
+              CupertinoPageRoute(
+                builder: (_) => RestaurantDetailScreen(
+                  restaurantId: restaurantId,
+                ),
+              ),
+            );
+          } else {
+            showCupertinoDialog(
+              context: context,
+              builder: (ctx) => CupertinoAlertDialog(
+                title: const Text('Unavailable'),
+                content: const Text('Restaurant details are unavailable.'),
+                actions: [
+                  CupertinoDialogAction(
+                    child: const Text('OK'),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            );
+          }
         },
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1195,7 +1210,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         label: 'Link',
                         onTap: () => Navigator.pop(context),
                       ),
-                      if (isOwner)
+                      if (_isCurrentUserPostOwner)
                         ...[
                           _buildHorizontalOption(
                             icon: CupertinoIcons.pencil,

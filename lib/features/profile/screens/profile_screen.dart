@@ -33,6 +33,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   int _selectedArchiveTab = 0;
   bool _isLoading = true;
   bool _isSettingsMenuOpen = false;
+  bool _isAccountsMenuOpen = false;
 
   Profile? _userProfile;
   String? _profileImageUrl;
@@ -169,7 +170,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   Future<void> _switchAccount(String userId) async {
     if (!mounted) return;
     final currentId = Supabase.instance.client.auth.currentUser?.id;
-    
+
     setState(() => _isLoading = true);
     try {
       if (userId == currentId) {
@@ -182,24 +183,27 @@ class ProfileScreenState extends State<ProfileScreen> {
       await AccountService.switchAccount(userId);
       // Give Supabase a moment to update the local session state
       await Future.delayed(const Duration(milliseconds: 600));
-      
+
       if (mounted) {
-         // Reset navigation to MainShell with the new account context
-         Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-           CupertinoPageRoute(builder: (_) => const MainShell()),
-           (route) => false,
-         );
+        // Reset navigation to MainShell with the new account context
+        Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+          CupertinoPageRoute(builder: (_) => const MainShell()),
+          (route) => false,
+        );
       }
     } catch (e) {
       print('Error switching account: $e');
       final errStr = e.toString();
-      if (errStr.contains('refresh_token_not_found') || errStr.contains('Invalid Refresh Token')) {
+      if (errStr.contains('refresh_token_not_found') ||
+          errStr.contains('Invalid Refresh Token')) {
         if (mounted) {
           showCupertinoDialog(
             context: context,
             builder: (ctx) => CupertinoAlertDialog(
               title: const Text('Session Expired'),
-              content: const Text('Please sign in again to access this account.'),
+              content: const Text(
+                'Please sign in again to access this account.',
+              ),
               actions: [
                 CupertinoDialogAction(
                   child: const Text('OK'),
@@ -242,7 +246,10 @@ class ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _isFollowUpdating = true;
       _isFollowingUser = nextState;
-      _followersCount = (_followersCount + (nextState ? 1 : -1)).clamp(0, 99999999);
+      _followersCount = (_followersCount + (nextState ? 1 : -1)).clamp(
+        0,
+        99999999,
+      );
     });
 
     final profileRepo = ProfileRepository(Supabase.instance.client);
@@ -256,7 +263,10 @@ class ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         setState(() {
           _isFollowingUser = !nextState;
-          _followersCount = (_followersCount + (nextState ? -1 : 1)).clamp(0, 99999999);
+          _followersCount = (_followersCount + (nextState ? -1 : 1)).clamp(
+            0,
+            99999999,
+          );
         });
       }
     } finally {
@@ -269,7 +279,8 @@ class ProfileScreenState extends State<ProfileScreen> {
     if (userId == null) return;
 
     // Using Supabase as a redirector to avoid NXDOMAIN errors in browsers
-    final String deepLink = 'https://wjwfqwvrynyfqbjkqmah.supabase.co/auth/v1/callback?redirect_to=io.supabase.tastespot://profile/$userId';
+    final String deepLink =
+        'https://wjwfqwvrynyfqbjkqmah.supabase.co/auth/v1/callback?redirect_to=io.supabase.tastespot://profile/$userId';
 
     Share.share(
       'Check out my food journey on Taste Spot!\n$deepLink',
@@ -312,6 +323,8 @@ class ProfileScreenState extends State<ProfileScreen> {
         _selectedArchiveTab = 0;
       }
     });
+  }
+
   void _showImagePreview(String? imageUrl) {
     if (imageUrl == null || imageUrl.isEmpty) return;
 
@@ -333,7 +346,11 @@ class ProfileScreenState extends State<ProfileScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withAlpha(120), blurRadius: 40, offset: const Offset(0, 20)),
+                    BoxShadow(
+                      color: Colors.black.withAlpha(120),
+                      blurRadius: 40,
+                      offset: const Offset(0, 20),
+                    ),
                   ],
                 ),
                 child: ClipRRect(
@@ -343,7 +360,11 @@ class ProfileScreenState extends State<ProfileScreen> {
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => Container(
                       color: AppColors.surface,
-                      child: const Icon(CupertinoIcons.person_fill, size: 100, color: AppColors.textLight),
+                      child: const Icon(
+                        CupertinoIcons.person_fill,
+                        size: 100,
+                        color: AppColors.textLight,
+                      ),
                     ),
                   ),
                 ),
@@ -372,18 +393,25 @@ class ProfileScreenState extends State<ProfileScreen> {
             if (_isCurrentUser)
               CupertinoButton(
                 padding: EdgeInsets.zero,
-                onPressed: () => setState(() => _isSettingsMenuOpen = !_isSettingsMenuOpen),
+                onPressed: () =>
+                    setState(() => _isSettingsMenuOpen = !_isSettingsMenuOpen),
                 child: Icon(
-                  _isSettingsMenuOpen ? CupertinoIcons.xmark : CupertinoIcons.bars,
+                  _isSettingsMenuOpen
+                      ? CupertinoIcons.xmark
+                      : CupertinoIcons.bars,
                   color: AppColors.textPrimary,
-                  size: 24
+                  size: 24,
                 ),
               )
             else
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: () {},
-                child: const Icon(CupertinoIcons.ellipsis, color: AppColors.textPrimary, size: 24),
+                child: const Icon(
+                  CupertinoIcons.ellipsis,
+                  color: AppColors.textPrimary,
+                  size: 24,
+                ),
               ),
           ],
         ),
@@ -398,7 +426,7 @@ class ProfileScreenState extends State<ProfileScreen> {
               ),
               slivers: [
                 SliverToBoxAdapter(child: _buildProfileSection(context)),
-              SliverPersistentHeader(
+                SliverPersistentHeader(
                   pinned: true,
                   delegate: _TextTabBarDelegate(
                     selectedTab: _selectedTab,
@@ -416,9 +444,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => setState(() {
                   _isSettingsMenuOpen = false;
                 }),
-                child: Container(
-                  color: Colors.black.withAlpha(20),
-                ),
+                child: Container(color: Colors.black.withAlpha(20)),
               ),
 
             _buildSettingsDropdown(),
@@ -448,9 +474,11 @@ class ProfileScreenState extends State<ProfileScreen> {
           if (_isCurrentUser) ...[
             const SizedBox(width: 2),
             Icon(
-              _isAccountsMenuOpen ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
+              _isAccountsMenuOpen
+                  ? CupertinoIcons.chevron_up
+                  : CupertinoIcons.chevron_down,
               size: 12,
-              color: AppColors.textPrimary
+              color: AppColors.textPrimary,
             ),
           ],
         ],
@@ -464,7 +492,9 @@ class ProfileScreenState extends State<ProfileScreen> {
       barrierColor: Colors.black.withAlpha(100),
       builder: (modalContext) => Container(
         padding: EdgeInsets.only(
-          top: 12, left: 24, right: 24, 
+          top: 12,
+          left: 24,
+          right: 24,
           bottom: MediaQuery.of(context).padding.bottom + 40,
         ),
         decoration: const BoxDecoration(
@@ -477,12 +507,24 @@ class ProfileScreenState extends State<ProfileScreen> {
           children: [
             Center(
               child: Container(
-                width: 40, height: 5,
-                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2.5)),
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
               ),
             ),
             const SizedBox(height: 32),
-            const Text('Manage Accounts', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -0.5)),
+            const Text(
+              'Manage Accounts',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: AppColors.textPrimary,
+                letterSpacing: -0.5,
+              ),
+            ),
             const SizedBox(height: 24),
             Flexible(
               child: SingleChildScrollView(
@@ -490,15 +532,17 @@ class ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   children: [
                     ..._savedAccounts.map((account) {
-                      final isCurrent = account.userId == Supabase.instance.client.auth.currentUser?.id;
+                      final isCurrent =
+                          account.userId ==
+                          Supabase.instance.client.auth.currentUser?.id;
                       return GestureDetector(
                         onTap: () {
                           Navigator.pop(modalContext);
                           _switchAccount(account.userId);
                         },
                         child: _buildAccountOption(
-                          account.username ?? 'user', 
-                          account.avatarUrl ?? '', 
+                          account.username ?? 'user',
+                          account.avatarUrl ?? '',
                           isSelected: isCurrent,
                         ),
                       );
@@ -511,13 +555,19 @@ class ProfileScreenState extends State<ProfileScreen> {
               padding: EdgeInsets.symmetric(vertical: 20),
               child: Divider(height: 1, color: AppColors.divider),
             ),
-            _buildMenuAction('Add Account', CupertinoIcons.plus_circle, onTap: () {
+            _buildMenuAction(
+              'Add Account',
+              CupertinoIcons.plus_circle,
+              onTap: () {
                 Navigator.pop(modalContext);
                 _addAccount();
               },
             ),
             const SizedBox(height: 8),
-            _buildMenuAction('Log Out All Accounts', CupertinoIcons.square_arrow_right, isDestructive: true,
+            _buildMenuAction(
+              'Log Out All Accounts',
+              CupertinoIcons.square_arrow_right,
+              isDestructive: true,
               onTap: () async {
                 Navigator.pop(modalContext);
                 for (var acc in _savedAccounts) {
@@ -530,7 +580,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                     (route) => false,
                   );
                 }
-              }
+              },
             ),
           ],
         ),
@@ -538,29 +588,64 @@ class ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildAccountOption(String username, String avatar, {bool isSelected = false}) {
+  Widget _buildAccountOption(
+    String username,
+    String avatar, {
+    bool isSelected = false,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.primary.withAlpha(15) : Colors.transparent,
+        color: isSelected
+            ? AppColors.primary.withAlpha(15)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
           Container(
-            width: 32, height: 32,
-            decoration: const BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+            width: 32,
+            height: 32,
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              shape: BoxShape.circle,
+            ),
             child: ClipOval(
               child: (avatar.isNotEmpty)
-                  ? Image.network(avatar, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 16, color: AppColors.textLight))
-                  : const Icon(CupertinoIcons.person_fill, size: 16, color: AppColors.textLight),
+                  ? Image.network(
+                      avatar,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        CupertinoIcons.person_fill,
+                        size: 16,
+                        color: AppColors.textLight,
+                      ),
+                    )
+                  : const Icon(
+                      CupertinoIcons.person_fill,
+                      size: 16,
+                      color: AppColors.textLight,
+                    ),
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(child: Text(username, style: TextStyle(fontSize: 14, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, color: isSelected ? AppColors.primary : AppColors.textPrimary))),
-          if (isSelected) const Icon(CupertinoIcons.checkmark_alt, size: 16, color: AppColors.primary),
+          Expanded(
+            child: Text(
+              username,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? AppColors.primary : AppColors.textPrimary,
+              ),
+            ),
+          ),
+          if (isSelected)
+            const Icon(
+              CupertinoIcons.checkmark_alt,
+              size: 16,
+              color: AppColors.primary,
+            ),
         ],
       ),
     );
@@ -578,21 +663,64 @@ class ProfileScreenState extends State<ProfileScreen> {
         child: IgnorePointer(
           ignoring: !_isSettingsMenuOpen,
           child: Container(
-            width: 200, padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: CupertinoColors.white, borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 25, offset: const Offset(0, 10))]),
+            width: 200,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: CupertinoColors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(25),
+                  blurRadius: 25,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildMenuAction('Settings', CupertinoIcons.settings, onTap: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => SettingsScreen()))),
-                _buildMenuAction('Privacy', CupertinoIcons.lock_shield, onTap: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PrivacyScreen()))),
-                _buildMenuAction('Help & Feedback', CupertinoIcons.question_circle, onTap: () => Navigator.of(context).push(CupertinoPageRoute(builder: (_) => HelpFeedbackScreen()))),
-                const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider(height: 0.5, color: AppColors.divider)),
-                _buildMenuAction('Logout', CupertinoIcons.power, isDestructive: true, onTap: () async {
-                   setState(() => _isSettingsMenuOpen = false);
-                   await Supabase.instance.client.auth.signOut();
-                   if (mounted) Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(CupertinoPageRoute(builder: (_) => const LoginScreen()), (route) => false);
-                }),
+                _buildMenuAction(
+                  'Settings',
+                  CupertinoIcons.settings,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).push(CupertinoPageRoute(builder: (_) => SettingsScreen())),
+                ),
+                _buildMenuAction(
+                  'Privacy',
+                  CupertinoIcons.lock_shield,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).push(CupertinoPageRoute(builder: (_) => PrivacyScreen())),
+                ),
+                _buildMenuAction(
+                  'Help & Feedback',
+                  CupertinoIcons.question_circle,
+                  onTap: () => Navigator.of(context).push(
+                    CupertinoPageRoute(builder: (_) => HelpFeedbackScreen()),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 0.5, color: AppColors.divider),
+                ),
+                _buildMenuAction(
+                  'Logout',
+                  CupertinoIcons.power,
+                  isDestructive: true,
+                  onTap: () async {
+                    setState(() => _isSettingsMenuOpen = false);
+                    await Supabase.instance.client.auth.signOut();
+                    if (mounted)
+                      Navigator.of(
+                        context,
+                        rootNavigator: true,
+                      ).pushAndRemoveUntil(
+                        CupertinoPageRoute(builder: (_) => const LoginScreen()),
+                        (route) => false,
+                      );
+                  },
+                ),
               ],
             ),
           ),
@@ -601,10 +729,22 @@ class ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildMenuAction(String label, IconData icon, {bool isDestructive = false, required VoidCallback onTap}) {
-    final Color color = isDestructive ? CupertinoColors.systemRed : AppColors.textPrimary;
+  Widget _buildMenuAction(
+    String label,
+    IconData icon, {
+    bool isDestructive = false,
+    required VoidCallback onTap,
+  }) {
+    final Color color = isDestructive
+        ? CupertinoColors.systemRed
+        : AppColors.textPrimary;
     return GestureDetector(
-      onTap: () { setState(() { _isSettingsMenuOpen = false; }); onTap(); },
+      onTap: () {
+        setState(() {
+          _isSettingsMenuOpen = false;
+        });
+        onTap();
+      },
       behavior: HitTestBehavior.opaque,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -613,7 +753,14 @@ class ProfileScreenState extends State<ProfileScreen> {
           children: [
             Icon(icon, size: 18, color: color.withAlpha(200)),
             const SizedBox(width: 12),
-            Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color)),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
           ],
         ),
       ),
@@ -625,17 +772,38 @@ class ProfileScreenState extends State<ProfileScreen> {
       onTap: () => _showImagePreview(_profileImageUrl),
       child: Container(
         padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5)),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: AppColors.primary.withAlpha(40),
+            width: 1.5,
+          ),
+        ),
         child: Hero(
           tag: 'profile_image_hero',
           child: Container(
-            width: 76, height: 76,
-            decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surface),
+            width: 76,
+            height: 76,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.surface,
+            ),
             child: ClipOval(
               child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
-                  ? Image.network(_profileImageUrl!, fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight))
-                  : const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
+                  ? Image.network(
+                      _profileImageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        CupertinoIcons.person_fill,
+                        size: 36,
+                        color: AppColors.textLight,
+                      ),
+                    )
+                  : const Icon(
+                      CupertinoIcons.person_fill,
+                      size: 36,
+                      color: AppColors.textLight,
+                    ),
             ),
           ),
         ),
@@ -646,7 +814,8 @@ class ProfileScreenState extends State<ProfileScreen> {
   Widget _buildProfileSection(BuildContext context) {
     if (_isLoading) return const _ProfileHeaderSkeleton();
     return Container(
-      color: CupertinoColors.white, padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+      color: CupertinoColors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -658,9 +827,24 @@ class ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_userProfile?.name ?? 'User', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5)),
+                    Text(
+                      _userProfile?.name ?? 'User',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text('@${_userProfile?.username ?? "user"}', style: const TextStyle(fontSize: 14, color: AppColors.textLight, fontWeight: FontWeight.w500)),
+                    Text(
+                      '@${_userProfile?.username ?? "user"}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textLight,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -670,18 +854,42 @@ class ProfileScreenState extends State<ProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _StatItem(value: _formatCount(_myPosts.length), label: 'Posts', onTap: () => setState(() => _selectedTab = 0)),
+              _StatItem(
+                value: _formatCount(_myPosts.length),
+                label: 'Posts',
+                onTap: () => setState(() => _selectedTab = 0),
+              ),
               Container(width: 1, height: 16, color: AppColors.divider),
-              _StatItem(value: _formatCount(_followersCount), label: 'Followers', onTap: () => _navigateToConnections(1)),
+              _StatItem(
+                value: _formatCount(_followersCount),
+                label: 'Followers',
+                onTap: () => _navigateToConnections(1),
+              ),
               Container(width: 1, height: 16, color: AppColors.divider),
-              _StatItem(value: _formatCount(_followingCount), label: 'Following', onTap: () => _navigateToConnections(0)),
+              _StatItem(
+                value: _formatCount(_followingCount),
+                label: 'Following',
+                onTap: () => _navigateToConnections(0),
+              ),
             ],
           ),
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text((_userProfile?.bio != null && _userProfile!.bio!.isNotEmpty) ? _userProfile!.bio! : 'Welcome to my flavor journey! 🍜',
-              maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: AppColors.textPrimary.withAlpha(180), height: 1.6, letterSpacing: 0.1)),
+            child: Text(
+              (_userProfile?.bio != null && _userProfile!.bio!.isNotEmpty)
+                  ? _userProfile!.bio!
+                  : 'Welcome to my flavor journey! 🍜',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: AppColors.textPrimary.withAlpha(180),
+                height: 1.6,
+                letterSpacing: 0.1,
+              ),
+            ),
           ),
           const SizedBox(height: 20),
           _buildActionButtons(),
@@ -691,55 +899,68 @@ class ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _navigateToConnections(int initialTab) {
-    final targetUserId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+    final targetUserId =
+        widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
     if (targetUserId == null) return;
-    Navigator.of(context).push(CupertinoPageRoute(builder: (_) => ConnectionsScreen(initialTabIndex: initialTab, userId: targetUserId)));
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ConnectionsScreen(
+          initialTabIndex: initialTab,
+          userId: targetUserId,
+        ),
+      ),
+    );
   }
 
   Widget _buildActionButtons() {
     return Row(
       children: [
         if (_isCurrentUser) ...[
-          Expanded(child: _ActionPill(label: 'Edit Profile', onTap: () async {
+          Expanded(
+            child: _ActionPill(
+              label: 'Edit Profile',
+              onTap: () async {
                 if (_userProfile == null) return;
-                await Navigator.of(context).push(CupertinoPageRoute(builder: (_) => EditProfileScreen(profile: _userProfile!)));
+                await Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => EditProfileScreen(profile: _userProfile!),
+                  ),
+                );
                 _fetchProfileData(silent: true);
-              })),
+              },
+            ),
+          ),
           const SizedBox(width: 12),
-          GestureDetector(onTap: _shareProfile, child: Container(height: 40, width: 48, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(6)), child: const Icon(CupertinoIcons.share, color: AppColors.textPrimary, size: 20))),
+          GestureDetector(
+            onTap: _shareProfile,
+            child: Container(
+              height: 40,
+              width: 48,
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Icon(
+                CupertinoIcons.share,
+                color: AppColors.textPrimary,
+                size: 20,
+              ),
+            ),
+          ),
         ] else
-          Expanded(child: _ActionPill(label: _isFollowingUser ? 'Following' : 'Follow', isPrimary: !_isFollowingUser, isLoading: _isFollowUpdating, onTap: _toggleFollowUser)),
+          Expanded(
+            child: _ActionPill(
+              label: _isFollowingUser ? 'Following' : 'Follow',
+              isPrimary: !_isFollowingUser,
+              isLoading: _isFollowUpdating,
+              onTap: _toggleFollowUser,
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildAvatar() {
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
-      ),
-      child: Container(
-        width: 76,
-        height: 76,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppColors.surface,
-        ),
-        child: ClipOval(
-          child: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
-              ? Image.network(
-                  _profileImageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
-                )
-              : const Icon(CupertinoIcons.person_fill, size: 36, color: AppColors.textLight),
-        ),
-      ),
-    );
-  }
-
+  
   List<Widget> _buildContentSlivers(BuildContext context) {
     if (_showsArchivedDesign) {
       return _buildArchivedSlivers(context);
@@ -865,11 +1086,29 @@ class ProfileScreenState extends State<ProfileScreen> {
     if (_isLoading) return const _GridSkeleton();
     final posts = _currentPosts;
     if (posts.isEmpty) {
-      return SliverFillRemaining(hasScrollBody: false, child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Icon(CupertinoIcons.doc_text, size: 48, color: AppColors.surface),
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                CupertinoIcons.doc_text,
+                size: 48,
+                color: AppColors.surface,
+              ),
               const SizedBox(height: 12),
-              Text(_selectedTab == 0 ? 'No posts yet' : 'No posts found', style: const TextStyle(color: AppColors.textLight, fontSize: 14)),
-            ])));
+              Text(
+                _selectedTab == 0 ? 'No posts yet' : 'No posts found',
+                style: const TextStyle(
+                  color: AppColors.textLight,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return SliverPadding(
@@ -883,7 +1122,10 @@ class ProfileScreenState extends State<ProfileScreen> {
               CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
             );
             if (result == true) _fetchProfileData(silent: true);
-          })));
+          },
+        ),
+      ),
+    );
   }
 }
 
@@ -891,17 +1133,50 @@ class _ProfileHeaderSkeleton extends StatelessWidget {
   const _ProfileHeaderSkeleton();
   @override
   Widget build(BuildContext context) {
-    return Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [const SkeletonCircle(size: 80), const SizedBox(width: 20), const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Skeleton(width: 140, height: 22), SizedBox(height: 8), Skeleton(width: 80, height: 14)]))]),
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SkeletonCircle(size: 80),
+              const SizedBox(width: 20),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Skeleton(width: 140, height: 22),
+                    SizedBox(height: 8),
+                    Skeleton(width: 80, height: 14),
+                  ],
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 24),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: List.generate(3, (index) => const Column(children: [Skeleton(width: 36, height: 20), SizedBox(height: 6), Skeleton(width: 54, height: 12)]))),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(
+              3,
+              (index) => const Column(
+                children: [
+                  Skeleton(width: 36, height: 20),
+                  SizedBox(height: 6),
+                  Skeleton(width: 54, height: 12),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
           const Skeleton(width: double.infinity, height: 14),
           const SizedBox(height: 6),
           const Skeleton(width: 220, height: 14),
           const SizedBox(height: 24),
           const Skeleton(height: 40, borderRadius: 20),
-        ]));
+        ],
+      ),
+    );
   }
 }
 
@@ -909,8 +1184,30 @@ class _GridSkeleton extends StatelessWidget {
   const _GridSkeleton();
   @override
   Widget build(BuildContext context) {
-    return SliverPadding(padding: const EdgeInsets.all(10), sliver: SliverGrid(gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 0.7),
-        delegate: SliverChildBuilderDelegate((context, index) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Expanded(child: Skeleton(borderRadius: 12)), const SizedBox(height: 8), const Skeleton(width: 100, height: 14), const SizedBox(height: 4), Skeleton(width: 60, height: 12, borderRadius: 4)]), childCount: 4)));
+    return SliverPadding(
+      padding: const EdgeInsets.all(10),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 0.7,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(child: Skeleton(borderRadius: 12)),
+              const SizedBox(height: 8),
+              const Skeleton(width: 100, height: 14),
+              const SizedBox(height: 4),
+              Skeleton(width: 60, height: 12, borderRadius: 4),
+            ],
+          ),
+          childCount: 4,
+        ),
+      ),
+    );
   }
 }
 
@@ -921,7 +1218,31 @@ class _StatItem extends StatelessWidget {
   const _StatItem({required this.value, required this.label, this.onTap});
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: Column(children: [Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary)), const SizedBox(height: 4), Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textSecondary))]));
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -930,10 +1251,37 @@ class _ActionPill extends StatelessWidget {
   final bool isPrimary;
   final bool isLoading;
   final VoidCallback onTap;
-  const _ActionPill({required this.label, this.isPrimary = false, this.isLoading = false, required this.onTap});
+  const _ActionPill({
+    required this.label,
+    this.isPrimary = false,
+    this.isLoading = false,
+    required this.onTap,
+  });
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(onTap: isLoading ? null : onTap, child: Container(height: 40, decoration: BoxDecoration(color: isPrimary ? AppColors.primary : AppColors.surface, borderRadius: BorderRadius.circular(6)), alignment: Alignment.center, child: isLoading ? const CupertinoActivityIndicator(radius: 8) : Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: isPrimary ? CupertinoColors.white : AppColors.textPrimary))));
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: isPrimary ? AppColors.primary : AppColors.surface,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        alignment: Alignment.center,
+        child: isLoading
+            ? const CupertinoActivityIndicator(radius: 8)
+            : Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: isPrimary
+                      ? CupertinoColors.white
+                      : AppColors.textPrimary,
+                ),
+              ),
+      ),
+    );
   }
 }
 
@@ -1020,7 +1368,9 @@ class _ArchiveSegmentedControl extends StatelessWidget {
                               AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 1),
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? AppColors.primary.withAlpha(20)
@@ -1303,9 +1653,17 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
   final int selectedTab;
   final ValueChanged<int> onTabChanged;
   final List<String> tabs;
-  const _TextTabBarDelegate({required this.selectedTab, required this.onTabChanged, required this.tabs});
+  const _TextTabBarDelegate({
+    required this.selectedTab,
+    required this.onTabChanged,
+    required this.tabs,
+  });
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
       color: CupertinoColors.white,
       child: Column(
@@ -1346,8 +1704,9 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
                                 duration: const Duration(milliseconds: 180),
                                 style: TextStyle(
                                   fontSize: 14,
-                                  fontWeight:
-                                      active ? FontWeight.w700 : FontWeight.w500,
+                                  fontWeight: active
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
                                   color: active
                                       ? AppColors.textPrimary
                                       : AppColors.textSecondary,
@@ -1369,9 +1728,14 @@ class _TextTabBarDelegate extends SliverPersistentHeaderDelegate {
       ),
     );
   }
-  @override double get maxExtent => 44;
-  @override double get minExtent => 44;
-  @override bool shouldRebuild(covariant _TextTabBarDelegate old) => old.selectedTab != selectedTab || old.tabs != tabs;
+
+  @override
+  double get maxExtent => 44;
+  @override
+  double get minExtent => 44;
+  @override
+  bool shouldRebuild(covariant _TextTabBarDelegate old) =>
+      old.selectedTab != selectedTab || old.tabs != tabs;
 }
 
 class Divider extends StatelessWidget {

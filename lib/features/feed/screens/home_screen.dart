@@ -359,11 +359,10 @@ class _TopNavBar extends StatelessWidget {
             CupertinoButton(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               minimumSize: Size.zero,
-              onPressed: () async {
-                final result = await Navigator.of(context).push(
-                  CupertinoPageRoute(builder: (_) => const NotificationScreen())
+              onPressed: () {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(builder: (_) => const ExploreScreen()),
                 );
-                if (result == true) onNotificationRefresh();
               },
               child: const Icon(CupertinoIcons.search, color: AppColors.textPrimary, size: 22),
             ),

@@ -46,7 +46,6 @@ class RestaurantImageRecord {
   }
 }
 
-
 class RestaurantDetailData {
   final RestaurantModel restaurant;
   final List<CuisineModel> extraCuisines;
@@ -98,6 +97,8 @@ class RestaurantRepository {
   static const String _fullSelect = '''
     restaurant_Id,
     restaurant_name,
+    description,
+    price_range,
     address,
     latitude,
     longitude,
@@ -108,7 +109,7 @@ class RestaurantRepository {
     info_url,
     isDisabled,
     rating,
-    mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc),
+    mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption),
     Restaurant_Image(image_id, image_url, isCover)
   ''';
 
@@ -126,7 +127,7 @@ class RestaurantRepository {
     final response = await SupabaseService.client
         .from('Restaurant')
         .select(
-          'restaurant_Id, restaurant_name, address, maps_url, mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc)',
+          'restaurant_Id, restaurant_name, description, price_range, address, latitude, longitude, maps_url, created_At, main_cuisine_id, source, info_url, isDisabled, rating, mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption), Restaurant_Image(image_id, image_url, isCover)',
         )
         .eq('isDisabled', false)
         .ilike('restaurant_name', '%$query%')
@@ -143,7 +144,7 @@ class RestaurantRepository {
     final response = await SupabaseService.client
         .from('Restaurant')
         .select(
-          'restaurant_Id, restaurant_name, address, mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc)',
+          'restaurant_Id, restaurant_name, description, price_range, address, latitude, longitude, maps_url, created_At, main_cuisine_id, source, info_url, isDisabled, rating, mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption), Restaurant_Image(image_id, image_url, isCover)',
         )
         .eq('isDisabled', false)
         .order('created_At', ascending: false)
@@ -191,15 +192,18 @@ class RestaurantRepository {
           .inFilter('CuisineId', cuisineIds);
 
       final extraRestaurantIds = (tagRows as List<dynamic>)
-          .map((row) => (row as Map<String, dynamic>)['RestaurantId']?.toString())
+          .map(
+            (row) => (row as Map<String, dynamic>)['RestaurantId']?.toString(),
+          )
           .whereType<String>()
           .where((id) => id.isNotEmpty)
           .toList();
 
       final mainCuisineFilter = 'main_cuisine_id.in.(${cuisineIds.join(',')})';
-      
+
       if (extraRestaurantIds.isNotEmpty) {
-        final extraFilter = 'restaurant_Id.in.(${extraRestaurantIds.join(',')})';
+        final extraFilter =
+            'restaurant_Id.in.(${extraRestaurantIds.join(',')})';
         query = query.or('$mainCuisineFilter,$extraFilter');
       } else {
         query = query.or(mainCuisineFilter);
@@ -237,10 +241,18 @@ class RestaurantRepository {
         .select('''
           restaurant_Id,
           restaurant_name,
+          description,
+          price_range,
+          latitude,
+          longitude,
+          maps_url,
           address,
           source,
+          info_url,
+          rating,
+          main_cuisine_id,
           isDisabled,
-          mainCuisine:Cuisine!restaurant_main_cuisine_fk(desc),
+          mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption),
           Restaurant_Image(image_id, image_url, isCover)
         ''')
         .eq('restaurant_Id', restaurantId)
@@ -266,8 +278,8 @@ class RestaurantRepository {
       restaurantId: row['restaurant_Id']?.toString() ?? '',
       name: row['restaurant_name']?.toString() ?? '',
       address: row['address']?.toString(),
-      mainCuisineName:
-          (row['mainCuisine'] as Map<String, dynamic>?)?['desc']?.toString(),
+      mainCuisineName: (row['mainCuisine'] as Map<String, dynamic>?)?['desc']
+          ?.toString(),
       isDisabled: row['isDisabled'] as bool? ?? false,
       source: row['source']?.toString(),
       coverImageUrl: coverImageUrl,
@@ -296,13 +308,16 @@ class RestaurantRepository {
   /// Returns the generated restaurant ID.
   Future<String> createRestaurant({
     required String name,
+    String? description,
+    String? priceRange,
     String? address,
     double? latitude,
     double? longitude,
     String? mapsUrl,
     String? mainCuisineId,
     String? infoUrl,
-    String source = 'Admin',
+    String source = 'ADMIN',
+    double? rating,
   }) async {
     if (name.trim().isEmpty) {
       throw Exception('Restaurant name is required.');
@@ -313,6 +328,8 @@ class RestaurantRepository {
     await SupabaseService.client.from('Restaurant').insert({
       'restaurant_Id': restaurantId,
       'restaurant_name': name.trim(),
+      'description': description,
+      'price_range': priceRange,
       'address': address,
       'latitude': latitude,
       'longitude': longitude,
@@ -320,6 +337,7 @@ class RestaurantRepository {
       'main_cuisine_id': mainCuisineId,
       'info_url': infoUrl,
       'source': source,
+      'rating': rating,
       'isDisabled': false,
     });
 
@@ -331,6 +349,8 @@ class RestaurantRepository {
   Future<void> updateRestaurant({
     required String restaurantId,
     String? name,
+    String? description,
+    String? priceRange,
     String? address,
     double? latitude,
     double? longitude,
@@ -340,6 +360,8 @@ class RestaurantRepository {
   }) async {
     final updates = <String, dynamic>{};
     if (name != null) updates['restaurant_name'] = name.trim();
+    if (description != null) updates['description'] = description;
+    if (priceRange != null) updates['price_range'] = priceRange;
     if (address != null) updates['address'] = address;
     if (latitude != null) updates['latitude'] = latitude;
     if (longitude != null) updates['longitude'] = longitude;
@@ -366,6 +388,8 @@ class RestaurantRepository {
   Future<void> updateRestaurantDetails({
     required String restaurantId,
     required String name,
+    String? description,
+    String? priceRange,
     required String address,
     required String mainCuisineId,
     double? latitude,
@@ -389,6 +413,8 @@ class RestaurantRepository {
         .from('Restaurant')
         .update({
           'restaurant_name': name.trim(),
+          'description': description,
+          'price_range': priceRange,
           'address': address.trim(),
           'latitude': latitude,
           'longitude': longitude,
@@ -694,34 +720,45 @@ class RestaurantRepository {
   Future<String> saveRestaurant({
     String? restaurantId,
     required String name,
+    String? description,
+    String? priceRange,
     required String address,
     required String mainCuisineId,
     double? latitude,
     double? longitude,
     String? mapsUrl,
     String? infoUrl,
-    String source = 'Admin',
+    String source = 'ADMIN',
     double? rating,
     List<String> extraCuisineIds = const [],
     List<RestaurantImageRecord> images = const [],
   }) async {
-    final normalizedSource = source.trim().isEmpty ? 'Admin' : source.trim();
+    final normalizedSource = source.trim().isEmpty
+        ? 'ADMIN'
+        : source.trim().toUpperCase();
 
-    final id = restaurantId ?? await createRestaurant(
-            name: name,
-            address: address,
-            latitude: latitude,
-            longitude: longitude,
-            mapsUrl: mapsUrl,
-            mainCuisineId: mainCuisineId,
-            infoUrl: infoUrl,
-            source: normalizedSource,
-          );
+    final id =
+        restaurantId ??
+        await createRestaurant(
+          name: name,
+          description: description,
+          priceRange: priceRange,
+          address: address,
+          latitude: latitude,
+          longitude: longitude,
+          mapsUrl: mapsUrl,
+          mainCuisineId: mainCuisineId,
+          infoUrl: infoUrl,
+          source: normalizedSource,
+          rating: rating,
+        );
 
     if (restaurantId != null) {
       await updateRestaurantDetails(
         restaurantId: id,
         name: name,
+        description: description,
+        priceRange: priceRange,
         address: address,
         mainCuisineId: mainCuisineId,
         latitude: latitude,
@@ -737,6 +774,124 @@ class RestaurantRepository {
     await replaceRestaurantImages(id, images);
 
     return id;
+  }
+
+  // ===========================================================================
+  // Collections & Saves
+  // ===========================================================================
+
+  /// Checks if the user has saved the restaurant in any of their restaurant collections.
+  Future<bool> isRestaurantSaved({
+    required String userId,
+    required String restaurantId,
+  }) async {
+    final collectionIds = await SupabaseService.client
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId)
+        .eq('collection_type', 'RESTAURANT');
+
+    final ids = (collectionIds as List<dynamic>)
+        .map((r) => r['collection_Id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    if (ids.isEmpty) return false;
+
+    final saved = await SupabaseService.client
+        .from('collections_item')
+        .select('item_Id')
+        .eq('restaurant_id', restaurantId)
+        .inFilter('collection_Id', ids)
+        .limit(1);
+
+    return (saved as List<dynamic>).isNotEmpty;
+  }
+
+  /// Gets the user's default RESTAURANT collection, creating it if it doesn't exist.
+  Future<String> getOrCreateDefaultRestaurantCollection(String userId) async {
+    final existing = await SupabaseService.client
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId)
+        .eq('collection_type', 'RESTAURANT')
+        .eq('is_default', true)
+        .maybeSingle();
+
+    if (existing != null && existing['collection_Id'] != null) {
+      return existing['collection_Id'].toString();
+    }
+
+    final collectionId = _generateUUID();
+    await SupabaseService.client.from('collections').insert({
+      'collection_Id': collectionId,
+      'user_Id': userId,
+      'name': 'Saved Restaurants',
+      'collection_type': 'RESTAURANT',
+      'is_default': true,
+      'is_public': false,
+    });
+
+    return collectionId;
+  }
+
+  /// Saves a restaurant to the user's default restaurant collection.
+  Future<void> saveRestaurantToDefaultCollection({
+    required String userId,
+    required String restaurantId,
+  }) async {
+    final collectionId = await getOrCreateDefaultRestaurantCollection(userId);
+    await saveRestaurantToCollection(
+      collectionId: collectionId,
+      restaurantId: restaurantId,
+    );
+  }
+
+  /// Saves a restaurant to a specific collection.
+  Future<void> saveRestaurantToCollection({
+    required String collectionId,
+    required String restaurantId,
+  }) async {
+    // Check for duplicates first
+    final existing = await SupabaseService.client
+        .from('collections_item')
+        .select('item_Id')
+        .eq('collection_Id', collectionId)
+        .eq('restaurant_id', restaurantId)
+        .maybeSingle();
+
+    if (existing != null) return;
+
+    await SupabaseService.client.from('collections_item').insert({
+      'item_Id': _generateUUID(),
+      'collection_Id': collectionId,
+      'restaurant_id': restaurantId,
+    });
+  }
+
+  /// Removes the restaurant from all of the user's restaurant collections.
+  Future<void> unsaveRestaurantForUser({
+    required String userId,
+    required String restaurantId,
+  }) async {
+    final collectionIds = await SupabaseService.client
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId)
+        .eq('collection_type', 'RESTAURANT');
+
+    final ids = (collectionIds as List<dynamic>)
+        .map((r) => r['collection_Id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    if (ids.isEmpty) return;
+
+    await SupabaseService.client
+        .from('collections_item')
+        .delete()
+        .eq('restaurant_id', restaurantId)
+        .inFilter('collection_Id', ids);
   }
 
   // ===========================================================================

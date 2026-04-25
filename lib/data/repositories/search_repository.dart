@@ -4,7 +4,7 @@ import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 
-enum SearchSuggestionType { restaurant, post }
+enum SearchSuggestionType { restaurant, post, hashtag }
 
 class SearchSuggestion {
   final SearchSuggestionType type;
@@ -125,8 +125,20 @@ class SearchRepository {
     int restaurantLimit = 30,
     int postLimit = 60,
   }) async {
+    final restaurantScopedName = _extractRestaurantScopedQuery(query);
+    if (restaurantScopedName != null) {
+      return _searchPostsForRestaurant(
+        restaurantName: restaurantScopedName,
+        query: query,
+        scope: scope,
+        sortMode: sortMode,
+        postLimit: postLimit,
+      );
+    }
+
     final normalizedQuery = _normalizeText(query);
     final tokens = _tokenize(normalizedQuery);
+    final hashtagIntent = _normalizedHashtagIntentFromQuery(query);
 
     if (normalizedQuery.isEmpty) {
       return SearchResultsPayload(
@@ -170,6 +182,7 @@ class SearchRepository {
         postCandidates,
         normalizedQuery,
         tokens,
+        hashtagIntent: hashtagIntent,
         boostedRestaurantIds: strongRestaurantIds,
         sortMode: sortMode,
       );
@@ -183,8 +196,13 @@ class SearchRepository {
       }
     }
 
+    final hasExactHashtagPostMatch =
+        hashtagIntent != null &&
+        rankedPosts.any((p) => _postHasExactHashtag(p.post, hashtagIntent));
+
     final shouldShowRestaurantPreview =
         scope == SearchScope.all &&
+        !hasExactHashtagPostMatch &&
         _shouldShowRestaurantPreview(rankedRestaurants, tokens);
 
     final restaurants = switch (scope) {
@@ -208,6 +226,127 @@ class SearchRepository {
       scope: scope,
       restaurants: restaurants,
       posts: posts,
+    );
+  }
+
+  String? _extractRestaurantScopedQuery(String rawQuery) {
+    final trimmed = rawQuery.trim();
+    final lower = trimmed.toLowerCase();
+
+    if (!lower.startsWith('restaurant:')) return null;
+
+    final value = trimmed.substring('restaurant:'.length).trim();
+    return value.isEmpty ? null : value;
+  }
+
+  Future<SearchResultsPayload> _searchPostsForRestaurant({
+    required String restaurantName,
+    required String query,
+    required SearchScope scope,
+    required SearchSortMode sortMode,
+    required int postLimit,
+  }) async {
+    final normalizedRestaurantName = _normalizeText(restaurantName);
+    final restaurantTokens = _tokenize(normalizedRestaurantName);
+
+    final restaurantCandidates = await _fetchRestaurantCandidates(
+      rawQuery: restaurantName,
+      normalizedQuery: normalizedRestaurantName,
+      tokens: restaurantTokens,
+    );
+
+    final resultRestaurants = _rankRestaurants(
+      restaurantCandidates,
+      normalizedRestaurantName,
+      restaurantTokens,
+      sortMode: sortMode,
+    );
+
+    final matchedRestaurantId = resultRestaurants.isNotEmpty
+        ? resultRestaurants.first.restaurant.restaurantId
+        : null;
+
+    if (matchedRestaurantId == null) {
+      return SearchResultsPayload(
+        query: query,
+        scope: scope,
+        restaurants: const [],
+        posts: const [],
+      );
+    }
+
+    // Now, fetch posts directly linked to that specific restaurant ID.
+    final postRows = await SupabaseService.client
+        .from('Post')
+        .select(_postSearchSelect)
+        .eq('isPending', false)
+        .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .eq('Restaurant.isDisabled', false)
+        .eq('restaurant_Id', matchedRestaurantId)
+        .limit(postLimit * 2);
+
+    final mappedRows = (postRows as List<dynamic>)
+        .map((r) => r as Map<String, dynamic>)
+        .toList();
+
+    final ranked = mappedRows.map((row) {
+      final post = PostModel.fromJson(row);
+      final engagementRaw = post.likes + (post.saveCount * 2);
+      final engagementScore = min(60.0, log(1 + engagementRaw) * 12);
+
+      final ageHours = post.createdAt != null
+          ? max(0.0, DateTime.now().difference(post.createdAt!).inHours.toDouble())
+          : 720.0;
+      final freshnessScore = 30.0 / (1 + (ageHours / 24.0));
+
+      final totalScore = engagementScore + freshnessScore;
+
+      return PostSearchResult(
+        post: post,
+        bucket: PostMatchBucket.p1,
+        boostedByRestaurantMatch: true,
+        exactScore: 100,
+        relevanceScore: 100,
+        engagementScore: engagementScore,
+        freshnessScore: freshnessScore,
+        totalScore: totalScore,
+      );
+    }).toList();
+
+    ranked.sort((a, b) {
+      if (sortMode == SearchSortMode.latest) {
+        final createdA = a.post.createdAt;
+        final createdB = b.post.createdAt;
+        if (createdA == null && createdB == null) return 0;
+        if (createdA == null) return 1;
+        if (createdB == null) return -1;
+        return createdB.compareTo(createdA);
+      }
+      
+      final totalCompare = b.totalScore.compareTo(a.totalScore);
+      if (totalCompare != 0) return totalCompare;
+
+      return b.post.likes.compareTo(a.post.likes);
+    });
+
+    final scopedRestaurants = switch (scope) {
+      SearchScope.all => resultRestaurants.take(1).toList(),
+      SearchScope.restaurants => resultRestaurants.take(10).toList(),
+      SearchScope.posts => const <RestaurantSearchResult>[],
+    };
+
+    final scopedPosts = switch (scope) {
+      SearchScope.all => ranked.take(postLimit).toList(),
+      SearchScope.restaurants => const <PostSearchResult>[],
+      SearchScope.posts => ranked.take(postLimit).toList(),
+    };
+
+    return SearchResultsPayload(
+      query: query,
+      scope: scope,
+      restaurants: scopedRestaurants,
+      posts: scopedPosts,
     );
   }
 
@@ -257,11 +396,12 @@ class SearchRepository {
   Future<List<SearchSuggestion>> fetchSearchSuggestions(String query) async {
     final normalizedQuery = _normalizeText(query);
     if (normalizedQuery.length < 2) return const [];
-    
+
     final safeQuery = _toSafeIlikeInput(query);
     if (safeQuery.isEmpty) return const [];
 
     final suggestions = <SearchSuggestion>[];
+    final hashtagSuggestion = _buildHashtagSuggestion(normalizedQuery);
 
     // 1. Fetch restaurant candidates
     final restaurantRows = await SupabaseService.client
@@ -337,53 +477,61 @@ class SearchRepository {
     try {
       final postRows = await SupabaseService.client
           .from('Post')
-          .select('post_Id, title, caption, likeCount, saveCount, created_At')
+          .select(
+            'post_Id, title, caption, likeCount, saveCount, created_At, Restaurant!inner(isDisabled)',
+          )
           .eq('isPending', false)
           .eq('isRemoved', false)
           .eq('isBlocked', false)
+          .eq('Restaurant.isDisabled', false)
           .or('title.ilike.%$safeQuery%,caption.ilike.%$safeQuery%')
           .limit(25);
 
-      final posts = (postRows as List<dynamic>).map((row) {
-        final map = row as Map<String, dynamic>;
-        final title = (map['title'] as String?) ?? '';
-        final caption = (map['caption'] as String?) ?? '';
+      final posts = (postRows as List<dynamic>)
+          .map((row) {
+            final map = row as Map<String, dynamic>;
+            final title = (map['title'] as String?) ?? '';
+            final caption = (map['caption'] as String?) ?? '';
 
-        final titleNorm = _normalizeText(title);
-        final captionNorm = _normalizeText(caption);
+            final titleNorm = _normalizeText(title);
+            final captionNorm = _normalizeText(caption);
 
-        double score = 0;
-        if (normalizedQuery.isNotEmpty && titleNorm.contains(normalizedQuery)) {
-          score += 100;
-        }
-        if (normalizedQuery.isNotEmpty && captionNorm.contains(normalizedQuery)) {
-          score += 65;
-        }
+            double score = 0;
+            if (normalizedQuery.isNotEmpty &&
+                titleNorm.contains(normalizedQuery)) {
+              score += 100;
+            }
+            if (normalizedQuery.isNotEmpty &&
+                captionNorm.contains(normalizedQuery)) {
+              score += 65;
+            }
 
-        final tokens = _tokenize(normalizedQuery);
-        score += _tokenOverlapRatio(tokens, _wordSet(titleNorm)) * 25;
-        score += _tokenOverlapRatio(tokens, _wordSet(captionNorm)) * 12;
+            final tokens = _tokenize(normalizedQuery);
+            score += _tokenOverlapRatio(tokens, _wordSet(titleNorm)) * 25;
+            score += _tokenOverlapRatio(tokens, _wordSet(captionNorm)) * 12;
 
-        final likeCount = (map['likeCount'] as num?)?.toInt() ?? 0;
-        final saveCount = (map['saveCount'] as num?)?.toInt() ?? 0;
-        final createdAtRaw = map['created_At']?.toString();
-        final createdAt = createdAtRaw == null
-            ? null
-            : DateTime.tryParse(createdAtRaw);
+            final likeCount = (map['likeCount'] as num?)?.toInt() ?? 0;
+            final saveCount = (map['saveCount'] as num?)?.toInt() ?? 0;
+            final createdAtRaw = map['created_At']?.toString();
+            final createdAt = createdAtRaw == null
+                ? null
+                : DateTime.tryParse(createdAtRaw);
 
-        return (
-          suggestion: SearchSuggestion(
-            type: SearchSuggestionType.post,
-            displayText: title,
-            queryText: title,
-            postId: map['post_Id'] as String,
-          ),
-          score: score,
-          likeCount: likeCount,
-          saveCount: saveCount,
-          createdAt: createdAt,
-        );
-      }).where((item) => item.suggestion.displayText.trim().isNotEmpty).toList();
+            return (
+              suggestion: SearchSuggestion(
+                type: SearchSuggestionType.post,
+                displayText: title,
+                queryText: title,
+                postId: map['post_Id'] as String,
+              ),
+              score: score,
+              likeCount: likeCount,
+              saveCount: saveCount,
+              createdAt: createdAt,
+            );
+          })
+          .where((item) => item.suggestion.displayText.trim().isNotEmpty)
+          .toList();
 
       posts.sort((a, b) {
         final scoreCompare = b.score.compareTo(a.score);
@@ -414,7 +562,20 @@ class SearchRepository {
       // Keep restaurant suggestions working even if post suggestion query fails.
     }
 
-    return suggestions;
+    if (hashtagSuggestion != null) {
+      suggestions.insert(0, hashtagSuggestion);
+    }
+
+    final deduped = <SearchSuggestion>[];
+    final seen = <String>{};
+    for (final suggestion in suggestions) {
+      final key = suggestion.queryText.trim().toLowerCase();
+      if (key.isEmpty || seen.contains(key)) continue;
+      seen.add(key);
+      deduped.add(suggestion);
+    }
+
+    return deduped.take(6).toList();
   }
 
   Future<List<String>> fetchTrendingSearches({int limit = 8}) async {
@@ -428,8 +589,8 @@ class SearchRepository {
         .limit(120);
 
     final posts = (rows as List<dynamic>)
-    .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
-    .toList();
+        .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+        .toList();
 
     posts.sort((a, b) => _trendingScore(b).compareTo(_trendingScore(a)));
 
@@ -689,6 +850,7 @@ class SearchRepository {
     List<Map<String, dynamic>> rows,
     String normalizedQuery,
     List<String> tokens, {
+    required String? hashtagIntent,
     required Set<String> boostedRestaurantIds,
     required SearchSortMode sortMode,
   }) {
@@ -717,6 +879,9 @@ class SearchRepository {
           normalizedQuery.isNotEmpty && titleNorm.contains(normalizedQuery);
       final phraseInCaption =
           normalizedQuery.isNotEmpty && captionNorm.contains(normalizedQuery);
+
+      final hasExactHashtagMatch =
+          hashtagIntent != null && _postHasExactHashtag(post, hashtagIntent);
 
       final restaurantNameExactish =
           restaurantNameNorm == normalizedQuery ||
@@ -748,7 +913,10 @@ class SearchRepository {
       PostMatchBucket bucket = PostMatchBucket.irrelevant;
       double exactScore = 0;
 
-      if (phraseInTitle) {
+      if (hasExactHashtagMatch) {
+        bucket = PostMatchBucket.p1;
+        exactScore = 760;
+      } else if (phraseInTitle) {
         bucket = PostMatchBucket.p1;
         exactScore = 600;
       } else if (phraseInCaption) {
@@ -1078,6 +1246,57 @@ class SearchRepository {
     final lower = value.toLowerCase().trim();
     final withoutPunctuation = lower.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ');
     return withoutPunctuation.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  String? _normalizedHashtagIntentFromQuery(String rawQuery) {
+    final trimmed = rawQuery.trim();
+    if (!trimmed.startsWith('#')) return null;
+
+    final withoutHash = trimmed.substring(1);
+    if (withoutHash.isEmpty) return null;
+
+    final token = _normalizeText(withoutHash).split(' ').first;
+    if (token.length < 2) return null;
+    return token;
+  }
+
+  SearchSuggestion? _buildHashtagSuggestion(String normalizedQuery) {
+    if (normalizedQuery.isEmpty || normalizedQuery.length < 2) return null;
+    if (normalizedQuery.contains(' ')) return null;
+
+    final hashtag = '#$normalizedQuery';
+    return SearchSuggestion(
+      type: SearchSuggestionType.hashtag,
+      displayText: hashtag,
+      queryText: hashtag,
+    );
+  }
+
+  bool _postHasExactHashtag(PostModel post, String hashtag) {
+    final normalizedHashtag = _normalizeText(hashtag);
+    if (normalizedHashtag.isEmpty) return false;
+
+    for (final tag in post.hashtags) {
+      if (_normalizeText(tag) == normalizedHashtag) {
+        return true;
+      }
+    }
+
+    final extracted = _extractHashtagsFromText(
+      '${post.title} ${post.description}',
+    );
+    return extracted.contains(normalizedHashtag);
+  }
+
+  Set<String> _extractHashtagsFromText(String text) {
+    final matches = RegExp(r'#([A-Za-z0-9_]+)').allMatches(text);
+    final tags = <String>{};
+    for (final match in matches) {
+      final tag = match.group(1);
+      if (tag == null || tag.isEmpty) continue;
+      tags.add(_normalizeText(tag));
+    }
+    return tags;
   }
 
   List<String> _tokenize(String normalized) {

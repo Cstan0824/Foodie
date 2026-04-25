@@ -7,7 +7,6 @@ import 'package:taste_spot/data/repositories/search_repository.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
-  
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -143,6 +142,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Future<void> _submitSearch(String rawQuery) async {
     final query = rawQuery.trim();
     if (query.isEmpty) return;
+    _suggestionDebounce?.cancel();
+    if (mounted) {
+      setState(() {
+        _isLoadingSuggestions = false;
+        _suggestions = [];
+      });
+    }
     await _saveSearchQuery(query);
     await _openSearchResult(query);
   }
@@ -154,9 +160,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
     final trimmed = query.trim();
     if (trimmed.length < 2) {
-      if (_suggestions.isNotEmpty) {
+      if (_suggestions.isNotEmpty || _isLoadingSuggestions) {
         setState(() {
           _suggestions = [];
+          _isLoadingSuggestions = false;
         });
       }
       return;
@@ -174,12 +181,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
     });
 
     try {
-      final results = await SearchRepository.instance.fetchSearchSuggestions(query);
+      final results = await SearchRepository.instance.fetchSearchSuggestions(
+        query,
+      );
       if (!mounted) return;
-      
+
       if (_searchController.text.trim() == query) {
         setState(() {
           _suggestions = results;
+          _isLoadingSuggestions = false;
+        });
+      } else {
+        setState(() {
           _isLoadingSuggestions = false;
         });
       }
@@ -290,7 +303,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 CupertinoButton(
                   padding: EdgeInsets.zero,
                   minimumSize: Size.zero,
-                  onPressed: _searchHistory.isEmpty ? null : _clearSearchHistory,
+                  onPressed: _searchHistory.isEmpty
+                      ? null
+                      : _clearSearchHistory,
                   child: const Icon(
                     CupertinoIcons.trash,
                     color: AppColors.textLight,
@@ -339,10 +354,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         padding: EdgeInsets.symmetric(vertical: 8),
         child: Text(
           'No trending searches yet.',
-          style: TextStyle(
-            fontSize: 14,
-            color: AppColors.textSecondary,
-          ),
+          style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
         ),
       );
     }
@@ -451,7 +463,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
       itemBuilder: (context, index) {
         final suggestion = _suggestions[index];
         final isRestaurant = suggestion.type == SearchSuggestionType.restaurant;
-        
+        final isHashtag = suggestion.type == SearchSuggestionType.hashtag;
+
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
@@ -467,7 +480,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
             child: Row(
               children: [
                 Icon(
-                  isRestaurant ? CupertinoIcons.map_pin_ellipse : CupertinoIcons.search,
+                  isRestaurant
+                      ? CupertinoIcons.map_pin_ellipse
+                      : (isHashtag
+                            ? CupertinoIcons.number
+                            : CupertinoIcons.search),
                   color: AppColors.textLight,
                   size: 18,
                 ),

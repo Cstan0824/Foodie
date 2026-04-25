@@ -200,6 +200,7 @@ class _MainShellState extends State<MainShell> {
   final GlobalKey<CollectionScreenState> collectionKey = GlobalKey();
 
   late final CupertinoTabController _tabController;
+  int _lastNonAddTabIndex = 0;
 
   @override
   void initState() {
@@ -213,15 +214,20 @@ class _MainShellState extends State<MainShell> {
     super.dispose();
   }
 
-  void _showAddPost() async {
+  void _showAddPost({required int returnToIndex}) async {
     final result = await Navigator.of(context).push(
       CupertinoPageRoute(
         fullscreenDialog: true,
         builder: (context) => const AddPostScreen(),
       ),
     );
-    if (result == true && mounted) {
-      _tabController.index = 0;
+
+    if (!mounted) return;
+
+    _tabController.index = returnToIndex;
+    _lastNonAddTabIndex = returnToIndex;
+
+    if (result == true) {
       homeKey.currentState?.loadPosts();
       profileKey.currentState?.loadUserPosts();
     }
@@ -238,14 +244,19 @@ class _MainShellState extends State<MainShell> {
         border: const Border(top: BorderSide(color: AppColors.tabBarBorder, width: 0.5)),
         onTap: (index) {
           if (index == 2) {
-            _showAddPost();
-          } else if (index == _tabController.index) {
-            if (index == 0) {
-              Navigator.of(homeKey.currentContext!).popUntil((r) => r.isFirst);
-            } else {
-              final key = _getNavigatorKey(index);
-              key?.currentState?.popUntil((r) => r.isFirst);
-            }
+            final returnToIndex = _lastNonAddTabIndex;
+            _tabController.index = returnToIndex;
+            _showAddPost(returnToIndex: returnToIndex);
+            return;
+          }
+
+          if (index != 2) {
+            _lastNonAddTabIndex = index;
+          }
+
+          if (index == _tabController.index) {
+            final key = _getNavigatorKey(index);
+            key?.currentState?.popUntil((r) => r.isFirst);
           }
         },
         items: [
@@ -276,11 +287,22 @@ class _MainShellState extends State<MainShell> {
           navigatorKey: _getNavigatorKey(index),
           builder: (context) {
             switch (index) {
-              case 0: return HomeScreen(key: homeKey);
-              case 1: return CollectionScreen(key: collectionKey);
-              case 3: return const BlindBoxScreen();
-              case 4: return ProfileScreen(key: profileKey);
-              default: return HomeScreen(key: homeKey);
+              case 0:
+                return HomeScreen(key: homeKey);
+              case 1:
+                return CollectionScreen(key: collectionKey);
+              case 2:
+                return const CupertinoPageScaffold(
+                  child: SizedBox.shrink(),
+                );
+              case 3:
+                return const BlindBoxScreen();
+              case 4:
+                return ProfileScreen(key: profileKey);
+              default:
+                return const CupertinoPageScaffold(
+                  child: SizedBox.shrink(),
+                );
             }
           },
         );

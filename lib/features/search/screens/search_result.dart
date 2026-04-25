@@ -6,6 +6,7 @@ import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
+import 'package:taste_spot/features/restaurant/screens/restaurant_detail_screen.dart';
 
 class SearchResultScreen extends StatefulWidget {
   final String initialQuery;
@@ -419,7 +420,15 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
         : null;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {},
+      onTap: () {
+        Navigator.of(context).push(
+          CupertinoPageRoute(
+            builder: (_) => RestaurantDetailScreen(
+              restaurantId: restaurant.restaurantId,
+            ),
+          ),
+        );
+      },
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
@@ -495,7 +504,8 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
                       borderRadius: BorderRadius.circular(99),
                     ),
                     child: Text(
-                      restaurant.mainCuisineId ?? '-',
+                      restaurant.mainCuisineId ??
+                          '-',
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -623,14 +633,19 @@ class _SearchSkeleton extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       child: Column(
         children: [
-          if (filter == SearchResultFilter.all ||
-              filter == SearchResultFilter.restaurants)
-            const _RestaurantListSkeleton(itemCount: 3),
-          if (filter == SearchResultFilter.all ||
-              filter == SearchResultFilter.posts)
+          if (filter == SearchResultFilter.all)
+            const _RestaurantListSkeleton(itemCount: 3)
+          else if (filter == SearchResultFilter.restaurants)
+            const _RestaurantListSkeleton(itemCount: 9),
+          if (filter == SearchResultFilter.all)
             const Padding(
               padding: EdgeInsets.fromLTRB(8, 12, 8, 0),
               child: _MasonryGridSkeleton(itemCount: 4),
+            )
+          else if (filter == SearchResultFilter.posts)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(8, 12, 8, 0),
+              child: _MasonryGridSkeleton(itemCount: 6),
             ),
         ],
       ),
