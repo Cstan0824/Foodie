@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/models/cuisine_model.dart';
@@ -43,8 +44,44 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   String? _approvalsError;
 
   bool _isSwitchingTab = false;
+  bool _isImportingFromApi = false;
+  bool _stopImportAfterCurrentCity = false;
+  int _importCompletedCities = 0;
+  int _importTotalCities = 0;
+  String? _importCurrentCity;
+  final List<String> _importErrors = [];
+  final _ApiImportSummary _importSummary = _ApiImportSummary();
 
   static const int _limit = 20;
+  static const Map<String, List<String>> _citiesByState = {
+    'Kuala Lumpur': ['Kuala Lumpur'],
+    'Selangor': [
+      'Petaling Jaya',
+      'Shah Alam',
+      'Subang Jaya',
+      'Klang',
+      'Ampang',
+      'Kajang',
+      'Puchong',
+      'Cyberjaya',
+      'Putrajaya',
+      'Serdang',
+    ],
+    'Penang': ['George Town', 'Butterworth', 'Bayan Lepas', 'Bukit Mertajam'],
+    'Johor': ['Johor Bahru', 'Iskandar Puteri', 'Batu Pahat', 'Muar', 'Kluang'],
+    'Perak': ['Ipoh', 'Taiping', 'Teluk Intan', 'Kampar'],
+    'Melaka': ['Melaka City', 'Ayer Keroh', 'Alor Gajah'],
+    'Kedah': ['Alor Setar', 'Sungai Petani', 'Langkawi', 'Kulim'],
+    'Pahang': ['Kuantan', 'Temerloh', 'Bentong', 'Cameron Highlands'],
+    'Kelantan': ['Kota Bharu', 'Pasir Mas', 'Tanah Merah'],
+    'Terengganu': ['Kuala Terengganu', 'Kemaman', 'Dungun'],
+    'Negeri Sembilan': ['Seremban', 'Port Dickson', 'Nilai'],
+    'Perlis': ['Kangar', 'Arau'],
+    'Sabah': ['Kota Kinabalu', 'Sandakan', 'Tawau'],
+    'Sarawak': ['Kuching', 'Miri', 'Sibu', 'Bintulu'],
+    'Putrajaya': ['Putrajaya'],
+    'Labuan': ['Labuan'],
+  };
 
   // Search & filter state
   String _searchQuery = '';
@@ -59,6 +96,128 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
 
   final _repo = RestaurantRepository.instance;
   final _approvalRepo = RestaurantApprovalRepository.instance;
+
+  List<String> get _apiImportCities =>
+      _citiesByState.values.expand((cities) => cities).toList();
+  Future<void> _showImportFromApiConfirmation() async {
+    if (_isImportingFromApi) return;
+
+    final shouldProceed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Import restaurants from API?'),
+        content: Text(
+          'This will import up to 10 restaurants for each supported city in Malaysia. '
+          'New restaurants will be saved directly, while possible duplicates based on address or location will be sent to the approval list.\n\n'
+          'Restaurant and approval images will be copied into Supabase Storage.\n\n'
+          'This action may use Google Places API quota.',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Proceed'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldProceed == true) {
+      await _importAllCitiesFromApi();
+    }
+  }
+
+  Future<void> _importAllCitiesFromApi() async {
+    final cities = _apiImportCities;
+
+    setState(() {
+      _isImportingFromApi = true;
+      _stopImportAfterCurrentCity = false;
+      _importCompletedCities = 0;
+      _importTotalCities = cities.length;
+      _importCurrentCity = null;
+      _importErrors.clear();
+      _importSummary.reset();
+    });
+
+    for (final city in cities) {
+      if (_stopImportAfterCurrentCity) break;
+
+      if (!mounted) return;
+      setState(() => _importCurrentCity = city);
+
+      try {
+        final response = await Supabase.instance.client.functions.invoke(
+          'import-google-places-restaurants',
+          body: {
+            'city': city,
+            'limit': 10,
+            'importPhoto': true,
+          },
+        );
+
+        final data = response.data;
+        if (data is Map) {
+          _importSummary.addFromMap(data);
+        } else {
+          _importErrors.add('$city: Unexpected response format');
+        }
+      } catch (e) {
+        _importErrors.add('$city: $e');
+      }
+
+      if (!mounted) return;
+      setState(() => _importCompletedCities++);
+
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isImportingFromApi = false;
+      _importCurrentCity = null;
+    });
+
+    await _loadCuisines();
+    await _loadRestaurants(refresh: true);
+    await _loadApprovals(refresh: true);
+
+    if (!mounted) return;
+    await _showImportCompletedDialog();
+  }
+
+  Future<void> _showImportCompletedDialog() async {
+    await showCupertinoDialog<void>(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Import completed'),
+        content: Text(
+          'Cities processed: $_importCompletedCities / $_importTotalCities\n'
+          'Found: ${_importSummary.found}\n'
+          'Inserted: ${_importSummary.inserted}\n'
+          'Updated: ${_importSummary.updated}\n'
+          'Sent to approval: ${_importSummary.sentToApproval}\n'
+          'Approval duplicates skipped: ${_importSummary.approvalDuplicateSkipped}\n'
+          'Restaurant images: ${_importSummary.restaurantPhotoInserted}\n'
+          'Approval images: ${_importSummary.approvalPhotoInserted}\n'
+          'Cuisines created: ${_importSummary.cuisinesCreated}\n'
+          'Failed: ${_importSummary.failedCount + _importErrors.length}',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -388,18 +547,32 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
             right: 16,
             bottom: 30,
             child: _FloatingAddButton(
-            onTap: () async {
-              final changed = await Navigator.of(context).push<bool>(
-                CupertinoPageRoute(
-                  builder: (_) => const AddEditApproveRestaurantScreen(),
-                ),
-              );
-              if (changed == true && mounted) {
-                _loadRestaurants(refresh: true);
-              }
-            },
+              onTap: () async {
+                final changed = await Navigator.of(context).push<bool>(
+                  CupertinoPageRoute(
+                    builder: (_) => const AddEditApproveRestaurantScreen(),
+                  ),
+                );
+                if (changed == true && mounted) {
+                  _loadRestaurants(refresh: true);
+                }
+              },
+            ),
           ),
-        ),
+        if (_isImportingFromApi)
+          Positioned.fill(
+            child: _ApiImportProgressOverlay(
+              currentCity: _importCurrentCity,
+              completedCities: _importCompletedCities,
+              totalCities: _importTotalCities,
+              summary: _importSummary,
+              errorCount: _importErrors.length,
+              onStopAfterCurrentCity: () {
+                setState(() => _stopImportAfterCurrentCity = true);
+              },
+              isStopping: _stopImportAfterCurrentCity,
+            ),
+          ),
       ],
     );
   }
@@ -432,17 +605,12 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
                     ),
                   ),
                 ),
-                _HeaderIconButton(
-                  icon: CupertinoIcons.arrow_clockwise,
-                  onTap: () {
-                    if (_tab == 0) {
-                      _loadRestaurants(refresh: true);
-                    } else {
-                      _loadApprovals(refresh: true);
-                    }
-                  },
-                  tooltip: 'Refresh',
-                ),
+                if (_tab == 0)
+                  _HeaderIconButton(
+                    icon: CupertinoIcons.cloud_download,
+                    onTap: _showImportFromApiConfirmation,
+                    tooltip: 'Import from API',
+                  ),
               ],
             ),
           ),
@@ -1666,6 +1834,198 @@ class _ApprovalRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+
+class _ApiImportSummary {
+  int found = 0;
+  int inserted = 0;
+  int updated = 0;
+  int sentToApproval = 0;
+  int approvalDuplicateSkipped = 0;
+  int skipped = 0;
+  int restaurantPhotoInserted = 0;
+  int approvalPhotoInserted = 0;
+  int cuisinesCreated = 0;
+  int cuisinesReused = 0;
+  int failedCount = 0;
+
+  void reset() {
+    found = 0;
+    inserted = 0;
+    updated = 0;
+    sentToApproval = 0;
+    approvalDuplicateSkipped = 0;
+    skipped = 0;
+    restaurantPhotoInserted = 0;
+    approvalPhotoInserted = 0;
+    cuisinesCreated = 0;
+    cuisinesReused = 0;
+    failedCount = 0;
+  }
+
+  void addFromMap(Map data) {
+    found += _toInt(data['found']);
+    inserted += _toInt(data['inserted']);
+    updated += _toInt(data['updated']);
+    sentToApproval += _toInt(data['sentToApproval']);
+    approvalDuplicateSkipped += _toInt(data['approvalDuplicateSkipped']);
+    skipped += _toInt(data['skipped']);
+    restaurantPhotoInserted += _toInt(data['restaurantPhotoInserted']);
+    approvalPhotoInserted += _toInt(data['approvalPhotoInserted']);
+    cuisinesCreated += _toInt(data['cuisinesCreated']);
+    cuisinesReused += _toInt(data['cuisinesReused']);
+    failedCount += _toInt(data['failedCount']);
+  }
+
+  int _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return 0;
+  }
+}
+
+class _ApiImportProgressOverlay extends StatelessWidget {
+  final String? currentCity;
+  final int completedCities;
+  final int totalCities;
+  final _ApiImportSummary summary;
+  final int errorCount;
+  final VoidCallback onStopAfterCurrentCity;
+  final bool isStopping;
+
+  const _ApiImportProgressOverlay({
+    required this.currentCity,
+    required this.completedCities,
+    required this.totalCities,
+    required this.summary,
+    required this.errorCount,
+    required this.onStopAfterCurrentCity,
+    required this.isStopping,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = totalCities == 0 ? 0.0 : completedCities / totalCities;
+
+    return Container(
+      color: const Color(0xFF000000).withAlpha(90),
+      child: Center(
+        child: Container(
+          width: MediaQuery.of(context).size.width - 40,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: CupertinoColors.white,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  CupertinoActivityIndicator(radius: 10),
+                  SizedBox(width: 10),
+                  Text(
+                    'Importing restaurants...',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Current city: ${currentCity ?? '-'}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: Container(
+                  height: 7,
+                  color: AppColors.surface,
+                  child: FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: progress.clamp(0.0, 1.0),
+                    child: Container(color: AppColors.primary),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$completedCities / $totalCities cities completed',
+                style: const TextStyle(fontSize: 12, color: AppColors.textLight),
+              ),
+              const SizedBox(height: 14),
+              _ImportStatLine(label: 'Found', value: summary.found),
+              _ImportStatLine(label: 'Inserted', value: summary.inserted),
+              _ImportStatLine(label: 'Updated', value: summary.updated),
+              _ImportStatLine(label: 'Sent to approval', value: summary.sentToApproval),
+              _ImportStatLine(label: 'Restaurant images', value: summary.restaurantPhotoInserted),
+              _ImportStatLine(label: 'Approval images', value: summary.approvalPhotoInserted),
+              _ImportStatLine(label: 'Errors', value: summary.failedCount + errorCount),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  color: isStopping ? AppColors.surface : const Color(0xFFFF9500),
+                  borderRadius: BorderRadius.circular(10),
+                  onPressed: isStopping ? null : onStopAfterCurrentCity,
+                  child: Text(
+                    isStopping ? 'Stopping after current city...' : 'Stop after current city',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: isStopping ? AppColors.textSecondary : CupertinoColors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ImportStatLine extends StatelessWidget {
+  final String label;
+  final int value;
+
+  const _ImportStatLine({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+          Text(
+            '$value',
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }
