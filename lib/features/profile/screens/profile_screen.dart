@@ -315,6 +315,8 @@ class ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _selectedTab = index;
     });
+    // Trigger a silent refresh when switching sub-tabs to keep data fresh
+    _fetchProfileData(silent: true);
   }
 
   void _showImagePreview(String? imageUrl) {
@@ -350,7 +352,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                   child: Image.network(
                     imageUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (_, _, _) => Container(
                       color: AppColors.surface,
                       child: const Icon(
                         CupertinoIcons.person_fill,
@@ -678,25 +680,11 @@ class ProfileScreenState extends State<ProfileScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildMenuAction(
-                  'Settings',
-                  CupertinoIcons.settings,
-                  onTap: () => Navigator.of(
-                    context,
-                  ).push(CupertinoPageRoute(builder: (_) => SettingsScreen())),
-                ),
-                _buildMenuAction(
                   'Privacy',
                   CupertinoIcons.lock_shield,
                   onTap: () => Navigator.of(
                     context,
                   ).push(CupertinoPageRoute(builder: (_) => PrivacyScreen())),
-                ),
-                _buildMenuAction(
-                  'Help & Feedback',
-                  CupertinoIcons.question_circle,
-                  onTap: () => Navigator.of(context).push(
-                    CupertinoPageRoute(builder: (_) => HelpFeedbackScreen()),
-                  ),
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
@@ -1103,7 +1091,9 @@ class ProfileScreenState extends State<ProfileScreen> {
                 builder: (_) => PostDetailScreen(post: post, archived: true),
               ),
             );
-            if (result == true) _fetchProfileData(silent: true);
+            if (result != null && mounted) {
+              _fetchProfileData(silent: true);
+            }
           },
         ),
       ),
@@ -1398,96 +1388,140 @@ class _PendingApprovalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
+    
     return Container(
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: CupertinoColors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.divider, width: 0.8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF4E8),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  CupertinoIcons.clock_fill,
-                  size: 20,
-                  color: Color(0xFFFF9500),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      item.address ?? 'No address provided',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF4E8),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Text(
-                  'Under Review',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFFFF9500),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(
-                CupertinoIcons.info_circle,
-                size: 14,
-                color: AppColors.textLight,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Submitted ${_timeAgo(item.detectedAt)}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textLight,
-                ),
-              ),
-            ],
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.divider.withAlpha(50), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(5),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Restaurant Image or Placeholder
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: hasImage
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            item.imageUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              CupertinoIcons.house_fill,
+                              color: AppColors.textLight,
+                              size: 24,
+                            ),
+                          ),
+                        )
+                      : const Icon(
+                          CupertinoIcons.house_fill,
+                          color: AppColors.textLight,
+                          size: 24,
+                        ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              item.name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                letterSpacing: -0.4,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Icon(CupertinoIcons.location_solid, size: 12, color: AppColors.textLight),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              item.address ?? 'Location pending',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildMiniStatusBadge(),
+                          const SizedBox(width: 8),
+                          Text(
+                            _timeAgo(item.detectedAt),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textLight,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF9500).withAlpha(20),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFFF9500).withAlpha(40), width: 0.5),
+      ),
+      child: const Text(
+        'PENDING',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFFFF9500),
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

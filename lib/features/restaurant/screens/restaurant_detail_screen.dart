@@ -202,7 +202,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     return ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: collections.length,
-                      separatorBuilder: (_, __) => Container(
+                      separatorBuilder: (_, _) => Container(
                         height: 1,
                         color: CupertinoColors.systemGrey5,
                       ),

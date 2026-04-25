@@ -44,62 +44,67 @@ class _LoginScreenState extends State<LoginScreen> {
     
     _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange
         .listen((data) async {
-          final session = data.session;
-          final event = data.event;
+          try {
+            final session = data.session;
+            final event = data.event;
 
-          if (session != null &&
-              (event == AuthChangeEvent.signedIn ||
-                  event == AuthChangeEvent.initialSession)) {
-            
-            if (mounted) setState(() => _isLoading = true);
+            if (session != null &&
+                (event == AuthChangeEvent.signedIn ||
+                    event == AuthChangeEvent.initialSession)) {
+              
+              if (mounted) setState(() => _isLoading = true);
 
-            final isNewUser = await _ensureProfileExists(session.user);
-            
-            final profileResponse = await Supabase.instance.client
-                .from('User')
-                .select('name, username, role')
-                .eq('user_Id', session.user.id)
-                .maybeSingle();
-            
-            String? avatarUrl;
-            try {
-              final imageResponse = await Supabase.instance.client
-                  .from('UserImage')
-                  .select('image_url')
+              final isNewUser = await _ensureProfileExists(session.user);
+              
+              final profileResponse = await Supabase.instance.client
+                  .from('User')
+                  .select('name, username, role')
                   .eq('user_Id', session.user.id)
                   .maybeSingle();
-              avatarUrl = imageResponse?['image_url'];
-            } catch (_) {}
+              
+              String? avatarUrl;
+              try {
+                final imageResponse = await Supabase.instance.client
+                    .from('UserImage')
+                    .select('image_url')
+                    .eq('user_Id', session.user.id)
+                    .maybeSingle();
+                avatarUrl = imageResponse?['image_url'];
+              } catch (_) {}
 
-            final role = profileResponse?['role'] ?? 'user';
+              final role = profileResponse?['role'] ?? 'user';
 
-            if (profileResponse != null) {
-              await AccountService.saveAccount(
-                userId: session.user.id,
-                name: profileResponse['name'],
-                username: profileResponse['username'],
-                avatarUrl: avatarUrl,
-                role: role,
-                sessionJson: jsonEncode(session.toJson()),
-              );
-            }
-
-            if (!mounted) return;
-            if (isNewUser) {
-              Navigator.of(context).pushReplacement(
-                CupertinoPageRoute(builder: (_) => const CompleteProfileScreen()),
-              );
-            } else {
-              if (role == 'admin') {
-                Navigator.of(context).pushReplacement(
-                  CupertinoPageRoute(builder: (_) => AdminScreen()),
-                );
-              } else {
-                Navigator.of(context).pushReplacement(
-                  CupertinoPageRoute(builder: (_) => const MainShell()),
+              if (profileResponse != null) {
+                await AccountService.saveAccount(
+                  userId: session.user.id,
+                  name: profileResponse['name'],
+                  username: profileResponse['username'],
+                  avatarUrl: avatarUrl,
+                  role: role,
+                  sessionJson: jsonEncode(session.toJson()),
                 );
               }
+
+              if (!mounted) return;
+              if (isNewUser) {
+                Navigator.of(context).pushReplacement(
+                  CupertinoPageRoute(builder: (_) => const CompleteProfileScreen()),
+                );
+              } else {
+                if (role == 'admin') {
+                  Navigator.of(context).pushReplacement(
+                    CupertinoPageRoute(builder: (_) => AdminScreen()),
+                  );
+                } else {
+                  Navigator.of(context).pushReplacement(
+                    CupertinoPageRoute(builder: (_) => const MainShell()),
+                  );
+                }
+              }
             }
+          } catch (e) {
+            debugPrint('Login Auth Listener Error: $e');
+            if (mounted) setState(() => _isLoading = false);
           }
         });
   }
@@ -154,11 +159,13 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await _authRepo.signIn(identifier: identifier, password: password);
     } on AuthException catch (e) {
-      if (!mounted) return;
-      FeedbackDialog.show(context: context, title: 'Sign In Failed', message: _mapAuthError(e));
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign In Failed', message: _mapAuthError(e));
+      }
     } catch (e) {
-      if (!mounted) return;
-      FeedbackDialog.show(context: context, title: 'Sign In Problem', message: _mapAuthError(e));
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign In Problem', message: _mapAuthError(e));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

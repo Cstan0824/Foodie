@@ -34,17 +34,18 @@ class PostDetailScreen extends StatefulWidget {
 class _PostDetailScreenState extends State<PostDetailScreen> {
   static final RegExp _captionHashtagPattern = RegExp(r'#[a-zA-Z0-9_]+');
   static final RegExp _captionWhitespacePattern = RegExp(r'\s');
-late PostModel _currentPost;
-bool _wasEdited = false;
-bool _isLiked = false;
-bool _isSaved = false;
-bool _isFollowing = false;
-Set<String> _savedInCollectionIds = {};
-bool _isFollowUpdating = false;
+  
+  late PostModel _currentPost;
+  bool _wasEdited = false;
+  bool _isLiked = false;
+  bool _isSaved = false;
+  bool _isFollowing = false;
+  Set<String> _savedInCollectionIds = {};
+  bool _isFollowUpdating = false;
 
-int _currentImageIndex = 0;
-final _commentController = TextEditingController();
-final _scrollController = ScrollController();
+  int _currentImageIndex = 0;
+  final _commentController = TextEditingController();
+  final _scrollController = ScrollController();
 
   // Comments state
   List<CommentModel> _comments = [];
@@ -102,6 +103,9 @@ final _scrollController = ScrollController();
   void initState() {
     super.initState();
     _currentPost = widget.post;
+    _isLiked = _currentPost.isLiked;
+    _isSaved = _currentPost.isSaved;
+    
     if (!_isArchivedView) {
       _loadComments();
       _checkLikeStatus();
@@ -296,7 +300,8 @@ final _scrollController = ScrollController();
                               } else {
                                 await _saveToSpecificCollection(collection.collectionId);
                               }
-                              setSheetState(() {}); // Refresh sheet UI
+                              // Ensure modal UI refreshes
+                              setSheetState(() {});
                             },
                             child: Row(
                               children: [
@@ -375,11 +380,36 @@ final _scrollController = ScrollController();
         _isSaved = _savedInCollectionIds.isNotEmpty;
         _currentPost = _currentPost.copyWith(
           saveCount: (_currentPost.saveCount - 1).clamp(0, 999999),
+          isSaved: _savedInCollectionIds.isNotEmpty,
         );
         _wasEdited = true;
       });
     } catch (e) {
       debugPrint('Unsave error: $e');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _saveToSpecificCollection(String collectionId) async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+
+    try {
+      final collectionRepo = CollectionRepository(Supabase.instance.client);
+      await collectionRepo.savePostToCollection(collectionId, _currentPost.id);
+
+      setState(() {
+        _savedInCollectionIds.add(collectionId);
+        _isSaved = true;
+        _currentPost = _currentPost.copyWith(
+          saveCount: _currentPost.saveCount + 1,
+          isSaved: true,
+        );
+        _wasEdited = true;
+      });
+    } catch (e) {
+      debugPrint('Save error: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -1313,8 +1343,8 @@ final _scrollController = ScrollController();
     }
   }
 
-  void _showMoreOptions(BuildContext context) {
-    showCupertinoModalPopup(
+  Future<void> _showMoreOptions(BuildContext context) {
+    return showCupertinoModalPopup(
       context: context,
       builder: (_) => Container(
         width: double.infinity,
@@ -1393,12 +1423,12 @@ final _scrollController = ScrollController();
                             },
                           ),
                           _buildHorizontalOption(
-                            icon: CupertinoIcons.delete,
-                            label: 'Delete',
+                            icon: CupertinoIcons.archivebox,
+                            label: 'Archive',
                             isDestructive: true,
                             onTap: () {
                               Navigator.pop(context);
-                              _deletePost();
+                              _archivePost();
                             },
                           ),
                         ]
@@ -1427,29 +1457,6 @@ final _scrollController = ScrollController();
         ),
       ),
     );
-  }
-
-  Future<void> _saveToSpecificCollection(String collectionId) async {
-    if (_isSaving) return;
-    setState(() => _isSaving = true);
-
-    try {
-      final collectionRepo = CollectionRepository(Supabase.instance.client);
-      await collectionRepo.savePostToCollection(collectionId, _currentPost.id);
-
-      setState(() {
-        _savedInCollectionIds.add(collectionId);
-        _isSaved = true;
-        _currentPost = _currentPost.copyWith(
-          saveCount: _currentPost.saveCount + 1,
-        );
-        _wasEdited = true;
-      });
-    } catch (e) {
-      debugPrint('Save error: $e');
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
   }
 
   void _showCommentOptions(BuildContext context, CommentModel comment) {
@@ -1607,23 +1614,50 @@ final _scrollController = ScrollController();
     }
   }
 
-  Future<void> _deletePost() async {
-    final confirm = await showCupertinoDialog<bool>(
+  Future<void> _archivePost() async {
+    final bool? confirm = await showCupertinoModalPopup<bool>(
       context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Archive Post?'),
-        content: const Text('This post will move to your Archived Posts tab.'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Archive'),
-          ),
-        ],
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.only(top: 12, bottom: 40, left: 24, right: 24),
+        decoration: const BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 5,
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2.5)),
+            ),
+            const Icon(CupertinoIcons.archivebox_fill, size: 48, color: AppColors.primary),
+            const SizedBox(height: 16),
+            const Text('Archive this post?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const SizedBox(height: 12),
+            const Text(
+              'This post will be moved to your Archived tab. It won\'t be visible to others but you can recover it later.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 32),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Container(
+                height: 54, width: double.infinity,
+                decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(27)),
+                alignment: Alignment.center,
+                child: const Text('Archive', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            CupertinoButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -1633,6 +1667,7 @@ final _scrollController = ScrollController();
       await PostRepository.instance.deletePost(_currentPost.id);
       _wasEdited = true;
       if (mounted) {
+        // Pop the PostDetailScreen and tell the caller to refresh
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -1654,23 +1689,49 @@ final _scrollController = ScrollController();
   }
 
   Future<void> _recoverPost() async {
-    final confirm = await showCupertinoDialog<bool>(
+    final bool? confirm = await showCupertinoModalPopup<bool>(
       context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Recover Post?'),
-        content: const Text(
-          'This post will return to your normal posts and leave Archived Posts.',
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.only(top: 12, bottom: 40, left: 24, right: 24),
+        decoration: const BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Recover'),
-          ),
-        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 5,
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2.5)),
+            ),
+            const Icon(CupertinoIcons.arrow_uturn_up_circle_fill, size: 48, color: Color(0xFF34C759)), // Green for success/recover
+            const SizedBox(height: 16),
+            const Text('Recover this post?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const SizedBox(height: 12),
+            const Text(
+              'This post will be moved back to your public profile and will be visible to everyone again.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 32),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Container(
+                height: 54, width: double.infinity,
+                decoration: BoxDecoration(color: const Color(0xFF34C759), borderRadius: BorderRadius.circular(27)),
+                alignment: Alignment.center,
+                child: const Text('Recover', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            CupertinoButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
       ),
     );
 
