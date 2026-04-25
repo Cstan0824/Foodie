@@ -3,7 +3,10 @@ import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/data/models/collection_model.dart';
+import 'package:taste_spot/data/repositories/collection_repository.dart';
 import 'package:taste_spot/data/repositories/restaurant_repository.dart';
 import 'package:taste_spot/features/search/screens/search_result.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -35,6 +38,21 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   double? _userLatitude;
   double? _userLongitude;
 
+  bool _isSaved = false;
+  bool _isSaveLoading = false;
+
+  String? get _currentUserId => SupabaseService.currentUserId;
+
+  String? get _resolvedRestaurantId {
+    if (widget.restaurantId != null && widget.restaurantId!.isNotEmpty)
+      return widget.restaurantId;
+    if (_detail != null) return _detail!.restaurant.restaurantId;
+    if (widget.restaurant != null)
+      return widget.restaurant!['restaurant_Id']?.toString() ??
+          widget.restaurant!['id']?.toString();
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +63,206 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
     if (widget.restaurantId != null && widget.restaurantId!.isNotEmpty) {
       _loadRestaurantDetail();
+    }
+    _checkSaveStatus();
+  }
+
+  Future<void> _checkSaveStatus() async {
+    final userId = _currentUserId;
+    final resId = _resolvedRestaurantId;
+    if (userId == null || resId == null) return;
+
+    try {
+      final isSaved = await RestaurantRepository.instance.isRestaurantSaved(
+        userId: userId,
+        restaurantId: resId,
+      );
+      if (mounted) {
+        setState(() => _isSaved = isSaved);
+      }
+    } catch (_) {}
+  }
+
+  void _showAuthRequiredDialog() {
+    showCupertinoDialog(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('Sign In Required'),
+        content: const Text('Please sign in to continue.'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(dialogContext),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleSave() async {
+    if (_isSaveLoading) return;
+    final userId = _currentUserId;
+    if (userId == null) {
+      _showAuthRequiredDialog();
+      return;
+    }
+    final resId = _resolvedRestaurantId;
+    if (resId == null) return;
+
+    setState(() => _isSaveLoading = true);
+
+    try {
+      if (_isSaved) {
+        await RestaurantRepository.instance.unsaveRestaurantForUser(
+          userId: userId,
+          restaurantId: resId,
+        );
+        if (mounted) setState(() => _isSaved = false);
+      } else {
+        await RestaurantRepository.instance.saveRestaurantToDefaultCollection(
+          userId: userId,
+          restaurantId: resId,
+        );
+        if (mounted) setState(() => _isSaved = true);
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _isSaveLoading = false);
+    }
+  }
+
+  void _showSaveSheet(BuildContext context) {
+    final userId = _currentUserId;
+    if (userId == null) {
+      _showAuthRequiredDialog();
+      return;
+    }
+    final resId = _resolvedRestaurantId;
+    if (resId == null) return;
+
+    final collectionRepo = CollectionRepository(SupabaseService.client);
+
+    showCupertinoModalPopup(
+      context: context,
+      builder: (modalContext) => Container(
+        height: MediaQuery.of(context).size.height * 0.5,
+        decoration: const BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Container(
+                width: 40,
+                height: 5,
+                margin: const EdgeInsets.only(top: 10, bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0E0E0),
+                  borderRadius: BorderRadius.circular(2.5),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 16),
+                child: Text(
+                  'Save to Collection',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ),
+              Expanded(
+                child: FutureBuilder<List<Collection>>(
+                  future: collectionRepo.getUserCollections(userId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CupertinoActivityIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: Text('Error loading collections'),
+                      );
+                    }
+
+                    final collections =
+                        snapshot.data
+                            ?.where((c) => c.collectionType == 'RESTAURANT')
+                            .toList() ??
+                        [];
+
+                    if (collections.isEmpty) {
+                      return const Center(
+                        child: Text('No restaurant collections found.'),
+                      );
+                    }
+
+                    return ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: collections.length,
+                      separatorBuilder: (_, __) => Container(
+                        height: 1,
+                        color: CupertinoColors.systemGrey5,
+                      ),
+                      itemBuilder: (context, index) {
+                        final collection = collections[index];
+                        return CupertinoButton(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          onPressed: () async {
+                            Navigator.pop(modalContext);
+                            await _saveToSpecificCollection(
+                              collection.collectionId,
+                              resId,
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              const Icon(
+                                CupertinoIcons.folder_fill,
+                                color: AppColors.primary,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 16),
+                              Text(
+                                collection.name,
+                                style: const TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveToSpecificCollection(
+    String collectionId,
+    String resId,
+  ) async {
+    if (_isSaveLoading) return;
+    setState(() => _isSaveLoading = true);
+
+    try {
+      await RestaurantRepository.instance.saveRestaurantToCollection(
+        collectionId: collectionId,
+        restaurantId: resId,
+      );
+
+      if (!_isSaved) {
+        if (mounted) setState(() => _isSaved = true);
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _isSaveLoading = false);
     }
   }
 
@@ -58,7 +276,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         permission = await Geolocator.requestPermission();
       }
 
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
         return;
       }
 
@@ -135,7 +354,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   String get _restaurantName {
     if (_detail != null) return _detail!.restaurant.name;
     if (widget.restaurant != null) {
-      return (widget.restaurant!['restaurant_name'] ?? widget.restaurant!['name'] ?? 'Restaurant').toString();
+      return (widget.restaurant!['restaurant_name'] ??
+              widget.restaurant!['name'] ??
+              'Restaurant')
+          .toString();
     }
     return 'Restaurant';
   }
@@ -152,13 +374,20 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   String get _priceRange {
     if (_detail != null) return _detail!.restaurant.priceRange ?? '-';
     if (widget.restaurant != null) {
-      return (widget.restaurant!['price_range'] ?? widget.restaurant!['price'] ?? '-').toString();
+      return (widget.restaurant!['price_range'] ??
+              widget.restaurant!['price'] ??
+              '-')
+          .toString();
     }
     return '-';
   }
 
   String? get _distanceText {
-    if (_detail != null && _userLatitude != null && _userLongitude != null && _detail!.restaurant.latitude != null && _detail!.restaurant.longitude != null) {
+    if (_detail != null &&
+        _userLatitude != null &&
+        _userLongitude != null &&
+        _detail!.restaurant.latitude != null &&
+        _detail!.restaurant.longitude != null) {
       const earthRadiusKm = 6371.0;
       double degToRad(double degree) => degree * pi / 180.0;
 
@@ -170,7 +399,8 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       final dLat = degToRad(restLat - userLat);
       final dLng = degToRad(restLng - userLng);
 
-      final a = sin(dLat / 2) * sin(dLat / 2) +
+      final a =
+          sin(dLat / 2) * sin(dLat / 2) +
           cos(degToRad(userLat)) *
               cos(degToRad(restLat)) *
               sin(dLng / 2) *
@@ -184,7 +414,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
       }
       return '${distanceKm.toStringAsFixed(1)} km';
     }
-    
+
     if (widget.restaurant != null) {
       final raw = widget.restaurant!['distance']?.toString().trim();
       return (raw == null || raw.isEmpty) ? null : raw;
@@ -202,14 +432,18 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
   List<String> get _extraCuisineTags {
     if (_detail != null) {
-      return _detail!.extraCuisines.map((c) => c.description).where((t) => t != _mainCuisine).toList();
+      return _detail!.extraCuisines
+          .map((c) => c.description)
+          .where((t) => t != _mainCuisine)
+          .toList();
     }
     final list = _allCuisineTagsMock;
     return list.length <= 1 ? const [] : list.skip(1).toList();
   }
 
   String get _address {
-    if (_detail != null) return _detail!.restaurant.address ?? 'Address unavailable';
+    if (_detail != null)
+      return _detail!.restaurant.address ?? 'Address unavailable';
     if (widget.restaurant != null) {
       final raw = (widget.restaurant!['address'] as String?)?.trim();
       return (raw == null || raw.isEmpty) ? 'Address unavailable' : raw;
@@ -220,7 +454,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   String? get _mapsUrl {
     if (_detail != null) return _detail!.restaurant.mapsUrl;
     if (widget.restaurant != null) {
-      final raw = (widget.restaurant!['maps_url'] ?? widget.restaurant!['locationUrl'])?.toString().trim();
+      final raw =
+          (widget.restaurant!['maps_url'] ?? widget.restaurant!['locationUrl'])
+              ?.toString()
+              .trim();
       return (raw == null || raw.isEmpty) ? null : raw;
     }
     return null;
@@ -237,19 +474,22 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
   String get _rating {
     if (_detail != null) return _detail!.restaurant.rating?.toString() ?? '-';
-    if (widget.restaurant != null) return widget.restaurant!['rating']?.toString() ?? '-';
+    if (widget.restaurant != null)
+      return widget.restaurant!['rating']?.toString() ?? '-';
     return '-';
   }
 
   List<String> get _images {
     if (_detail != null) {
       if (_detail!.images.isNotEmpty) {
-         return _detail!.images.map((e) => e.imageUrl).toList();
+        return _detail!.images.map((e) => e.imageUrl).toList();
       }
       return _detail!.restaurant.imageUrls;
     }
     if (widget.restaurant != null) {
-      return List<String>.from(widget.restaurant!['images'] ?? const <String>[]);
+      return List<String>.from(
+        widget.restaurant!['images'] ?? const <String>[],
+      );
     }
     return [];
   }
@@ -271,7 +511,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
 
     final rawCuisine = (r['cuisine'] ?? r['main_cuisine'])?.toString().trim();
     if (rawCuisine != null && rawCuisine.isNotEmpty) {
-      final split = rawCuisine.split('•').map((e) => e.trim()).where((e) => e.isNotEmpty);
+      final split = rawCuisine
+          .split('•')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty);
       for (final item in split) {
         if (!tags.contains(item)) tags.add(item);
       }
@@ -286,7 +529,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         backgroundColor: CupertinoColors.white,
         navigationBar: const CupertinoNavigationBar(
           backgroundColor: CupertinoColors.white,
-          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+          border: Border(
+            bottom: BorderSide(color: AppColors.divider, width: 0.5),
+          ),
           middle: Text('Loading...'),
         ),
         child: const Center(child: CupertinoActivityIndicator()),
@@ -298,14 +543,19 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
         backgroundColor: CupertinoColors.white,
         navigationBar: const CupertinoNavigationBar(
           backgroundColor: CupertinoColors.white,
-          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+          border: Border(
+            bottom: BorderSide(color: AppColors.divider, width: 0.5),
+          ),
           middle: Text('Error'),
         ),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(_errorMessage!, style: const TextStyle(color: AppColors.textPrimary)),
+              Text(
+                _errorMessage!,
+                style: const TextStyle(color: AppColors.textPrimary),
+              ),
               const SizedBox(height: 16),
               CupertinoButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -318,16 +568,36 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
     }
 
     final name = _restaurantName;
-    final heroTag = 'restaurant_image_${widget.restaurantId ?? (widget.restaurant?['id'] ?? name)}';
-    final descriptionText = _description ?? 'No description available for this place yet.';
+    final heroTag =
+        'restaurant_image_${widget.restaurantId ?? (widget.restaurant?['id'] ?? name)}';
+    final descriptionText =
+        _description ?? 'No description available for this place yet.';
     final images = _images;
 
     return CupertinoPageScaffold(
       backgroundColor: CupertinoColors.white,
       navigationBar: CupertinoNavigationBar(
         backgroundColor: CupertinoColors.white,
-        border: const Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+        border: const Border(
+          bottom: BorderSide(color: AppColors.divider, width: 0.5),
+        ),
         middle: Text(name),
+        trailing: GestureDetector(
+          onTap: _toggleSave,
+          onLongPress: () => _showSaveSheet(context),
+          child: Padding(
+            padding: const EdgeInsets.all(4.0),
+            child: _isSaveLoading
+                ? const CupertinoActivityIndicator(radius: 10)
+                : Icon(
+                    _isSaved
+                        ? CupertinoIcons.bookmark_fill
+                        : CupertinoIcons.bookmark,
+                    color: _isSaved ? AppColors.primary : AppColors.textPrimary,
+                    size: 22,
+                  ),
+          ),
+        ),
       ),
       child: SafeArea(
         child: Column(
@@ -360,15 +630,17 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                   return Image.network(
                                     images[index],
                                     fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) => Container(
-                                      color: AppColors.surface,
-                                      child: const Center(
-                                        child: Icon(
-                                          CupertinoIcons.photo,
-                                          color: AppColors.textLight,
-                                        ),
-                                      ),
-                                    ),
+                                    errorBuilder:
+                                        (context, error, stackTrace) =>
+                                            Container(
+                                              color: AppColors.surface,
+                                              child: const Center(
+                                                child: Icon(
+                                                  CupertinoIcons.photo,
+                                                  color: AppColors.textLight,
+                                                ),
+                                              ),
+                                            ),
                                   );
                                 },
                               ),
@@ -382,14 +654,22 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                   children: List.generate(
                                     images.length,
                                     (index) => AnimatedContainer(
-                                      duration: const Duration(milliseconds: 160),
-                                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                                      duration: const Duration(
+                                        milliseconds: 160,
+                                      ),
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 3,
+                                      ),
                                       height: 6,
-                                      width: _currentImageIndex == index ? 16 : 6,
+                                      width: _currentImageIndex == index
+                                          ? 16
+                                          : 6,
                                       decoration: BoxDecoration(
                                         color: _currentImageIndex == index
                                             ? CupertinoColors.white
-                                            : CupertinoColors.white.withAlpha(130),
+                                            : CupertinoColors.white.withAlpha(
+                                                130,
+                                              ),
                                         borderRadius: BorderRadius.circular(99),
                                       ),
                                     ),
@@ -408,7 +688,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppColors.primary,
                                   borderRadius: BorderRadius.circular(8),
@@ -425,7 +708,10 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               if (_distanceText != null) ...[
                                 const SizedBox(width: 8),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: AppColors.surface,
                                     borderRadius: BorderRadius.circular(8),
@@ -498,11 +784,17 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               children: _extraCuisineTags
                                   .map(
                                     (tag) => Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
                                       decoration: BoxDecoration(
                                         color: AppColors.surface,
                                         borderRadius: BorderRadius.circular(99),
-                                        border: Border.all(color: AppColors.divider, width: 0.8),
+                                        border: Border.all(
+                                          color: AppColors.divider,
+                                          width: 0.8,
+                                        ),
                                       ),
                                       child: Text(
                                         tag,
@@ -559,10 +851,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                               children: [
                                 if (_mapsUrl != null)
                                   CupertinoButton(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
                                     color: AppColors.surface,
                                     borderRadius: BorderRadius.circular(10),
-                                    onPressed: () => _openExternalUrl(_mapsUrl!),
+                                    onPressed: () =>
+                                        _openExternalUrl(_mapsUrl!),
                                     child: const Text(
                                       'Open in Maps',
                                       style: TextStyle(
@@ -573,10 +869,14 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                                   ),
                                 if (_websiteUrl != null)
                                   CupertinoButton(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
                                     color: AppColors.surface,
                                     borderRadius: BorderRadius.circular(10),
-                                    onPressed: () => _openExternalUrl(_websiteUrl!),
+                                    onPressed: () =>
+                                        _openExternalUrl(_websiteUrl!),
                                     child: const Text(
                                       'Visit their website',
                                       style: TextStyle(

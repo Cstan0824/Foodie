@@ -1210,7 +1210,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         label: 'Link',
                         onTap: () => Navigator.pop(context),
                       ),
-                      if (isOwner)
+                      if (_isCurrentUserPostOwner)
                         ...[
                           _buildHorizontalOption(
                             icon: CupertinoIcons.pencil,

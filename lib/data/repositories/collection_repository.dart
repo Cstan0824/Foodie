@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/collection_model.dart';
 import '../models/restaurant_model.dart';
+import 'notification_repository.dart';
 
 class CollectionRepository {
   final SupabaseClient _supabase;
@@ -21,7 +22,7 @@ class CollectionRepository {
     collections_item(
       savedAt,
       Post(post_Id, Post_Image(image_url)),
-      Restaurant(restaurant_Id)
+      Restaurant(restaurant_Id, Restaurant_Image(image_url, isCover))
     )
   ''';
 
@@ -351,5 +352,33 @@ class CollectionRepository {
         .delete()
         .eq('post_id', postId)
         .inFilter('collection_Id', ids);
+  }
+
+  // ==========================================
+  // 4. Collection Restaurants Management
+  // ==========================================
+
+  Future<List<RestaurantModel>> getRestaurantsInCollection(String collectionId) async {
+    final itemsResponse = await _supabase
+        .from('collections_item')
+        .select('restaurant_id')
+        .eq('collection_Id', collectionId);
+
+    final restaurantIds = (itemsResponse as List<dynamic>)
+        .map((row) => row['restaurant_id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    if (restaurantIds.isEmpty) return [];
+
+    final response = await _supabase
+        .from('Restaurant')
+        .select('restaurant_Id, restaurant_name, description, price_range, address, latitude, longitude, maps_url, created_At, main_cuisine_id, source, info_url, isDisabled, rating, mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption), Restaurant_Image(image_id, image_url, isCover)')
+        .inFilter('restaurant_Id', restaurantIds)
+        .eq('isDisabled', false);
+
+    return (response as List<dynamic>)
+        .map((row) => RestaurantModel.fromJson(row as Map<String, dynamic>))
+        .toList();
   }
 }

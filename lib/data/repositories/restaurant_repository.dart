@@ -46,7 +46,6 @@ class RestaurantImageRecord {
   }
 }
 
-
 class RestaurantDetailData {
   final RestaurantModel restaurant;
   final List<CuisineModel> extraCuisines;
@@ -193,15 +192,18 @@ class RestaurantRepository {
           .inFilter('CuisineId', cuisineIds);
 
       final extraRestaurantIds = (tagRows as List<dynamic>)
-          .map((row) => (row as Map<String, dynamic>)['RestaurantId']?.toString())
+          .map(
+            (row) => (row as Map<String, dynamic>)['RestaurantId']?.toString(),
+          )
           .whereType<String>()
           .where((id) => id.isNotEmpty)
           .toList();
 
       final mainCuisineFilter = 'main_cuisine_id.in.(${cuisineIds.join(',')})';
-      
+
       if (extraRestaurantIds.isNotEmpty) {
-        final extraFilter = 'restaurant_Id.in.(${extraRestaurantIds.join(',')})';
+        final extraFilter =
+            'restaurant_Id.in.(${extraRestaurantIds.join(',')})';
         query = query.or('$mainCuisineFilter,$extraFilter');
       } else {
         query = query.or(mainCuisineFilter);
@@ -276,8 +278,8 @@ class RestaurantRepository {
       restaurantId: row['restaurant_Id']?.toString() ?? '',
       name: row['restaurant_name']?.toString() ?? '',
       address: row['address']?.toString(),
-      mainCuisineName:
-          (row['mainCuisine'] as Map<String, dynamic>?)?['desc']?.toString(),
+      mainCuisineName: (row['mainCuisine'] as Map<String, dynamic>?)?['desc']
+          ?.toString(),
       isDisabled: row['isDisabled'] as bool? ?? false,
       source: row['source']?.toString(),
       coverImageUrl: coverImageUrl,
@@ -731,21 +733,25 @@ class RestaurantRepository {
     List<String> extraCuisineIds = const [],
     List<RestaurantImageRecord> images = const [],
   }) async {
-    final normalizedSource = source.trim().isEmpty ? 'ADMIN' : source.trim().toUpperCase();
+    final normalizedSource = source.trim().isEmpty
+        ? 'ADMIN'
+        : source.trim().toUpperCase();
 
-    final id = restaurantId ?? await createRestaurant(
-            name: name,
-            description: description,
-            priceRange: priceRange,
-            address: address,
-            latitude: latitude,
-            longitude: longitude,
-            mapsUrl: mapsUrl,
-            mainCuisineId: mainCuisineId,
-            infoUrl: infoUrl,
-            source: normalizedSource,
-            rating: rating,
-          );
+    final id =
+        restaurantId ??
+        await createRestaurant(
+          name: name,
+          description: description,
+          priceRange: priceRange,
+          address: address,
+          latitude: latitude,
+          longitude: longitude,
+          mapsUrl: mapsUrl,
+          mainCuisineId: mainCuisineId,
+          infoUrl: infoUrl,
+          source: normalizedSource,
+          rating: rating,
+        );
 
     if (restaurantId != null) {
       await updateRestaurantDetails(
@@ -768,6 +774,124 @@ class RestaurantRepository {
     await replaceRestaurantImages(id, images);
 
     return id;
+  }
+
+  // ===========================================================================
+  // Collections & Saves
+  // ===========================================================================
+
+  /// Checks if the user has saved the restaurant in any of their restaurant collections.
+  Future<bool> isRestaurantSaved({
+    required String userId,
+    required String restaurantId,
+  }) async {
+    final collectionIds = await SupabaseService.client
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId)
+        .eq('collection_type', 'RESTAURANT');
+
+    final ids = (collectionIds as List<dynamic>)
+        .map((r) => r['collection_Id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    if (ids.isEmpty) return false;
+
+    final saved = await SupabaseService.client
+        .from('collections_item')
+        .select('item_Id')
+        .eq('restaurant_id', restaurantId)
+        .inFilter('collection_Id', ids)
+        .limit(1);
+
+    return (saved as List<dynamic>).isNotEmpty;
+  }
+
+  /// Gets the user's default RESTAURANT collection, creating it if it doesn't exist.
+  Future<String> getOrCreateDefaultRestaurantCollection(String userId) async {
+    final existing = await SupabaseService.client
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId)
+        .eq('collection_type', 'RESTAURANT')
+        .eq('is_default', true)
+        .maybeSingle();
+
+    if (existing != null && existing['collection_Id'] != null) {
+      return existing['collection_Id'].toString();
+    }
+
+    final collectionId = _generateUUID();
+    await SupabaseService.client.from('collections').insert({
+      'collection_Id': collectionId,
+      'user_Id': userId,
+      'name': 'Saved Restaurants',
+      'collection_type': 'RESTAURANT',
+      'is_default': true,
+      'is_public': false,
+    });
+
+    return collectionId;
+  }
+
+  /// Saves a restaurant to the user's default restaurant collection.
+  Future<void> saveRestaurantToDefaultCollection({
+    required String userId,
+    required String restaurantId,
+  }) async {
+    final collectionId = await getOrCreateDefaultRestaurantCollection(userId);
+    await saveRestaurantToCollection(
+      collectionId: collectionId,
+      restaurantId: restaurantId,
+    );
+  }
+
+  /// Saves a restaurant to a specific collection.
+  Future<void> saveRestaurantToCollection({
+    required String collectionId,
+    required String restaurantId,
+  }) async {
+    // Check for duplicates first
+    final existing = await SupabaseService.client
+        .from('collections_item')
+        .select('item_Id')
+        .eq('collection_Id', collectionId)
+        .eq('restaurant_id', restaurantId)
+        .maybeSingle();
+
+    if (existing != null) return;
+
+    await SupabaseService.client.from('collections_item').insert({
+      'item_Id': _generateUUID(),
+      'collection_Id': collectionId,
+      'restaurant_id': restaurantId,
+    });
+  }
+
+  /// Removes the restaurant from all of the user's restaurant collections.
+  Future<void> unsaveRestaurantForUser({
+    required String userId,
+    required String restaurantId,
+  }) async {
+    final collectionIds = await SupabaseService.client
+        .from('collections')
+        .select('collection_Id')
+        .eq('user_Id', userId)
+        .eq('collection_type', 'RESTAURANT');
+
+    final ids = (collectionIds as List<dynamic>)
+        .map((r) => r['collection_Id'] as String?)
+        .whereType<String>()
+        .toList();
+
+    if (ids.isEmpty) return;
+
+    await SupabaseService.client
+        .from('collections_item')
+        .delete()
+        .eq('restaurant_id', restaurantId)
+        .inFilter('collection_Id', ids);
   }
 
   // ===========================================================================
