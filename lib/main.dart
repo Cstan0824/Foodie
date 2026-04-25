@@ -72,34 +72,38 @@ class _FoodiAppState extends State<FoodiApp> {
 
   void _initAuthListener() {
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-      final session = data.session;
-      if (session != null) {
-        try {
-          final response = await Supabase.instance.client
-              .from('User')
-              .select('name, username, role, UserImage(image_url)')
-              .eq('user_Id', session.user.id)
-              .maybeSingle();
-          
-          if (response != null) {
-            String? imageUrl;
-            final userImages = response['UserImage'];
-            if (userImages != null && userImages is List && userImages.isNotEmpty) {
-              imageUrl = userImages[0]['image_url'];
-            }
+      try {
+        final session = data.session;
+        if (session != null) {
+          try {
+            final response = await Supabase.instance.client
+                .from('User')
+                .select('name, username, role, UserImage(image_url)')
+                .eq('user_Id', session.user.id)
+                .maybeSingle();
+            
+            if (response != null) {
+              String? imageUrl;
+              final userImages = response['UserImage'];
+              if (userImages != null && userImages is List && userImages.isNotEmpty) {
+                imageUrl = userImages[0]['image_url'];
+              }
 
-            await AccountService.saveAccount(
-              userId: session.user.id,
-              name: response['name'],
-              username: response['username'],
-              avatarUrl: imageUrl,
-              role: response['role'] ?? 'user',
-              sessionJson: jsonEncode(session.toJson()),
-            );
+              await AccountService.saveAccount(
+                userId: session.user.id,
+                name: response['name'],
+                username: response['username'],
+                avatarUrl: imageUrl,
+                role: response['role'] ?? 'user',
+                sessionJson: jsonEncode(session.toJson()),
+              );
+            }
+          } catch (innerError) {
+            debugPrint('Error syncing session to AccountService: $innerError');
           }
-        } catch (e) {
-          debugPrint('Error syncing session to AccountService: $e');
         }
+      } catch (e) {
+        debugPrint('Main Auth Listener Unhandled Error: $e');
       }
     });
   }
@@ -405,23 +409,21 @@ class _MainShellState extends State<MainShell> {
           const BottomNavigationBarItem(icon: Icon(CupertinoIcons.house), activeIcon: Icon(CupertinoIcons.house_fill), label: 'Home'),
           const BottomNavigationBarItem(icon: Icon(CupertinoIcons.bookmark), activeIcon: Icon(CupertinoIcons.bookmark_fill), label: 'Collection'),
           BottomNavigationBarItem(
-            icon: Container(
-              width: 46,
-              height: 32,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, AppColors.accent],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            icon: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Container(
+                width: 44,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                borderRadius: BorderRadius.circular(10),
+                child: const Icon(CupertinoIcons.add, color: CupertinoColors.white, size: 22),
               ),
-              child: const Icon(CupertinoIcons.add, color: CupertinoColors.white, size: 22),
             ),
             label: '',
           ),
-          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.gift), activeIcon: Icon(CupertinoIcons.gift_fill), label: 'Blind Box'),
-          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.person), activeIcon: Icon(CupertinoIcons.person_fill), label: 'Profile'),
+          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.gift), activeIcon: Icon(CupertinoIcons.gift_fill), label: 'Blind Box'),          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.person), activeIcon: Icon(CupertinoIcons.person_fill), label: 'Profile'),
         ],
       ),
       tabBuilder: (context, index) {

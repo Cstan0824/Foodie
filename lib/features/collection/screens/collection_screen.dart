@@ -468,24 +468,24 @@ class CollectionScreenState extends State<CollectionScreen> {
                           ),
                         )
                       else ...[
-                        // Second latest image (bottom/back card)
+                        // Second image (bottom/back card)
                         if (images.length > 1)
                           Positioned(
-                            top: -6, right: -8,
-                            bottom: 10, left: 24,
+                            top: 4, right: 6,
+                            bottom: 12, left: 16,
                             child: Transform.rotate(
-                              angle: 0.02, // Even subtler angle
+                              angle: 0.04,
                               child: _buildItemPreview(images[1]),
                             ),
                           ),
-                        // Latest image (top/front card)
+                        // First image (top/front card)
                         Positioned(
                           top: images.length > 1 ? -4 : 0, 
-                          left: images.length > 1 ? -10 : 0,
-                          bottom: images.length > 1 ? 12 : 0, 
-                          right: images.length > 1 ? 20 : 0,
+                          left: images.length > 1 ? -12 : 0,
+                          bottom: images.length > 1 ? 16 : 0, 
+                          right: images.length > 1 ? 24 : 0,
                           child: Transform.rotate(
-                            angle: images.length > 1 ? -0.01 : 0.0, // No rotation if only one image, even subtler if multiple
+                            angle: images.length > 1 ? -0.02 : 0.0,
                             child: _buildItemPreview(images[0]),
                           ),
                         ),
@@ -507,7 +507,7 @@ class CollectionScreenState extends State<CollectionScreen> {
                   Positioned(
                     top: 12, left: 6,
                     child: Transform.rotate(
-                      angle: images.length > 1 ? -0.01 : 0.0, // Match the front card rotation
+                      angle: images.length > 1 ? -0.02 : 0.0, // Match the front card rotation
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(

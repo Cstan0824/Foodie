@@ -943,7 +943,7 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
                   left: 8,
                   child: CupertinoButton(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minSize: 0,
+                    minimumSize: Size.zero,
                     onPressed: widget.onBack,
                     child: const Icon(
                       CupertinoIcons.chevron_back,

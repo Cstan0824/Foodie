@@ -47,14 +47,18 @@ class _SignupScreenState extends State<SignupScreen> {
     _passwordFocus.addListener(() => setState(() {}));
     
     _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-      final session = data.session;
-      if (session != null && (data.event == AuthChangeEvent.signedIn || data.event == AuthChangeEvent.initialSession)) {
-        final isNewUser = await _ensureProfileExists(session.user);
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          CupertinoPageRoute(builder: (_) => isNewUser ? const CompleteProfileScreen() : const MainShell()),
-          (route) => false,
-        );
+      try {
+        final session = data.session;
+        if (session != null && (data.event == AuthChangeEvent.signedIn || data.event == AuthChangeEvent.initialSession)) {
+          final isNewUser = await _ensureProfileExists(session.user);
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            CupertinoPageRoute(builder: (_) => isNewUser ? const CompleteProfileScreen() : const MainShell()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        debugPrint('Signup Auth Listener Error: $e');
       }
     });
   }
@@ -206,9 +210,13 @@ class _SignupScreenState extends State<SignupScreen> {
         }
       }
     } on AuthException catch (e) {
-      FeedbackDialog.show(context: context, title: 'Sign Up Failed', message: e.message);
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign Up Failed', message: e.message);
+      }
     } catch (e) {
-      FeedbackDialog.show(context: context, title: 'Sign Up Problem', message: 'Something went wrong. Please try again.');
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign Up Problem', message: 'Something went wrong. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
