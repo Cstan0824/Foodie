@@ -27,13 +27,12 @@ class NotifItem {
   });
 
   factory NotifItem.fromJson(Map<String, dynamic> j) {
-    // Priority: 'sender' alias, then standard 'User' alias
-    final user = (j['sender'] ?? j['User'] ?? j['user']) as Map<String, dynamic>?;
+    final sender = j['sender'] as Map<String, dynamic>?;
     
-    // Parse avatar URL from UserImage join (robust parsing)
+    // Parse avatar URL using the project standard: join on UserImage
     String? avatar;
-    if (user != null) {
-      final userImages = (user['UserImage'] ?? user['user_images']);
+    if (sender != null) {
+      final userImages = sender['UserImage'];
       if (userImages != null) {
         if (userImages is List && userImages.isNotEmpty) {
           avatar = userImages[0]['image_url'] as String?;
@@ -98,6 +97,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       print('📡 Fetching notifications for user: $userId...');
       final response = await _notifRepo.fetchNotifications(userId);
       print('✅ Notifications fetched successfully. Count: ${response.length}');
+      if (response.isNotEmpty) {
+        print('DEBUG: First notification JSON: ${response.first}');
+      }
       
       final items = response.map((e) => NotifItem.fromJson(e)).toList();
 

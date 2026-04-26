@@ -1,13 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons, Colors;
 import 'dart:async';
-import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/features/auth/screens/signup_screen.dart';
 import 'package:taste_spot/features/auth/screens/complete_profile_screen.dart';
 import 'package:taste_spot/features/auth/screens/forgot_password_screen.dart';
+import 'package:taste_spot/features/auth/screens/verify_otp_screen.dart';
 import 'package:taste_spot/features/admin/screens/admin_screen.dart';
 import 'package:taste_spot/core/services/account_service.dart';
 import 'package:taste_spot/main.dart';
@@ -28,6 +28,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordFocus = FocusNode();
   
   bool _isLoading = false;
+  bool _emailError = false;
+  bool _passwordError = false;
   late final StreamSubscription<AuthState> _authStateSubscription;
 
   late final AuthRepository _authRepo = AuthRepository(
@@ -42,62 +44,67 @@ class _LoginScreenState extends State<LoginScreen> {
     
     _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange
         .listen((data) async {
-          final session = data.session;
-          final event = data.event;
+          try {
+            final session = data.session;
+            final event = data.event;
 
-          if (session != null &&
-              (event == AuthChangeEvent.signedIn ||
-                  event == AuthChangeEvent.initialSession)) {
-            
-            if (mounted) setState(() => _isLoading = true);
+            if (session != null &&
+                (event == AuthChangeEvent.signedIn ||
+                    event == AuthChangeEvent.initialSession)) {
+              
+              if (mounted) setState(() => _isLoading = true);
 
-            final isNewUser = await _ensureProfileExists(session.user);
-            
-            final profileResponse = await Supabase.instance.client
-                .from('User')
-                .select('name, username, role')
-                .eq('user_Id', session.user.id)
-                .maybeSingle();
-            
-            String? avatarUrl;
-            try {
-              final imageResponse = await Supabase.instance.client
-                  .from('UserImage')
-                  .select('image_url')
+              final isNewUser = await _ensureProfileExists(session.user);
+              
+              final profileResponse = await Supabase.instance.client
+                  .from('User')
+                  .select('name, username, role')
                   .eq('user_Id', session.user.id)
                   .maybeSingle();
-              avatarUrl = imageResponse?['image_url'];
-            } catch (_) {}
+              
+              String? avatarUrl;
+              try {
+                final imageResponse = await Supabase.instance.client
+                    .from('UserImage')
+                    .select('image_url')
+                    .eq('user_Id', session.user.id)
+                    .maybeSingle();
+                avatarUrl = imageResponse?['image_url'];
+              } catch (_) {}
 
-            final role = profileResponse?['role'] ?? 'user';
+              final role = profileResponse?['role'] ?? 'user';
 
-            if (profileResponse != null) {
-              await AccountService.saveAccount(
-                userId: session.user.id,
-                name: profileResponse['name'],
-                username: profileResponse['username'],
-                avatarUrl: avatarUrl,
-                role: role,
-                sessionJson: jsonEncode(session.toJson()),
-              );
-            }
-
-            if (!mounted) return;
-            if (isNewUser) {
-              Navigator.of(context).pushReplacement(
-                CupertinoPageRoute(builder: (_) => const CompleteProfileScreen()),
-              );
-            } else {
-              if (role == 'admin') {
-                Navigator.of(context).pushReplacement(
-                  CupertinoPageRoute(builder: (_) => AdminScreen()),
-                );
-              } else {
-                Navigator.of(context).pushReplacement(
-                  CupertinoPageRoute(builder: (_) => const MainShell()),
+              if (profileResponse != null) {
+                await AccountService.saveAccount(
+                  userId: session.user.id,
+                  name: profileResponse['name'],
+                  username: profileResponse['username'],
+                  avatarUrl: avatarUrl,
+                  role: role,
+                  sessionJson: jsonEncode(session.toJson()),
                 );
               }
+
+              if (!mounted) return;
+              if (isNewUser) {
+                Navigator.of(context).pushReplacement(
+                  CupertinoPageRoute(builder: (_) => const CompleteProfileScreen()),
+                );
+              } else {
+                if (role == 'admin') {
+                  Navigator.of(context).pushReplacement(
+                    CupertinoPageRoute(builder: (_) => AdminScreen()),
+                  );
+                } else {
+                  Navigator.of(context).pushReplacement(
+                    CupertinoPageRoute(builder: (_) => const MainShell()),
+                  );
+                }
+              }
             }
+          } catch (e) {
+            debugPrint('Login Auth Listener Error: $e');
+            if (mounted) setState(() => _isLoading = false);
           }
         });
   }
@@ -133,7 +140,12 @@ class _LoginScreenState extends State<LoginScreen> {
     final identifier = _emailController.text.trim();
     final password = _passwordController.text;
 
-    if (identifier.isEmpty || password.isEmpty) {
+    setState(() {
+      _emailError = identifier.isEmpty;
+      _passwordError = password.isEmpty;
+    });
+
+    if (_emailError || _passwordError) {
       FeedbackDialog.show(
         context: context,
         title: 'Sign In',
@@ -147,11 +159,13 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await _authRepo.signIn(identifier: identifier, password: password);
     } on AuthException catch (e) {
-      if (!mounted) return;
-      FeedbackDialog.show(context: context, title: 'Sign In Failed', message: _mapAuthError(e));
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign In Failed', message: _mapAuthError(e));
+      }
     } catch (e) {
-      if (!mounted) return;
-      FeedbackDialog.show(context: context, title: 'Sign In Problem', message: _mapAuthError(e));
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign In Problem', message: _mapAuthError(e));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -185,6 +199,62 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       // Same logic as Google login
     }
+  }
+
+  void _showVerifyEmailDialog() {
+    final emailCtrl = TextEditingController();
+    showCupertinoDialog(
+      context: context,
+      builder: (ctx) => CupertinoAlertDialog(
+        title: const Text('Verify Account'),
+        content: Column(
+          children: [
+            const SizedBox(height: 12),
+            const Text('Enter your email address to receive or enter your verification code.'),
+            const SizedBox(height: 12),
+            CupertinoTextField(
+              controller: emailCtrl,
+              placeholder: 'Email',
+              keyboardType: TextInputType.emailAddress,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.divider),
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+          CupertinoDialogAction(
+            child: const Text('Continue'),
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (email.isEmpty || !email.contains('@')) return;
+              
+              // Trigger the OTP send
+              try {
+                await _authRepo.resendOtp(email: email, type: OtpType.signup);
+              } catch (_) {
+                // If it fails (e.g. rate limit), we still go to the screen 
+                // in case they already have a code.
+              }
+
+              if (!mounted) return;
+              Navigator.pop(ctx);
+              Navigator.of(context).push(
+                CupertinoPageRoute(
+                  builder: (_) => VerifyOTPScreen(email: email, type: OTPType.signup),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -271,6 +341,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                 focusNode: _emailFocus,
                                 placeholder: 'Email address',
                                 icon: CupertinoIcons.mail_solid,
+                                isError: _emailError,
+                                onChanged: (_) {
+                                  if (_emailError) setState(() => _emailError = false);
+                                },
                               ),
                               const SizedBox(height: 16),
                               _buildModernTextField(
@@ -279,17 +353,31 @@ class _LoginScreenState extends State<LoginScreen> {
                                 placeholder: 'Password',
                                 icon: CupertinoIcons.lock_fill,
                                 obscureText: true,
+                                isError: _passwordError,
+                                onChanged: (_) {
+                                  if (_passwordError) setState(() => _passwordError = false);
+                                },
                               ),
                               
                               const SizedBox(height: 16),
                               Align(
                                 alignment: Alignment.centerRight,
-                                child: CupertinoButton(
-                                  padding: EdgeInsets.zero,
-                                  onPressed: () => Navigator.of(context).push(
-                                    CupertinoPageRoute(builder: (_) => const ForgotPasswordScreen()),
-                                  ),
-                                  child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700)),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    CupertinoButton(
+                                      padding: EdgeInsets.zero,
+                                      onPressed: () => _showVerifyEmailDialog(),
+                                      child: const Text('Verify Account', style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                                    ),
+                                    CupertinoButton(
+                                      padding: EdgeInsets.zero,
+                                      onPressed: () => Navigator.of(context).push(
+                                        CupertinoPageRoute(builder: (_) => const ForgotPasswordScreen()),
+                                      ),
+                                      child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700)),
+                                    ),
+                                  ],
                                 ),
                               ),
                               
@@ -401,8 +489,13 @@ class _LoginScreenState extends State<LoginScreen> {
     required String placeholder,
     required IconData icon,
     bool obscureText = false,
+    bool isError = false,
+    ValueChanged<String>? onChanged,
   }) {
     final bool hasFocus = focusNode.hasFocus;
+    final Color borderColor = isError 
+        ? CupertinoColors.systemRed 
+        : (hasFocus ? AppColors.primary : Colors.transparent);
     
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -410,9 +503,13 @@ class _LoginScreenState extends State<LoginScreen> {
       decoration: BoxDecoration(
         color: hasFocus ? CupertinoColors.white : AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: hasFocus ? AppColors.primary : Colors.transparent, width: 1.5),
-        boxShadow: hasFocus ? [
-          BoxShadow(color: AppColors.primary.withAlpha(15), blurRadius: 10, offset: const Offset(0, 4)),
+        border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: hasFocus || isError ? [
+          BoxShadow(
+            color: (isError ? CupertinoColors.systemRed : AppColors.primary).withAlpha(15), 
+            blurRadius: 10, 
+            offset: const Offset(0, 4)
+          ),
         ] : [],
       ),
       child: CupertinoTextField(
@@ -420,12 +517,13 @@ class _LoginScreenState extends State<LoginScreen> {
         focusNode: focusNode,
         placeholder: placeholder,
         obscureText: obscureText,
+        onChanged: onChanged,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         style: const TextStyle(fontSize: 16, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
         placeholderStyle: const TextStyle(fontSize: 16, color: AppColors.textLight, fontWeight: FontWeight.w500),
         prefix: Padding(
           padding: const EdgeInsets.only(left: 18.0),
-          child: Icon(icon, color: hasFocus ? AppColors.primary : AppColors.textLight, size: 20),
+          child: Icon(icon, color: isError ? CupertinoColors.systemRed : (hasFocus ? AppColors.primary : AppColors.textLight), size: 20),
         ),
         decoration: null,
       ),

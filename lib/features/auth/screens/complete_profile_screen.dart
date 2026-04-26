@@ -21,6 +21,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   bool _isLoading = false;
   bool _isCheckingUsername = false;
   bool? _isUsernameAvailable;
+  bool _usernameError = false;
   String? _currentUserId;
   Timer? _usernameDebounce;
 
@@ -154,6 +155,10 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     final username = _usernameController.text.trim();
     final bio = _bioController.text.trim();
 
+    setState(() {
+      _usernameError = username.isEmpty;
+    });
+
     if (username.isEmpty) {
       _showAlert('Username Required', 'Please enter a username to continue.');
       return;
@@ -263,14 +268,20 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               const SizedBox(height: 8),
               CupertinoTextField(
                 controller: _usernameController,
-                onChanged: _onUsernameChanged,
+                onChanged: (v) {
+                  _onUsernameChanged(v);
+                  if (_usernameError) setState(() => _usernameError = false);
+                },
                 padding: const EdgeInsets.all(16),
                 placeholder: 'e.g. burger_master',
                 placeholderStyle: const TextStyle(color: AppColors.textLight),
                 decoration: BoxDecoration(
                   color: CupertinoColors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.divider),
+                  border: Border.all(
+                    color: _usernameError ? CupertinoColors.systemRed : AppColors.divider,
+                    width: _usernameError ? 1.5 : 1,
+                  ),
                 ),
               ),
               if (_isCheckingUsername)

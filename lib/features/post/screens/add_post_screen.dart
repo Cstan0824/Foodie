@@ -37,6 +37,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
   // State
   bool _isPublishing = false;
+  bool _titleError = false;
+  bool _captionError = false;
 
   @override
   void dispose() {
@@ -109,8 +111,14 @@ class _AddPostScreenState extends State<AddPostScreen> {
     final title = _titleController.text.trim();
     final caption = _captionController.text.trim();
     final hashtags = HashtagUtils.extractHashtagsFromText(caption);
-    if (title.isEmpty) {
-      _showError('Please add a title before publishing.');
+
+    setState(() {
+      _titleError = title.isEmpty;
+      _captionError = caption.isEmpty;
+    });
+
+    if (_titleError || _captionError) {
+      _showError('Please add a title and caption before publishing.');
       return;
     }
 
@@ -149,12 +157,17 @@ class _AddPostScreenState extends State<AddPostScreen> {
         images: imageByteslist,
       );
 
-      if (mounted)
+      if (mounted) {
         Navigator.of(context).pop(true); // true = feed should refresh
+      }
     } catch (e) {
-      if (mounted) _showError('Failed to publish: $e');
+      if (mounted) {
+        _showError('Failed to publish: $e');
+      }
     } finally {
-      if (mounted) setState(() => _isPublishing = false);
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
     }
   }
 
@@ -263,10 +276,16 @@ class _AddPostScreenState extends State<AddPostScreen> {
                     fontWeight: FontWeight.w600,
                     height: 1.4,
                   ),
-                  decoration: null,
+                  decoration: BoxDecoration(
+                    border: _titleError ? Border.all(color: CupertinoColors.systemRed, width: 1.2) : null,
+                    borderRadius: _titleError ? BorderRadius.circular(10) : null,
+                  ),
+                  onChanged: (_) {
+                    if (_titleError) setState(() => _titleError = false);
+                  },
                   maxLines: 2,
                   minLines: 1,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
                 ),
               ),
 
@@ -280,6 +299,10 @@ class _AddPostScreenState extends State<AddPostScreen> {
                   placeholder: 'Share your experience, taste, and tips...',
                   maxLines: 8,
                   minLines: 4,
+                  isError: _captionError,
+                  onChanged: (_) {
+                    if (_captionError) setState(() => _captionError = false);
+                  },
                 ),
               ),
 
@@ -494,11 +517,12 @@ class _RestaurantPickerSheetState extends State<_RestaurantPickerSheet> {
 
   Future<void> _loadInitial() async {
     final list = await RestaurantRepository.instance.fetchRecent(limit: 20);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _results = list;
         _isLoading = false;
       });
+    }
   }
 
   void _onSearchChanged() {
@@ -513,11 +537,12 @@ class _RestaurantPickerSheetState extends State<_RestaurantPickerSheet> {
   Future<void> _search(String query) async {
     setState(() => _isLoading = true);
     final list = await RestaurantRepository.instance.searchRestaurants(query);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _results = list;
         _isLoading = false;
       });
+    }
   }
 
   @override
@@ -599,7 +624,7 @@ class _RestaurantPickerSheetState extends State<_RestaurantPickerSheet> {
                             : ListView.separated(
                                 padding: EdgeInsets.zero,
                                 itemCount: _results.length,
-                                separatorBuilder: (_, __) => Container(
+                                separatorBuilder: (_, _) => Container(
                                   height: 0.5,
                                   color: AppColors.divider,
                                   margin: const EdgeInsets.only(left: 58),
@@ -728,6 +753,10 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
   String? _selectedCuisineId;
   bool _isLoadingCuisines = true;
   bool _isSubmitting = false;
+  
+  bool _nameError = false;
+  bool _addressError = false;
+  bool _cuisineError = false;
 
   @override
   void initState() {
@@ -796,6 +825,7 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
                       if (_cuisines.isNotEmpty) {
                         setState(() {
                           _selectedCuisineId = _cuisines[tempSelectedIndex].id;
+                          _cuisineError = false;
                         });
                       }
                       Navigator.pop(ctx);
@@ -845,16 +875,14 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
     final address = _addressCtrl.text.trim();
     final cuisineId = _selectedCuisineId;
 
-    if (name.isEmpty) {
-      _showError('Restaurant name is required.');
-      return;
-    }
-    if (cuisineId == null) {
-      _showError('Main cuisine is required.');
-      return;
-    }
-    if (address.isEmpty) {
-      _showError('Address is required.');
+    setState(() {
+      _nameError = name.isEmpty;
+      _addressError = address.isEmpty;
+      _cuisineError = cuisineId == null;
+    });
+
+    if (_nameError || _addressError || _cuisineError) {
+      _showError('Please fill in all required fields marked with *');
       return;
     }
 
@@ -915,7 +943,7 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
                   left: 8,
                   child: CupertinoButton(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minSize: 0,
+                    minimumSize: Size.zero,
                     onPressed: widget.onBack,
                     child: const Icon(
                       CupertinoIcons.chevron_back,
@@ -966,7 +994,11 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
                     decoration: BoxDecoration(
                       color: AppColors.background,
                       borderRadius: BorderRadius.circular(10),
+                      border: _nameError ? Border.all(color: CupertinoColors.systemRed, width: 1.2) : null,
                     ),
+                    onChanged: (_) {
+                      if (_nameError) setState(() => _nameError = false);
+                    },
                   ),
                   const SizedBox(height: 20),
 
@@ -989,6 +1021,7 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
                             decoration: BoxDecoration(
                               color: AppColors.background,
                               borderRadius: BorderRadius.circular(10),
+                              border: _cuisineError ? Border.all(color: CupertinoColors.systemRed, width: 1.2) : null,
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1035,7 +1068,11 @@ class _NewRestaurantFormSheetState extends State<_NewRestaurantFormSheet> {
                     decoration: BoxDecoration(
                       color: AppColors.background,
                       borderRadius: BorderRadius.circular(10),
+                      border: _addressError ? Border.all(color: CupertinoColors.systemRed, width: 1.2) : null,
                     ),
+                    onChanged: (_) {
+                      if (_addressError) setState(() => _addressError = false);
+                    },
                   ),
                   const SizedBox(height: 32),
 

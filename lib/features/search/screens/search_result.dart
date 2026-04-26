@@ -141,7 +141,7 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
             children: [
               CupertinoButton(
                 padding: EdgeInsets.zero,
-                minSize: 34,
+                minimumSize: const Size(34, 34),
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Icon(
                   CupertinoIcons.back,
@@ -446,7 +446,7 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
                       width: 56,
                       height: 56,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                      errorBuilder: (_, _, _) => Container(
                         width: 56,
                         height: 56,
                         color: AppColors.surface,

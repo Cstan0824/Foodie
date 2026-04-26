@@ -366,8 +366,9 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   }
 
   Future<void> _loadMoreApprovals() async {
-    if (_isFetchingMoreApprovals || !_hasMoreApprovals || _isLoadingApprovals)
+    if (_isFetchingMoreApprovals || !_hasMoreApprovals || _isLoadingApprovals) {
       return;
+    }
     setState(() => _isFetchingMoreApprovals = true);
     try {
       final more = await _approvalRepo.fetchApprovals(
@@ -1747,7 +1748,7 @@ class _ApprovalRow extends StatelessWidget {
                       child: Image.network(
                         thumbUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Center(
+                        errorBuilder: (_, _, _) => const Center(
                           child: Icon(
                             CupertinoIcons.doc_text,
                             size: 22,

@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Icons, Colors;
-import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart' show Colors;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:async';
 import 'dart:math';
@@ -8,7 +7,6 @@ import 'package:taste_spot/features/auth/screens/complete_profile_screen.dart';
 import 'package:taste_spot/features/auth/screens/verify_otp_screen.dart';
 import 'package:taste_spot/data/repositories/auth_repository.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:taste_spot/main.dart';
 import 'package:taste_spot/core/widgets/feedback_dialog.dart';
 
@@ -31,9 +29,11 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isLoading = false;
   bool _isCheckingUsername = false;
   bool? _isUsernameAvailable;
+  bool? _isPasswordValid;
   Timer? _usernameDebounce;
   bool _isCheckingEmail = false;
   bool? _isEmailTaken;
+  bool _signupAttempted = false;
   Timer? _emailDebounce;
   late final StreamSubscription<AuthState> _authStateSubscription;
 
@@ -47,14 +47,18 @@ class _SignupScreenState extends State<SignupScreen> {
     _passwordFocus.addListener(() => setState(() {}));
     
     _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-      final session = data.session;
-      if (session != null && (data.event == AuthChangeEvent.signedIn || data.event == AuthChangeEvent.initialSession)) {
-        final isNewUser = await _ensureProfileExists(session.user);
-        if (!mounted) return;
-        Navigator.of(context).pushAndRemoveUntil(
-          CupertinoPageRoute(builder: (_) => isNewUser ? const CompleteProfileScreen() : const MainShell()),
-          (route) => false,
-        );
+      try {
+        final session = data.session;
+        if (session != null && (data.event == AuthChangeEvent.signedIn || data.event == AuthChangeEvent.initialSession)) {
+          final isNewUser = await _ensureProfileExists(session.user);
+          if (!mounted) return;
+          Navigator.of(context).pushAndRemoveUntil(
+            CupertinoPageRoute(builder: (_) => isNewUser ? const CompleteProfileScreen() : const MainShell()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        debugPrint('Signup Auth Listener Error: $e');
       }
     });
   }
@@ -134,7 +138,9 @@ class _SignupScreenState extends State<SignupScreen> {
   void _onEmailChanged(String value) {
     _emailDebounce?.cancel();
     final email = value.trim();
-    if (email.isEmpty || !email.contains('@')) {
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    
+    if (email.isEmpty || !emailRegex.hasMatch(email)) {
       if (mounted) setState(() { _isCheckingEmail = false; _isEmailTaken = null; });
       return;
     }
@@ -156,6 +162,8 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _signup() async {
+    setState(() => _signupAttempted = true);
+
     if (!_agreeToTerms) {
       FeedbackDialog.show(context: context, title: 'Terms of Service', message: 'Please agree to our terms to continue.', icon: CupertinoIcons.doc_text_fill);
       return;
@@ -165,22 +173,14 @@ class _SignupScreenState extends State<SignupScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
+    setState(() {
+      _isPasswordValid = password.isNotEmpty && password.length >= 8;
+    });
+
     if (name.isEmpty || email.isEmpty || password.isEmpty) {
       FeedbackDialog.show(context: context, title: 'Incomplete', message: 'Please fill in all fields.');
       return;
     }
-
-    if (password.length < 6) {
-      FeedbackDialog.show(
-        context: context,
-        title: 'Security',
-        message: 'Your password is too short. Please use at least 6 characters.',
-        icon: CupertinoIcons.shield_lefthalf_fill,
-        iconColor: AppColors.primary,
-      );
-      return;
-    }
-
 
     if (password.length < 8) {
       FeedbackDialog.show(context: context, title: 'Password Too Short', message: 'For your security, please use at least 8 characters for your password.', icon: CupertinoIcons.lock_shield_fill);
@@ -195,19 +195,28 @@ class _SignupScreenState extends State<SignupScreen> {
     try {
       final response = await _authRepo.signUp(email: email, password: password, name: name);
       if (!mounted) return;
+      
+      // If session is null but user is not null, it means verification is required (OTP)
       if (response.session == null && response.user != null) {
-        FeedbackDialog.show(
-          context: context,
-          title: 'Verify Your Email',
-          message: 'We\'ve sent an activation link to $email. Please check your inbox to finish setting up your account.',
-          icon: CupertinoIcons.mail_solid,
-          onConfirm: () => Navigator.of(context).pop(),
+        final verified = await Navigator.of(context).push<bool>(
+          CupertinoPageRoute(
+            builder: (_) => VerifyOTPScreen(email: email, type: OTPType.signup),
+          ),
         );
+
+        if (verified == true && mounted) {
+          // Profile should have been created in signUp method already
+          // The auth state listener in initState will handle navigation to MainShell/CompleteProfile
+        }
       }
     } on AuthException catch (e) {
-      FeedbackDialog.show(context: context, title: 'Sign Up Failed', message: e.message);
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign Up Failed', message: e.message);
+      }
     } catch (e) {
-      FeedbackDialog.show(context: context, title: 'Sign Up Problem', message: 'Something went wrong. Please try again.');
+      if (mounted) {
+        FeedbackDialog.show(context: context, title: 'Sign Up Problem', message: 'Something went wrong. Please try again.');
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -235,9 +244,13 @@ class _SignupScreenState extends State<SignupScreen> {
                 focusNode: _usernameFocus,
                 placeholder: 'Username',
                 icon: CupertinoIcons.person_crop_circle_fill,
-                onChanged: _onUsernameChanged,
+                onChanged: (v) {
+                  _onUsernameChanged(v);
+                  if (_signupAttempted) setState(() {});
+                },
                 status: _isUsernameAvailable,
                 isChecking: _isCheckingUsername,
+                isError: _signupAttempted && _usernameController.text.trim().isEmpty,
               ),
               _buildErrorLabel(_isUsernameAvailable == false, 'Username is not available'),
               
@@ -248,9 +261,13 @@ class _SignupScreenState extends State<SignupScreen> {
                 placeholder: 'Email address',
                 icon: CupertinoIcons.mail_solid,
                 keyboardType: TextInputType.emailAddress,
-                onChanged: _onEmailChanged,
+                onChanged: (v) {
+                  _onEmailChanged(v);
+                  if (_signupAttempted) setState(() {});
+                },
                 status: _isEmailTaken == null ? null : !_isEmailTaken!,
                 isChecking: _isCheckingEmail,
+                isError: _signupAttempted && (_emailController.text.trim().isEmpty || !(_isEmailTaken == null ? true : !_isEmailTaken!)),
               ),
               _buildErrorLabel(_isEmailTaken == true, 'Email is already registered'),
 
@@ -261,6 +278,10 @@ class _SignupScreenState extends State<SignupScreen> {
                 placeholder: 'Password',
                 icon: CupertinoIcons.lock_fill,
                 obscureText: true,
+                onChanged: (_) {
+                  if (_signupAttempted) setState(() {});
+                },
+                isError: _signupAttempted && (_passwordController.text.isEmpty || _passwordController.text.length < 8),
               ),
               
               const SizedBox(height: 32),
@@ -308,15 +329,16 @@ class _SignupScreenState extends State<SignupScreen> {
     ValueChanged<String>? onChanged,
     bool? status,
     bool isChecking = false,
+    bool isError = false,
   }) {
     final bool hasFocus = focusNode.hasFocus;
     Color borderColor = Colors.transparent;
     
-    if (hasFocus) {
+    if (isError || status == false) {
+      borderColor = CupertinoColors.systemRed;
+    } else if (hasFocus) {
       if (status == true) {
         borderColor = CupertinoColors.activeGreen;
-      } else if (status == false) {
-        borderColor = CupertinoColors.systemRed;
       } else {
         // Default focus color is Green as requested
         borderColor = CupertinoColors.activeGreen;
@@ -330,12 +352,18 @@ class _SignupScreenState extends State<SignupScreen> {
         color: hasFocus ? CupertinoColors.white : AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: borderColor, width: 1.5),
-        boxShadow: hasFocus ? [BoxShadow(color: borderColor.withAlpha(20), blurRadius: 10, offset: const Offset(0, 4))] : [],
+        boxShadow: hasFocus || isError || status == false ? [
+          BoxShadow(
+            color: (borderColor == Colors.transparent ? AppColors.primary : borderColor).withAlpha(20), 
+            blurRadius: 10, 
+            offset: const Offset(0, 4)
+          )
+        ] : [],
       ),
       child: Row(
         children: [
           const SizedBox(width: 16),
-          Icon(icon, color: hasFocus ? borderColor : AppColors.textLight, size: 20),
+          Icon(icon, color: borderColor != Colors.transparent ? borderColor : AppColors.textLight, size: 20),
           Expanded(
             child: CupertinoTextField(
               controller: controller,
@@ -352,7 +380,7 @@ class _SignupScreenState extends State<SignupScreen> {
           ),
           if (isChecking) const Padding(padding: EdgeInsets.only(right: 16), child: CupertinoActivityIndicator(radius: 8)),
           if (!isChecking && status == true) const Padding(padding: EdgeInsets.only(right: 16), child: Icon(CupertinoIcons.checkmark_alt_circle_fill, color: CupertinoColors.activeGreen, size: 20)),
-          if (!isChecking && status == false) const Padding(padding: EdgeInsets.only(right: 16), child: Icon(CupertinoIcons.xmark_circle_fill, color: CupertinoColors.systemRed, size: 20)),
+          if (!isChecking && (status == false || isError)) const Padding(padding: EdgeInsets.only(right: 16), child: Icon(CupertinoIcons.xmark_circle_fill, color: CupertinoColors.systemRed, size: 20)),
         ],
       ),
     );
@@ -361,16 +389,5 @@ class _SignupScreenState extends State<SignupScreen> {
   Widget _buildErrorLabel(bool show, String message) {
     if (!show) return const SizedBox.shrink();
     return Padding(padding: const EdgeInsets.only(top: 6, left: 16), child: Text(message, style: const TextStyle(fontSize: 11, color: CupertinoColors.systemRed, fontWeight: FontWeight.w600)));
-  }
-
-  Widget _buildSocialButton({required IconData icon, required Color color, double size = 30, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 64, height: 64,
-        decoration: BoxDecoration(color: CupertinoColors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 15, offset: const Offset(0, 5))], border: Border.all(color: AppColors.divider, width: 0.5)),
-        child: Center(child: Icon(icon, color: color, size: size)),
-      ),
-    );
   }
 }

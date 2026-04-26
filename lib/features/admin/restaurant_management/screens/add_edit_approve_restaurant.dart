@@ -680,12 +680,21 @@ class _AddEditApproveRestaurantScreenState
 
   String _buildAddress() {
     final parts = <String>[];
-    if (_addr1Ctrl.text.trim().isNotEmpty) parts.add(_addr1Ctrl.text.trim());
-    if (_addr2Ctrl.text.trim().isNotEmpty) parts.add(_addr2Ctrl.text.trim());
-    if (_postcodeCtrl.text.trim().isNotEmpty)
+    if (_addr1Ctrl.text.trim().isNotEmpty) {
+      parts.add(_addr1Ctrl.text.trim());
+    }
+    if (_addr2Ctrl.text.trim().isNotEmpty) {
+      parts.add(_addr2Ctrl.text.trim());
+    }
+    if (_postcodeCtrl.text.trim().isNotEmpty) {
       parts.add(_postcodeCtrl.text.trim());
-    if (_selectedCity != null) parts.add(_selectedCity!);
-    if (_selectedState != null) parts.add(_selectedState!);
+    }
+    if (_selectedCity != null) {
+      parts.add(_selectedCity!);
+    }
+    if (_selectedState != null) {
+      parts.add(_selectedState!);
+    }
     return parts.join(', ');
   }
 
@@ -2003,7 +2012,7 @@ class _SectionCard extends StatelessWidget {
                   ),
                 ),
               ),
-              ?trailing,
+              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 14),

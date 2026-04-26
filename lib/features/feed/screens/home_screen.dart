@@ -9,7 +9,6 @@ import 'package:taste_spot/features/notification/screens/notification_screen.dar
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/search/screens/explore_screen.dart';
 import 'package:taste_spot/data/repositories/notification_repository.dart';
-import 'package:taste_spot/debug_supabase.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -235,7 +234,17 @@ class HomeScreenState extends State<HomeScreen> {
                       builder: (_) => PostDetailScreen(post: post),
                     ),
                   );
-                  if (result == true && mounted) loadPosts(silent: true);
+
+                  if (result is PostModel && mounted) {
+                    setState(() {
+                      final index = _posts.indexWhere((p) => p.id == result.id);
+                      if (index != -1) {
+                        _posts[index] = result;
+                      }
+                    });
+                  } else if (result == true && mounted) {
+                    loadPosts(silent: true);
+                  }
                 },
               ),
             ),

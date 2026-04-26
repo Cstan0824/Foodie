@@ -6,8 +6,6 @@ import 'package:taste_spot/data/repositories/profile_repository.dart';
 import 'package:taste_spot/core/services/account_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
 class EditProfileScreen extends StatefulWidget {
   final Profile profile;
@@ -246,7 +244,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                     _profileImageUrl!,
                                     fit: BoxFit.cover,
                                     key: ValueKey(_profileImageUrl), 
-                                    errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
+                                    errorBuilder: (_, _, _) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
                                   )
                                 : const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
                       ),

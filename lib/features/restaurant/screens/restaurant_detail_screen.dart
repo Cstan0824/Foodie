@@ -44,12 +44,16 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   String? get _currentUserId => SupabaseService.currentUserId;
 
   String? get _resolvedRestaurantId {
-    if (widget.restaurantId != null && widget.restaurantId!.isNotEmpty)
+    if (widget.restaurantId != null && widget.restaurantId!.isNotEmpty) {
       return widget.restaurantId;
-    if (_detail != null) return _detail!.restaurant.restaurantId;
-    if (widget.restaurant != null)
+    }
+    if (_detail != null) {
+      return _detail!.restaurant.restaurantId;
+    }
+    if (widget.restaurant != null) {
       return widget.restaurant!['restaurant_Id']?.toString() ??
           widget.restaurant!['id']?.toString();
+    }
     return null;
   }
 
@@ -198,7 +202,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                     return ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: collections.length,
-                      separatorBuilder: (_, __) => Container(
+                      separatorBuilder: (_, _) => Container(
                         height: 1,
                         color: CupertinoColors.systemGrey5,
                       ),
@@ -442,8 +446,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   }
 
   String get _address {
-    if (_detail != null)
+    if (_detail != null) {
       return _detail!.restaurant.address ?? 'Address unavailable';
+    }
     if (widget.restaurant != null) {
       final raw = (widget.restaurant!['address'] as String?)?.trim();
       return (raw == null || raw.isEmpty) ? 'Address unavailable' : raw;
@@ -452,7 +457,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   }
 
   String? get _mapsUrl {
-    if (_detail != null) return _detail!.restaurant.mapsUrl;
+    if (_detail != null) {
+      return _detail!.restaurant.mapsUrl;
+    }
     if (widget.restaurant != null) {
       final raw =
           (widget.restaurant!['maps_url'] ?? widget.restaurant!['locationUrl'])
@@ -464,7 +471,9 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
   }
 
   String? get _websiteUrl {
-    if (_detail != null) return _detail!.restaurant.infoUrl;
+    if (_detail != null) {
+      return _detail!.restaurant.infoUrl;
+    }
     if (widget.restaurant != null) {
       final raw = widget.restaurant!['info_url']?.toString().trim();
       return (raw == null || raw.isEmpty) ? null : raw;

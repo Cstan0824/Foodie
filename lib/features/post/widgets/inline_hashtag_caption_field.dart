@@ -8,6 +8,8 @@ class InlineHashtagCaptionField extends StatefulWidget {
   final String placeholder;
   final int minLines;
   final int maxLines;
+  final bool isError;
+  final ValueChanged<String>? onChanged;
 
   const InlineHashtagCaptionField({
     super.key,
@@ -15,6 +17,8 @@ class InlineHashtagCaptionField extends StatefulWidget {
     required this.placeholder,
     this.minLines = 4,
     this.maxLines = 8,
+    this.isError = false,
+    this.onChanged,
   });
 
   @override
@@ -199,10 +203,14 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
             fontSize: 15,
             height: 1.5,
           ),
-          decoration: null,
+          decoration: BoxDecoration(
+            border: widget.isError ? Border.all(color: CupertinoColors.systemRed, width: 1.2) : null,
+            borderRadius: widget.isError ? BorderRadius.circular(12) : null,
+          ),
+          onChanged: widget.onChanged,
           maxLines: widget.maxLines,
           minLines: widget.minLines,
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
         ),
         const SizedBox(height: 10),
         CupertinoButton(

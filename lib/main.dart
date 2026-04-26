@@ -14,6 +14,7 @@ import 'package:taste_spot/features/restaurant/screens/blind_box_screen.dart';
 import 'package:app_links/app_links.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:taste_spot/core/services/account_service.dart';
+import 'package:taste_spot/data/repositories/notification_repository.dart';
 
 // Global key for navigation without context
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -33,6 +34,14 @@ Future<void> main() async {
     await Supabase.initialize(
       url: url,
       anonKey: anonKey,
+    );
+
+    // Set up a listener for auth events to catch unhandled background errors
+    Supabase.instance.client.auth.onAuthStateChange.listen(
+      (data) {},
+      onError: (error) {
+        debugPrint('Supabase Auth Global Error: $error');
+      },
     );
 
     runApp(const FoodiApp());
@@ -63,34 +72,38 @@ class _FoodiAppState extends State<FoodiApp> {
 
   void _initAuthListener() {
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-      final session = data.session;
-      if (session != null) {
-        try {
-          final response = await Supabase.instance.client
-              .from('User')
-              .select('name, username, role, UserImage(image_url)')
-              .eq('user_Id', session.user.id)
-              .maybeSingle();
-          
-          if (response != null) {
-            String? imageUrl;
-            final userImages = response['UserImage'];
-            if (userImages != null && userImages is List && userImages.isNotEmpty) {
-              imageUrl = userImages[0]['image_url'];
-            }
+      try {
+        final session = data.session;
+        if (session != null) {
+          try {
+            final response = await Supabase.instance.client
+                .from('User')
+                .select('name, username, role, UserImage(image_url)')
+                .eq('user_Id', session.user.id)
+                .maybeSingle();
+            
+            if (response != null) {
+              String? imageUrl;
+              final userImages = response['UserImage'];
+              if (userImages != null && userImages is List && userImages.isNotEmpty) {
+                imageUrl = userImages[0]['image_url'];
+              }
 
-            await AccountService.saveAccount(
-              userId: session.user.id,
-              name: response['name'],
-              username: response['username'],
-              avatarUrl: imageUrl,
-              role: response['role'] ?? 'user',
-              sessionJson: jsonEncode(session.toJson()),
-            );
+              await AccountService.saveAccount(
+                userId: session.user.id,
+                name: response['name'],
+                username: response['username'],
+                avatarUrl: imageUrl,
+                role: response['role'] ?? 'user',
+                sessionJson: jsonEncode(session.toJson()),
+              );
+            }
+          } catch (innerError) {
+            debugPrint('Error syncing session to AccountService: $innerError');
           }
-        } catch (e) {
-          debugPrint('Error syncing session to AccountService: $e');
         }
+      } catch (e) {
+        debugPrint('Main Auth Listener Unhandled Error: $e');
       }
     });
   }
@@ -195,9 +208,12 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
+  static bool _hasShownInitialNotification = false;
+
   final GlobalKey<HomeScreenState> homeKey = GlobalKey();
   final GlobalKey<ProfileScreenState> profileKey = GlobalKey();
   final GlobalKey<CollectionScreenState> collectionKey = GlobalKey();
+  final GlobalKey<BlindBoxScreenState> blindBoxKey = GlobalKey();
 
   late final CupertinoTabController _tabController;
   int _lastNonAddTabIndex = 0;
@@ -206,6 +222,119 @@ class _MainShellState extends State<MainShell> {
   void initState() {
     super.initState();
     _tabController = CupertinoTabController(initialIndex: 0);
+    
+    if (!_hasShownInitialNotification) {
+      _checkUnreadNotifications();
+      _hasShownInitialNotification = true;
+    }
+  }
+
+  Future<void> _checkUnreadNotifications() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      final repo = NotificationRepository(Supabase.instance.client);
+      final count = await repo.getUnreadCount(userId);
+      if (count > 0 && mounted) {
+        _showNotificationSnackbar(count);
+      }
+    } catch (_) {}
+  }
+
+  void _showNotificationSnackbar(int count) {
+    late OverlayEntry overlayEntry;
+    overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 10,
+        left: 16,
+        right: 16,
+        child: TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 500),
+          tween: Tween(begin: -100.0, end: 0.0),
+          curve: Curves.easeOutBack,
+          builder: (context, value, child) {
+            return Transform.translate(
+              offset: Offset(0, value),
+              child: child,
+            );
+          },
+          child: GestureDetector(
+            onTap: () {
+              overlayEntry.remove();
+              _tabController.index = 0; // Usually notifications are accessible from Home or specific screen
+              // navigate to notification screen if needed
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: CupertinoColors.black.withAlpha(220),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: CupertinoColors.black.withAlpha(50),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      CupertinoIcons.bell_fill,
+                      color: CupertinoColors.white,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Unread Notifications',
+                          style: TextStyle(
+                            color: CupertinoColors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'You have $count unread message${count > 1 ? 's' : ''}',
+                          style: TextStyle(
+                            color: CupertinoColors.white.withAlpha(200),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    CupertinoIcons.chevron_right,
+                    color: CupertinoColors.white.withAlpha(150),
+                    size: 14,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(overlayEntry);
+    Future.delayed(const Duration(seconds: 5), () {
+      if (overlayEntry.mounted) {
+        overlayEntry.remove();
+      }
+    });
   }
 
   @override
@@ -251,35 +380,50 @@ class _MainShellState extends State<MainShell> {
           }
 
           if (index != 2) {
+            final isSameTab = index == _tabController.index;
             _lastNonAddTabIndex = index;
-          }
 
-          if (index == _tabController.index) {
-            final key = _getNavigatorKey(index);
-            key?.currentState?.popUntil((r) => r.isFirst);
+            if (isSameTab) {
+              final key = _getNavigatorKey(index);
+              key?.currentState?.popUntil((r) => r.isFirst);
+            }
+
+            // Always trigger a refresh when entering/switching to a tab
+            switch (index) {
+              case 0:
+                homeKey.currentState?.loadPosts();
+                break;
+              case 1:
+                collectionKey.currentState?.refreshCollections();
+                break;
+              case 3:
+                blindBoxKey.currentState?.reset();
+                break;
+              case 4:
+                profileKey.currentState?.loadUserPosts();
+                break;
+            }
           }
         },
         items: [
           const BottomNavigationBarItem(icon: Icon(CupertinoIcons.house), activeIcon: Icon(CupertinoIcons.house_fill), label: 'Home'),
           const BottomNavigationBarItem(icon: Icon(CupertinoIcons.bookmark), activeIcon: Icon(CupertinoIcons.bookmark_fill), label: 'Collection'),
           BottomNavigationBarItem(
-            icon: Container(
-              width: 46,
-              height: 32,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.primary, AppColors.accent],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            icon: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Container(
+                width: 44,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                borderRadius: BorderRadius.circular(10),
+                child: const Icon(CupertinoIcons.add, color: CupertinoColors.white, size: 22),
               ),
-              child: const Icon(CupertinoIcons.add, color: CupertinoColors.white, size: 22),
             ),
             label: '',
           ),
-          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.gift), activeIcon: Icon(CupertinoIcons.gift_fill), label: 'Blind Box'),
-          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.person), activeIcon: Icon(CupertinoIcons.person_fill), label: 'Profile'),
+          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.gift), activeIcon: Icon(CupertinoIcons.gift_fill), label: 'Blind Box'),          const BottomNavigationBarItem(icon: Icon(CupertinoIcons.person), activeIcon: Icon(CupertinoIcons.person_fill), label: 'Profile'),
         ],
       ),
       tabBuilder: (context, index) {
@@ -296,7 +440,7 @@ class _MainShellState extends State<MainShell> {
                   child: SizedBox.shrink(),
                 );
               case 3:
-                return const BlindBoxScreen();
+                return BlindBoxScreen(key: blindBoxKey);
               case 4:
                 return ProfileScreen(key: profileKey);
               default:

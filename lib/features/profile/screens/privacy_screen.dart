@@ -87,18 +87,8 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               padding: const EdgeInsets.all(16),
               children: [
                 _buildSection(
-                  title: 'Visibility',
+                  title: 'Account Actions',
                   children: [
-                    _buildSwitchTile(title: 'Private Account', value: false, onChanged: (v) {}),
-                    _buildTile(title: 'Blocked Users', onTap: () {}),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _buildSection(
-                  title: 'Data',
-                  children: [
-                    _buildTile(title: 'Personalization', onTap: () {}),
-                    _buildTile(title: 'Download My Data', onTap: () {}),
                     _buildTile(
                       title: 'Delete Account', 
                       isDestructive: true, 
@@ -110,7 +100,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 12),
                   child: Text(
-                    'Your privacy is important to us. We use your data to improve your experience. See our full Privacy Policy for more details.',
+                    'Deleting your account will permanently remove all your data, including posts, followers, and collections. This action cannot be reversed.',
                     style: TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4),
                   ),
                 ),

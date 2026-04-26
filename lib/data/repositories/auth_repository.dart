@@ -91,28 +91,48 @@ class AuthRepository {
     }
 
     // 2. Auth signup
+    // We store the name and username in metadata so we can retrieve it after OTP verification
     final response = await _supabase.auth.signUp(
       email: email,
       password: password,
-      emailRedirectTo: emailRedirectTo ?? 'io.supabase.tastespot://login-callback/',
+      data: {
+        'full_name': name,
+        'username': name.toLowerCase().trim(),
+      },
+      emailRedirectTo:
+          emailRedirectTo ?? 'io.supabase.tastespot://login-callback/',
     );
 
-    // 3. Create profile if auth was successful
-    if (response.user != null) {
-      try {
+    return response;
+  }
+
+  // Internal helper to create the public profile and default collections
+  Future<void> _createProfileAfterVerification(User user) async {
+    final name = (user.userMetadata?['full_name'] as String?) ?? 'New Foodie';
+    final username = (user.userMetadata?['username'] as String?) ??
+        'user_${user.id.substring(0, 5)}';
+
+    try {
+      // Check if profile already exists (idempotency)
+      final existing = await _supabase
+          .from('User')
+          .select('user_Id')
+          .eq('user_Id', user.id)
+          .maybeSingle();
+
+      if (existing == null) {
         await _supabase.from('User').insert({
-          'user_Id': response.user!.id,
+          'user_Id': user.id,
           'name': name,
-          'username': name.toLowerCase().trim(),
-          // We removed 'email' here because it belongs to auth.users, not public.User
-          'password': 'SUPABASE_AUTH_USER', 
+          'username': username,
+          'password': 'SUPABASE_AUTH_USER',
         });
 
         // Create default collections
         await _supabase.from('collections').insert([
           {
             'collection_Id': const Uuid().v4(),
-            'user_Id': response.user!.id,
+            'user_Id': user.id,
             'name': 'Saved Posts',
             'is_public': false,
             'collection_type': 'POST',
@@ -120,23 +140,20 @@ class AuthRepository {
           },
           {
             'collection_Id': const Uuid().v4(),
-            'user_Id': response.user!.id,
+            'user_Id': user.id,
             'name': 'Saved Restaurants',
             'is_public': false,
             'collection_type': 'RESTAURANT',
             'is_default': true,
           }
         ]);
-      } on PostgrestException catch (e) {
-        print('Profile creation error: ${e.message}');
-        if (e.code == '23505') throw Exception('USERNAME_TAKEN');
-        throw Exception('PROFILE_CREATE_FAILED');
-      } catch (e) {
-        throw Exception('PROFILE_CREATE_FAILED');
       }
+    } on PostgrestException catch (e) {
+      print('Profile creation error: ${e.message}');
+      // We don't rethrow here because the user is already authenticated/verified
+    } catch (e) {
+      print('Unexpected profile creation error: $e');
     }
-
-    return response;
   }
 
   // Forgot Password (Send Reset Email)
@@ -149,6 +166,17 @@ class AuthRepository {
     await _supabase.auth.signOut();
   }
 
+  // Resend OTP Code
+  Future<void> resendOtp({
+    required String email,
+    required OtpType type,
+  }) async {
+    await _supabase.auth.resend(
+      type: type,
+      email: email,
+    );
+  }
+
   // Get Current User
   User? getCurrentUser() {
     return _supabase.auth.currentUser;
@@ -159,11 +187,17 @@ class AuthRepository {
     required String email,
     required String token,
   }) async {
-    return await _supabase.auth.verifyOTP(
+    final response = await _supabase.auth.verifyOTP(
       type: OtpType.signup,
       email: email,
       token: token,
     );
+
+    if (response.user != null) {
+      await _createProfileAfterVerification(response.user!);
+    }
+
+    return response;
   }
 
   // Verify Recovery OTP (for Password Reset)

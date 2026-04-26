@@ -20,11 +20,12 @@ class PostRepository {
   Future<List<PostModel>> fetchDiscoverPosts({
     int limit = 20,
     int offset = 0,
+    String? currentUserId,
   }) async {
     try {
       final response = await SupabaseService.client
           .from('Post')
-          .select(publicPostSelect)
+          .select(getPostSelectWithStatus(currentUserId))
           .eq('isRemoved', false)
           .eq('isBlocked', false)
           .eq('isPending', false)
@@ -71,7 +72,7 @@ class PostRepository {
 
     final response = await SupabaseService.client
         .from('Post')
-        .select(publicPostSelect)
+        .select(getPostSelectWithStatus(userId))
         .inFilter('user_Id', followingIds)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
@@ -89,10 +90,11 @@ class PostRepository {
     required String userId,
     int limit = 20,
     int offset = 0,
+    String? currentUserId,
   }) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select(publicPostSelect)
+        .select(getPostSelectWithStatus(currentUserId))
         .eq('user_Id', userId)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
@@ -106,10 +108,13 @@ class PostRepository {
   }
 
   /// Fetches posts the user has archived (soft-deleted) — isRemoved = true.
-  Future<List<PostModel>> fetchArchivedPosts({required String userId}) async {
+  Future<List<PostModel>> fetchArchivedPosts({
+    required String userId,
+    String? currentUserId,
+  }) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select(publicPostSelect)
+        .select(getPostSelectWithStatus(currentUserId ?? userId))
         .eq('user_Id', userId)
         .eq('isRemoved', true)
         .eq('visible_to_owner', true)
@@ -125,13 +130,11 @@ class PostRepository {
     required String userId,
     int limit = 20,
     int offset = 0,
+    String? currentUserId,
   }) async {
     final response = await SupabaseService.client
         .from('Post')
-        .select('''
-          $publicPostSelect,
-          Likes!inner(user_Id)
-        ''')
+        .select(getPostSelectWithStatus(currentUserId ?? userId))
         .eq('Likes.user_Id', userId)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
@@ -151,10 +154,11 @@ class PostRepository {
   Future<PostModel?> fetchPostById(
     String postId, {
     bool includeRemoved = false,
+    String? currentUserId,
   }) async {
     final baseQuery = SupabaseService.client
         .from('Post')
-        .select(publicPostSelect)
+        .select(getPostSelectWithStatus(currentUserId))
         .eq('post_Id', postId)
         .eq('isBlocked', false)
         .eq('isPending', false);
