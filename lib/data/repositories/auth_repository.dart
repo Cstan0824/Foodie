@@ -66,7 +66,8 @@ class AuthRepository {
     if (normalized.isEmpty) return false;
     
     try {
-      // Use the RPC function we created in Supabase
+      // Use the RPC function in Supabase. 
+      // This version only returns true if the email is confirmed (verified).
       final bool exists = await _supabase.rpc('check_email_exists', params: {'email_to_check': normalized});
       return exists;
     } catch (e) {

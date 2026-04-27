@@ -201,62 +201,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _showVerifyEmailDialog() {
-    final emailCtrl = TextEditingController();
-    showCupertinoDialog(
-      context: context,
-      builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Verify Account'),
-        content: Column(
-          children: [
-            const SizedBox(height: 12),
-            const Text('Enter your email address to receive or enter your verification code.'),
-            const SizedBox(height: 12),
-            CupertinoTextField(
-              controller: emailCtrl,
-              placeholder: 'Email',
-              keyboardType: TextInputType.emailAddress,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.divider),
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-          CupertinoDialogAction(
-            child: const Text('Continue'),
-            onPressed: () async {
-              final email = emailCtrl.text.trim();
-              if (email.isEmpty || !email.contains('@')) return;
-              
-              // Trigger the OTP send
-              try {
-                await _authRepo.resendOtp(email: email, type: OtpType.signup);
-              } catch (_) {
-                // If it fails (e.g. rate limit), we still go to the screen 
-                // in case they already have a code.
-              }
-
-              if (!mounted) return;
-              Navigator.pop(ctx);
-              Navigator.of(context).push(
-                CupertinoPageRoute(
-                  builder: (_) => VerifyOTPScreen(email: email, type: OTPType.signup),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void dispose() {
     _authStateSubscription.cancel();
@@ -362,22 +306,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(height: 16),
                               Align(
                                 alignment: Alignment.centerRight,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    CupertinoButton(
-                                      padding: EdgeInsets.zero,
-                                      onPressed: () => _showVerifyEmailDialog(),
-                                      child: const Text('Verify Account', style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                                    ),
-                                    CupertinoButton(
-                                      padding: EdgeInsets.zero,
-                                      onPressed: () => Navigator.of(context).push(
-                                        CupertinoPageRoute(builder: (_) => const ForgotPasswordScreen()),
-                                      ),
-                                      child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700)),
-                                    ),
-                                  ],
+                                child: CupertinoButton(
+                                  padding: EdgeInsets.zero,
+                                  onPressed: () => Navigator.of(context).push(
+                                    CupertinoPageRoute(builder: (_) => const ForgotPasswordScreen()),
+                                  ),
+                                  child: const Text('Forgot Password?', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w700)),
                                 ),
                               ),
                               

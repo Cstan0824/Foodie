@@ -34,6 +34,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _isCheckingEmail = false;
   bool? _isEmailTaken;
   bool _signupAttempted = false;
+  bool _isHandlingOtp = false;
   Timer? _emailDebounce;
   late final StreamSubscription<AuthState> _authStateSubscription;
 
@@ -47,6 +48,7 @@ class _SignupScreenState extends State<SignupScreen> {
     _passwordFocus.addListener(() => setState(() {}));
     
     _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      if (_isHandlingOtp) return;
       try {
         final session = data.session;
         if (session != null && (data.event == AuthChangeEvent.signedIn || data.event == AuthChangeEvent.initialSession)) {
@@ -198,6 +200,8 @@ class _SignupScreenState extends State<SignupScreen> {
       
       // If session is null but user is not null, it means verification is required (OTP)
       if (response.session == null && response.user != null) {
+        setState(() => _isHandlingOtp = true);
+        
         final verified = await Navigator.of(context).push<bool>(
           CupertinoPageRoute(
             builder: (_) => VerifyOTPScreen(email: email, type: OTPType.signup),
@@ -205,8 +209,19 @@ class _SignupScreenState extends State<SignupScreen> {
         );
 
         if (verified == true && mounted) {
-          // Profile should have been created in signUp method already
-          // The auth state listener in initState will handle navigation to MainShell/CompleteProfile
+          // After OTP success, the profile is already created in verifySignUpOtp
+          // We can now safely navigate
+          final user = Supabase.instance.client.auth.currentUser;
+          if (user != null) {
+            final isNewUser = await _ensureProfileExists(user);
+            if (!mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              CupertinoPageRoute(builder: (_) => isNewUser ? const CompleteProfileScreen() : const MainShell()),
+              (route) => false,
+            );
+          }
+        } else {
+          if (mounted) setState(() => _isHandlingOtp = false);
         }
       }
     } on AuthException catch (e) {

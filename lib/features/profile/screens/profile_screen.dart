@@ -108,6 +108,7 @@ class ProfileScreenState extends State<ProfileScreen> {
 
       _myPosts = await PostRepository.instance.fetchUserPosts(
         userId: targetUserId,
+        currentUserId: currentUser?.id,
       );
       _followersCount = await profileRepo.getFollowersCount(targetUserId);
       _followingCount = await profileRepo.getFollowingCount(targetUserId);
@@ -124,6 +125,8 @@ class ProfileScreenState extends State<ProfileScreen> {
 
       _likedPosts = await PostRepository.instance.fetchLikedPosts(
         userId: targetUserId,
+        currentUserId: currentUser?.id,
+        excludeOwnPosts: _isCurrentUser,
       );
 
       if (_isCurrentUser) {
