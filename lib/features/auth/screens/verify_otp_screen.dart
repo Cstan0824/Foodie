@@ -20,8 +20,8 @@ class VerifyOTPScreen extends StatefulWidget {
 }
 
 class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
-  final List<TextEditingController> _controllers = List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+  final List<TextEditingController> _controllers = List.generate(8, (_) => TextEditingController());
+  final List<FocusNode> _focusNodes = List.generate(8, (_) => FocusNode());
   bool _isLoading = false;
   late final AuthRepository _authRepo = AuthRepository(Supabase.instance.client);
 
@@ -37,7 +37,7 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
   }
 
   void _onChanged(String value, int index) {
-    if (value.isNotEmpty && index < 5) {
+    if (value.isNotEmpty && index < 7) {
       _focusNodes[index + 1].requestFocus();
     }
     if (_controllers.every((c) => c.text.isNotEmpty)) {
@@ -47,7 +47,7 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
 
   Future<void> _verifyOTP() async {
     final token = _controllers.map((c) => c.text).join();
-    if (token.length < 6) return;
+    if (token.length < 8) return;
 
     setState(() => _isLoading = true);
 
@@ -81,7 +81,7 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
           context: context,
           builder: (context) => CupertinoAlertDialog(
             title: const Text('Code Sent'),
-            content: const Text('A new 6-digit verification code has been sent to your email.'),
+            content: const Text('A new 8-digit verification code has been sent to your email.'),
             actions: [
               CupertinoDialogAction(
                 child: const Text('OK'),
@@ -136,13 +136,13 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
               ),
               const SizedBox(height: 12),
               Text(
-                'Enter the 6-digit code sent to ${widget.email}',
+                'Enter the 8-digit code sent to ${widget.email}',
                 style: const TextStyle(fontSize: 15, color: AppColors.textLight, height: 1.4),
               ),
               const SizedBox(height: 48),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(6, (index) => _buildOTPBox(index)),
+                children: List.generate(8, (index) => _buildOTPBox(index)),
               ),
               const SizedBox(height: 48),
               CupertinoButton(
@@ -176,11 +176,11 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
 
   Widget _buildOTPBox(int index) {
     return Container(
-      width: 48,
-      height: 56,
+      width: 38,
+      height: 52,
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _focusNodes[index].hasFocus ? AppColors.primary : AppColors.divider, width: 1.5),
       ),
       child: CupertinoTextField(
@@ -190,7 +190,7 @@ class _VerifyOTPScreenState extends State<VerifyOTPScreen> {
         keyboardType: TextInputType.number,
         maxLength: 1,
         decoration: null,
-        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
         onChanged: (v) => _onChanged(v, index),
       ),
     );

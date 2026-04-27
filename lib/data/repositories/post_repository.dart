@@ -131,14 +131,21 @@ class PostRepository {
     int limit = 20,
     int offset = 0,
     String? currentUserId,
+    bool excludeOwnPosts = false,
   }) async {
-    final response = await SupabaseService.client
+    var query = SupabaseService.client
         .from('Post')
         .select(getPostSelectWithStatus(currentUserId ?? userId))
         .eq('Likes.user_Id', userId)
         .eq('isRemoved', false)
         .eq('isBlocked', false)
-        .eq('isPending', false)
+        .eq('isPending', false);
+    
+    if (excludeOwnPosts) {
+      query = query.neq('user_Id', userId);
+    }
+
+    final response = await query
         .order('created_At', ascending: false)
         .range(offset, offset + limit - 1);
 
