@@ -188,6 +188,9 @@ class _DashboardTabState extends State<_DashboardTab> {
   @override
   Widget build(BuildContext context) {
     return CustomScrollView(
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       slivers: [
         CupertinoSliverNavigationBar(
           largeTitle: const Text('Dashboard'),
