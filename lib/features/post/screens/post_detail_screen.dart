@@ -1035,62 +1035,71 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_currentPost.restaurantName.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-      child: GestureDetector(
-        onTap: () {
-          final restaurantId = _currentPost.restaurantId;
-          if (restaurantId != null && restaurantId.isNotEmpty) {
-            Navigator.of(context).push(
-              CupertinoPageRoute(
-                builder: (_) =>
-                    RestaurantDetailScreen(restaurantId: restaurantId),
+      child: LayoutBuilder(
+        builder: (context, constraints) => GestureDetector(
+          onTap: () {
+            final restaurantId = _currentPost.restaurantId;
+            if (restaurantId != null && restaurantId.isNotEmpty) {
+              Navigator.of(context).push(
+                CupertinoPageRoute(
+                  builder: (_) =>
+                      RestaurantDetailScreen(restaurantId: restaurantId),
+                ),
+              );
+            } else {
+              showCupertinoDialog(
+                context: context,
+                builder: (ctx) => CupertinoAlertDialog(
+                  title: const Text('Unavailable'),
+                  content: const Text('Restaurant details are unavailable.'),
+                  actions: [
+                    CupertinoDialogAction(
+                      child: const Text('OK'),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              );
+            }
+          },
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(10),
               ),
-            );
-          } else {
-            showCupertinoDialog(
-              context: context,
-              builder: (ctx) => CupertinoAlertDialog(
-                title: const Text('Unavailable'),
-                content: const Text('Restaurant details are unavailable.'),
-                actions: [
-                  CupertinoDialogAction(
-                    child: const Text('OK'),
-                    onPressed: () => Navigator.pop(ctx),
+              child: Row(
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  const Icon(
+                    CupertinoIcons.location_solid,
+                    size: 14,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _currentPost.restaurantName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 12,
+                    color: AppColors.primary,
                   ),
                 ],
               ),
-            );
-          }
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                CupertinoIcons.location_solid,
-                size: 14,
-                color: AppColors.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                _currentPost.restaurantName,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 4),
-              const Icon(
-                CupertinoIcons.chevron_right,
-                size: 12,
-                color: AppColors.primary,
-              ),
-            ],
+            ),
           ),
         ),
       ),

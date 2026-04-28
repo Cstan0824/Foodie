@@ -66,6 +66,9 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     return Stack(
       children: [
         CustomScrollView(
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
           slivers: [
             CupertinoSliverNavigationBar(
               largeTitle: const Text('Admin Profile'),
