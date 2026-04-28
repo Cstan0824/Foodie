@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/cuisine_model.dart';
 import 'package:taste_spot/data/models/restaurant_approval_model.dart';
@@ -172,6 +173,7 @@ class _AddEditApproveRestaurantScreenState
 
   bool _isLoading = true;
   bool _isSubmitting = false;
+  bool _isGeocoding = false;
   String? _loadError;
   final Map<String, String?> _errors = {};
 
@@ -696,6 +698,50 @@ class _AddEditApproveRestaurantScreenState
       parts.add(_selectedState!);
     }
     return parts.join(', ');
+  }
+
+  Future<void> _fillCoordinatesFromAddress() async {
+    if (_isGeocoding) return;
+
+    final address = _buildAddress().trim();
+    if (address.isEmpty) {
+      _showErrorDialog('Please enter the address before filling coordinates.');
+      return;
+    }
+
+    setState(() => _isGeocoding = true);
+
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'geocode-address',
+        body: {'address': address},
+      );
+
+      final data = response.data;
+      if (data is! Map) {
+        throw Exception('Unexpected geocoding response.');
+      }
+
+      final latitude = data['latitude'];
+      final longitude = data['longitude'];
+
+      if (latitude == null || longitude == null) {
+        throw Exception('No coordinates found for this address.');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _latCtrl.text = latitude.toString();
+        _lngCtrl.text = longitude.toString();
+        _errors.remove('lat');
+        _errors.remove('lng');
+        _isGeocoding = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isGeocoding = false);
+      _showErrorDialog(e.toString());
+    }
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────────
@@ -1371,6 +1417,56 @@ class _AddEditApproveRestaurantScreenState
               ),
             ),
           ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: GestureDetector(
+            onTap: _isGeocoding ? null : _fillCoordinatesFromAddress,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: _isGeocoding
+                    ? AppColors.surface
+                    : AppColors.primary.withAlpha(18),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.primary.withAlpha(50),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (_isGeocoding) ...[
+                    const CupertinoActivityIndicator(radius: 7),
+                    const SizedBox(width: 8),
+                  ] else ...[
+                    const Icon(
+                      CupertinoIcons.location,
+                      size: 15,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(
+                    _isGeocoding
+                        ? 'Finding coordinates...'
+                        : ((_latCtrl.text.trim().isNotEmpty && _lngCtrl.text.trim().isNotEmpty)
+                            ? 'Refill coordinates from address'
+                            : 'Use address to fill coordinates'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _isGeocoding
+                          ? AppColors.textSecondary
+                          : AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
         _FormField(
           label: 'Maps URL',

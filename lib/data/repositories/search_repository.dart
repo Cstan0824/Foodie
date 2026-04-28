@@ -178,6 +178,13 @@ class SearchRepository {
         tokens: tokens,
         boostedRestaurantIds: strongRestaurantIds,
       );
+      
+      final userId = SupabaseService.currentUserId;
+      final postIds = postCandidates.map((r) => r['post_Id']?.toString()).whereType<String>().toList();
+      final interactionProfile = userId == null || postIds.isEmpty
+          ? const _PostInteractionProfile.empty()
+          : await _buildPostInteractionProfile(userId, postIds);
+
       rankedPosts = _rankPosts(
         postCandidates,
         normalizedQuery,
@@ -185,6 +192,7 @@ class SearchRepository {
         hashtagIntent: hashtagIntent,
         boostedRestaurantIds: strongRestaurantIds,
         sortMode: sortMode,
+        interactionProfile: interactionProfile,
       );
 
       if (rankedPosts.length < _minimumPostResults) {
@@ -192,6 +200,7 @@ class SearchRepository {
           rankedPosts,
           minimumCount: _minimumPostResults,
           sortMode: sortMode,
+          existingProfile: interactionProfile,
         );
       }
     }
@@ -289,6 +298,12 @@ class SearchRepository {
     final mappedRows = (postRows as List<dynamic>)
         .map((r) => r as Map<String, dynamic>)
         .toList();
+        
+    final userId = SupabaseService.currentUserId;
+    final postIds = mappedRows.map((r) => r['post_Id']?.toString()).whereType<String>().toList();
+    final interactionProfile = userId == null || postIds.isEmpty
+        ? const _PostInteractionProfile.empty()
+        : await _buildPostInteractionProfile(userId, postIds);
 
     final ranked = mappedRows.map((row) {
       final post = PostModel.fromJson(row);
@@ -296,11 +311,16 @@ class SearchRepository {
       final engagementScore = min(60.0, log(1 + engagementRaw) * 12);
 
       final ageHours = post.createdAt != null
-          ? max(0.0, DateTime.now().difference(post.createdAt!).inHours.toDouble())
+          ? max(
+              0.0,
+              DateTime.now().difference(post.createdAt!).inHours.toDouble(),
+            )
           : 720.0;
       final freshnessScore = 30.0 / (1 + (ageHours / 24.0));
+      
+      final interactionPenalty = _interactionPenalty(post.id, interactionProfile);
 
-      final totalScore = engagementScore + freshnessScore;
+      final totalScore = engagementScore + freshnessScore - interactionPenalty;
 
       return PostSearchResult(
         post: post,
@@ -323,7 +343,7 @@ class SearchRepository {
         if (createdB == null) return -1;
         return createdB.compareTo(createdA);
       }
-      
+
       final totalCompare = b.totalScore.compareTo(a.totalScore);
       if (totalCompare != 0) return totalCompare;
 
@@ -853,6 +873,7 @@ class SearchRepository {
     required String? hashtagIntent,
     required Set<String> boostedRestaurantIds,
     required SearchSortMode sortMode,
+    required _PostInteractionProfile interactionProfile,
   }) {
     final ranked = <PostSearchResult>[];
     final hasStrongEntityRestaurantMatch = boostedRestaurantIds.isNotEmpty;
@@ -955,12 +976,15 @@ class SearchRepository {
           boostedRestaurantIds.contains(post.restaurantId);
       final restaurantBoostScore = isBoosted ? 45.0 : 0.0;
 
+      final interactionPenalty = _interactionPenalty(post.id, interactionProfile);
+
       final totalScore =
           exactScore +
           (relevanceScore * 12.0) +
           restaurantBoostScore +
           engagementScore +
-          freshnessScore;
+          freshnessScore -
+          interactionPenalty;
 
       ranked.add(
         PostSearchResult(
@@ -1004,6 +1028,7 @@ class SearchRepository {
     List<PostSearchResult> rankedPosts, {
     required int minimumCount,
     required SearchSortMode sortMode,
+    required _PostInteractionProfile existingProfile,
   }) async {
     if (rankedPosts.length >= minimumCount) return rankedPosts;
 
@@ -1017,9 +1042,16 @@ class SearchRepository {
 
     if (fallbackRows.isEmpty) return rankedPosts;
 
+    final userId = SupabaseService.currentUserId;
+    final fallbackPostIds = fallbackRows.map((r) => r['post_Id']?.toString()).whereType<String>().toList();
+    final fallbackProfile = userId == null || fallbackPostIds.isEmpty
+        ? const _PostInteractionProfile.empty()
+        : await _buildPostInteractionProfile(userId, fallbackPostIds);
+
     final fallbackRanked = _rankFallbackPosts(
       fallbackRows,
       sortMode: sortMode,
+      interactionProfile: fallbackProfile,
     ).where((p) => !existingIds.contains(p.post.id)).take(needed).toList();
 
     if (fallbackRanked.isEmpty) return rankedPosts;
@@ -1058,6 +1090,7 @@ class SearchRepository {
   List<PostSearchResult> _rankFallbackPosts(
     List<Map<String, dynamic>> rows, {
     required SearchSortMode sortMode,
+    required _PostInteractionProfile interactionProfile,
   }) {
     final ranked = rows.map((row) {
       final post = PostModel.fromJson(row);
@@ -1071,8 +1104,10 @@ class SearchRepository {
             )
           : 720.0;
       final freshnessScore = 30.0 / (1 + (ageHours / 24.0));
+      
+      final interactionPenalty = _interactionPenalty(post.id, interactionProfile);
 
-      final totalScore = engagementScore + freshnessScore;
+      final totalScore = engagementScore + freshnessScore - interactionPenalty;
 
       return PostSearchResult(
         post: post,
@@ -1378,4 +1413,78 @@ class SearchRepository {
 
     return v0[b.length];
   }
+  
+  Future<_PostInteractionProfile> _buildPostInteractionProfile(
+    String userId,
+    List<String> postIds,
+  ) async {
+    if (postIds.isEmpty) return const _PostInteractionProfile.empty();
+
+    final likedPostIds = <String>{};
+    final savedPostIds = <String>{};
+    final commentedPostIds = <String>{};
+
+    final likesResponse = await SupabaseService.client
+        .from('Likes')
+        .select('post_Id')
+        .eq('user_Id', userId)
+        .inFilter('post_Id', postIds);
+    for (final row in likesResponse as List<dynamic>) {
+      final id = (row as Map<String, dynamic>)['post_Id']?.toString();
+      if (id != null) likedPostIds.add(id);
+    }
+
+    final savesResponse = await SupabaseService.client
+        .from('collections_item')
+        .select('post_id, collections!inner(user_Id, collection_type)')
+        .eq('collections.user_Id', userId)
+        .eq('collections.collection_type', 'POST')
+        .not('post_id', 'is', null)
+        .inFilter('post_id', postIds);
+    for (final row in savesResponse as List<dynamic>) {
+      final id = (row as Map<String, dynamic>)['post_id']?.toString();
+      if (id != null) savedPostIds.add(id);
+    }
+
+    final commentsResponse = await SupabaseService.client
+        .from('Comment')
+        .select('post_Id')
+        .eq('user_Id', userId)
+        .inFilter('post_Id', postIds);
+    for (final row in commentsResponse as List<dynamic>) {
+      final id = (row as Map<String, dynamic>)['post_Id']?.toString();
+      if (id != null) commentedPostIds.add(id);
+    }
+
+    return _PostInteractionProfile(
+      likedPostIds: likedPostIds,
+      savedPostIds: savedPostIds,
+      commentedPostIds: commentedPostIds,
+    );
+  }
+
+  double _interactionPenalty(String postId, _PostInteractionProfile profile) {
+    double penalty = 0.0;
+    if (profile.likedPostIds.contains(postId)) penalty += 10.0;
+    if (profile.savedPostIds.contains(postId)) penalty += 15.0;
+    if (profile.commentedPostIds.contains(postId)) penalty += 10.0;
+    return penalty > 25.0 ? 25.0 : penalty;
+  }
+}
+
+class _PostInteractionProfile {
+  final Set<String> likedPostIds;
+  final Set<String> savedPostIds;
+  final Set<String> commentedPostIds;
+
+  const _PostInteractionProfile({
+    required this.likedPostIds,
+    required this.savedPostIds,
+    required this.commentedPostIds,
+  });
+
+  const _PostInteractionProfile.empty()
+      : likedPostIds = const {},
+        savedPostIds = const {},
+        commentedPostIds = const {};
 }

@@ -32,6 +32,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
   List<RestaurantModel> _restaurants = [];
   List<RestaurantApprovalModel> _approvals = [];
   List<CuisineModel> _cuisines = [];
+  int _restaurantTotalCount = 0;
 
   bool _isLoading = false;
   bool _isFetchingMore = false;
@@ -155,7 +156,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
           'import-google-places-restaurants',
           body: {
             'city': city,
-            'limit': 10,
+            'limit': 1,
             'importPhoto': true,
           },
         );
@@ -445,18 +446,37 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
       _error = null;
     });
     try {
-      final restaurants = await _repo.fetchAllRestaurants(
-        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
-        isDisabled: _statusFilter == 'all' ? null : _statusFilter == 'disabled',
-        source: _sourceFilter == 'all' ? null : _sourceFilter,
-        cuisineIds: _cuisineFilters.isEmpty ? null : _cuisineFilters,
-        limit: _limit,
-        offset: 0,
-      );
+      final searchQuery = _searchQuery.isEmpty ? null : _searchQuery;
+      final isDisabled = _statusFilter == 'all'
+          ? null
+          : _statusFilter == 'disabled';
+      final source = _sourceFilter == 'all' ? null : _sourceFilter;
+      final cuisineIds = _cuisineFilters.isEmpty ? null : _cuisineFilters;
+
+      final results = await Future.wait([
+        _repo.fetchAllRestaurants(
+          searchQuery: searchQuery,
+          isDisabled: isDisabled,
+          source: source,
+          cuisineIds: cuisineIds,
+          limit: _limit,
+          offset: 0,
+        ),
+        _repo.countRestaurants(
+          searchQuery: searchQuery,
+          isDisabled: isDisabled,
+          source: source,
+          cuisineIds: cuisineIds,
+        ),
+      ]);
+
+      final restaurants = results[0] as List<RestaurantModel>;
+      final totalCount = results[1] as int;
       _sortRestaurantList(restaurants);
       if (!mounted) return;
       setState(() {
         _restaurants = restaurants;
+        _restaurantTotalCount = totalCount;
         _isLoading = false;
         _hasMoreRestaurants = restaurants.length == _limit;
       });
@@ -618,7 +638,7 @@ class _RestaurantManagementScreenState extends State<RestaurantManagementScreen>
           // ── Animated underline tab bar ──
           _PillTabBar(
             labels: ['List', 'Approval'],
-            counts: [_restaurants.length, _approvals.length],
+            counts: [_restaurantTotalCount, _approvals.length],
             selectedIndex: _tab,
             onTap: _switchTab,
           ),

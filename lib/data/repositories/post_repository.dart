@@ -32,9 +32,11 @@ class PostRepository {
           .order('created_At', ascending: false)
           .range(offset, offset + limit - 1);
 
-      return (response as List<dynamic>)
+      final posts = (response as List<dynamic>)
           .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
           .toList();
+
+      return _applyViewerLikeState(posts, currentUserId);
     } on PostgrestException catch (e) {
       print(
         '❌ [PostRepository.fetchDiscoverPosts] ERROR: ${e.code} - ${e.message}',
@@ -80,9 +82,11 @@ class PostRepository {
         .order('created_At', ascending: false)
         .range(offset, offset + limit - 1);
 
-    return (response as List<dynamic>)
+    final posts = (response as List<dynamic>)
         .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
         .toList();
+
+    return _applyViewerLikeState(posts, userId);
   }
 
   /// Fetches public posts by a specific user.
@@ -102,9 +106,11 @@ class PostRepository {
         .order('created_At', ascending: false)
         .range(offset, offset + limit - 1);
 
-    return (response as List<dynamic>)
+    final posts = (response as List<dynamic>)
         .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
         .toList();
+
+    return _applyViewerLikeState(posts, currentUserId);
   }
 
   /// Fetches posts the user has archived (soft-deleted) — isRemoved = true.
@@ -120,9 +126,11 @@ class PostRepository {
         .eq('visible_to_owner', true)
         .order('created_At', ascending: false);
 
-    return (response as List<dynamic>)
+    final posts = (response as List<dynamic>)
         .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
         .toList();
+
+    return _applyViewerLikeState(posts, currentUserId ?? userId);
   }
 
   /// Fetches public posts liked by a specific user.
@@ -133,24 +141,66 @@ class PostRepository {
     String? currentUserId,
     bool excludeOwnPosts = false,
   }) async {
-    var query = SupabaseService.client
-        .from('Post')
-        .select(getPostSelectWithStatus(currentUserId ?? userId))
-        .eq('Likes.user_Id', userId)
-        .eq('isRemoved', false)
-        .eq('isBlocked', false)
-        .eq('isPending', false);
-    
-    if (excludeOwnPosts) {
-      query = query.neq('user_Id', userId);
-    }
-
-    final response = await query
+    final likesResponse = await SupabaseService.client
+        .from('Likes')
+        .select('post_Id')
+        .eq('user_Id', userId)
         .order('created_At', ascending: false)
         .range(offset, offset + limit - 1);
 
-    return (response as List<dynamic>)
+    final likedPostIds = (likesResponse as List<dynamic>)
+        .map((row) => (row as Map<String, dynamic>)['post_Id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toList();
+
+    if (likedPostIds.isEmpty) return const [];
+
+    var query = SupabaseService.client
+        .from('Post')
+        .select(getPostSelectWithStatus(currentUserId))
+        .inFilter('post_Id', likedPostIds)
+        .eq('isRemoved', false)
+        .eq('isBlocked', false)
+        .eq('isPending', false);
+
+    if (excludeOwnPosts) {
+      query = query.not('user_Id', 'eq', userId);
+    }
+
+    final response = await query.order('created_At', ascending: false);
+
+    final posts = (response as List<dynamic>)
         .map((row) => PostModel.fromJson(row as Map<String, dynamic>))
+        .toList();
+
+    return _applyViewerLikeState(posts, currentUserId);
+  }
+
+  Future<List<PostModel>> _applyViewerLikeState(
+    List<PostModel> posts,
+    String? viewerUserId,
+  ) async {
+    if (posts.isEmpty) return posts;
+    if (viewerUserId == null || viewerUserId.isEmpty) {
+      return posts.map((post) => post.copyWith(isLiked: false)).toList();
+    }
+
+    final postIds = posts.map((post) => post.id).toList();
+    final likesResponse = await SupabaseService.client
+        .from('Likes')
+        .select('post_Id')
+        .eq('user_Id', viewerUserId)
+        .inFilter('post_Id', postIds);
+
+    final likedIds = (likesResponse as List<dynamic>)
+        .map((row) => (row as Map<String, dynamic>)['post_Id']?.toString())
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    return posts
+        .map((post) => post.copyWith(isLiked: likedIds.contains(post.id)))
         .toList();
   }
 
@@ -307,10 +357,9 @@ class PostRepository {
 
     final response = await SupabaseService.client
         .from('Post')
-        .update({'visible_to_owner': false})
+        .update({'isRemoved': true, 'visible_to_owner': false})
         .eq('post_Id', postId)
         .eq('user_Id', currentUserId)
-        .eq('isRemoved', true)
         .select('post_Id')
         .maybeSingle();
 

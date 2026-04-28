@@ -249,7 +249,7 @@ class _SignupScreenState extends State<SignupScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 20),
-              const Text('Join Taste Spot', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -1.2)),
+              const Text('Join Foodie', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -1.2)),
               const SizedBox(height: 8),
               const Text('Start your flavor journey today.', style: TextStyle(fontSize: 15, color: AppColors.textSecondary)),
               const SizedBox(height: 48),

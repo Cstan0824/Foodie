@@ -191,7 +191,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
         border: null,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pop(widget.post),
           child: const Icon(CupertinoIcons.xmark,
               color: AppColors.textPrimary, size: 22),
         ),

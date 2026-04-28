@@ -1,4 +1,4 @@
-# Taste Spot
+# Foodie
 
 A **food & beverage community** application built with [Flutter](https://flutter.dev), primarily targeting **iOS** while also supporting Android and other platforms.
 
@@ -6,7 +6,7 @@ A **food & beverage community** application built with [Flutter](https://flutter
 
 ## About
 
-Taste Spot brings food and beverage enthusiasts together in one place. Discover new flavors, share your favorite spots, and connect with a community that shares your passion for great food and drinks.
+Foodie brings food and beverage enthusiasts together in one place. Discover new flavors, share your favorite spots, and connect with a community that shares your passion for great food and drinks.
 
 ## Features
 

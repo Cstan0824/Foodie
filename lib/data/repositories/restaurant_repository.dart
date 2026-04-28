@@ -219,6 +219,63 @@ class RestaurantRepository {
         .toList();
   }
 
+  /// Counts all restaurants for admin using the same filters as [fetchAllRestaurants].
+  /// This is used for stable tab counters because paginated loaded rows do not
+  /// represent the full matching result count.
+  Future<int> countRestaurants({
+    String? searchQuery,
+    bool? isDisabled,
+    String? source,
+    List<String>? cuisineIds,
+  }) async {
+    var query = SupabaseService.client
+        .from('Restaurant')
+        .select('restaurant_Id');
+
+    if (isDisabled != null) {
+      query = query.eq('isDisabled', isDisabled);
+    }
+
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.trim();
+      query = query.or('restaurant_name.ilike.%$q%,address.ilike.%$q%');
+    }
+
+    if (source != null && source.trim().isNotEmpty && source != 'all') {
+      query = query.ilike('source', source.trim());
+    }
+
+    if (cuisineIds != null && cuisineIds.isNotEmpty) {
+      // Match the same cuisine logic used by fetchAllRestaurants:
+      // main cuisine match OR extra cuisine tag match.
+      final tagRows = await SupabaseService.client
+          .from('Restaurant_Cuisine')
+          .select('RestaurantId')
+          .inFilter('CuisineId', cuisineIds);
+
+      final extraRestaurantIds = (tagRows as List<dynamic>)
+          .map(
+            (row) => (row as Map<String, dynamic>)['RestaurantId']?.toString(),
+          )
+          .whereType<String>()
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      final mainCuisineFilter = 'main_cuisine_id.in.(${cuisineIds.join(',')})';
+
+      if (extraRestaurantIds.isNotEmpty) {
+        final extraFilter =
+            'restaurant_Id.in.(${extraRestaurantIds.join(',')})';
+        query = query.or('$mainCuisineFilter,$extraFilter');
+      } else {
+        query = query.or(mainCuisineFilter);
+      }
+    }
+
+    final response = await query;
+    return (response as List<dynamic>).length;
+  }
+
   /// Fetches a single restaurant by ID (includes disabled restaurants).
   Future<RestaurantModel?> fetchRestaurantById(String restaurantId) async {
     final response = await SupabaseService.client

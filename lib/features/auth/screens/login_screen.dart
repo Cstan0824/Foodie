@@ -266,7 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     const SizedBox(height: 24),
                                     const Text(
-                                      'Taste Spot',
+                                      'Foodie',
                                       style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: AppColors.textPrimary, letterSpacing: -1.2),
                                     ),
                                     const SizedBox(height: 8),

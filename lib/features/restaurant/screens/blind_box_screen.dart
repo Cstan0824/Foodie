@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:appinio_swiper/appinio_swiper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/blind_box_repository.dart';
 import 'restaurant_detail_screen.dart';
+import 'swipe_history.dart';
 
 class BlindBoxScreen extends StatefulWidget {
   const BlindBoxScreen({super.key});
@@ -20,13 +22,18 @@ class BlindBoxScreen extends StatefulWidget {
   State<BlindBoxScreen> createState() => BlindBoxScreenState();
 }
 
-class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProviderStateMixin {
+class BlindBoxScreenState extends State<BlindBoxScreen>
+    with SingleTickerProviderStateMixin {
   // ── Sensor / Shake Logic ──
   StreamSubscription<UserAccelerometerEvent>? _accelerometerSubscription;
   static const double _shakeThreshold = 30.0; // Sensitivity
   bool _isListening = true;
   bool _isFinding = false; // "Finding nearby..." state
-  bool _hasFound = false;  // "Show cards" state
+  bool _hasFound = false; // "Show cards" state
+  bool _hasDismissedInstructions = false;
+  bool _doNotShowInstructionsAgain = false;
+  static const String _hideInstructionsPreferenceKey =
+      'blind_box_hide_instructions';
 
   // ── Swiper Logic ──
   final AppinioSwiperController _swiperController = AppinioSwiperController();
@@ -41,6 +48,110 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
     _startListening();
   }
 
+  Future<void> _showInstructions({bool manual = false}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final shouldHide = prefs.getBool(_hideInstructionsPreferenceKey) ?? false;
+
+    if (!mounted) return;
+    if (!manual && (shouldHide || _hasDismissedInstructions)) return;
+
+    await showCupertinoDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        var doNotShowAgain = shouldHide;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return CupertinoAlertDialog(
+              title: const Text('How BlindBox works'),
+              content: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  const _BlindBoxInstructionRow(
+                    icon: CupertinoIcons.xmark_circle,
+                    text: 'Swipe left to skip',
+                  ),
+                  const _BlindBoxInstructionRow(
+                    icon: CupertinoIcons.heart_circle,
+                    text: 'Swipe right to save',
+                  ),
+                  const _BlindBoxInstructionRow(
+                    icon: CupertinoIcons.photo_on_rectangle,
+                    text: 'Tap left/right to switch photos',
+                  ),
+                  const _BlindBoxInstructionRow(
+                    icon: CupertinoIcons.info_circle,
+                    text: 'Tap center to view restaurant',
+                  ),
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {
+                      setDialogState(() {
+                        doNotShowAgain = !doNotShowAgain;
+                      });
+                    },
+                    child: Row(
+                      children: [
+                        Icon(
+                          doNotShowAgain
+                              ? CupertinoIcons.check_mark_circled_solid
+                              : CupertinoIcons.circle,
+                          size: 18,
+                          color: doNotShowAgain
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Do not show again',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                CupertinoDialogAction(
+                  isDefaultAction: true,
+                  onPressed: () async {
+                    if (doNotShowAgain) {
+                      await prefs.setBool(_hideInstructionsPreferenceKey, true);
+                    } else if (shouldHide) {
+                      await prefs.setBool(
+                        _hideInstructionsPreferenceKey,
+                        false,
+                      );
+                    }
+                    if (mounted) {
+                      setState(() {
+                        _hasDismissedInstructions = true;
+                        _doNotShowInstructionsAgain = doNotShowAgain;
+                      });
+                    }
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text('Got it'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _showInstructionsIfNeeded() async {
+    await _showInstructions(manual: false);
+  }
+
   @override
   void dispose() {
     _stopListening();
@@ -49,11 +160,15 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
   }
 
   void _startListening() {
-    _accelerometerSubscription = userAccelerometerEventStream().listen((UserAccelerometerEvent event) {
+    _accelerometerSubscription = userAccelerometerEventStream().listen((
+      UserAccelerometerEvent event,
+    ) {
       if (!_isListening) return;
 
       // Calculate magnitude of acceleration
-      double acceleration = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+      double acceleration = sqrt(
+        event.x * event.x + event.y * event.y + event.z * event.z,
+      );
 
       if (acceleration > _shakeThreshold) {
         _handleShake();
@@ -76,7 +191,8 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
       permission = await Geolocator.requestPermission();
     }
 
-    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
       return null;
     }
 
@@ -99,11 +215,12 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
       final position = await _getCurrentLocation();
       final userId = SupabaseService.client.auth.currentUser?.id ?? '';
 
-      final restaurants = await BlindBoxRepository.instance.fetchRecommendations(
-        userId: userId,
-        userLatitude: position?.latitude,
-        userLongitude: position?.longitude,
-      );
+      final restaurants = await BlindBoxRepository.instance
+          .fetchRecommendations(
+            userId: userId,
+            userLatitude: position?.latitude,
+            userLongitude: position?.longitude,
+          );
 
       if (!mounted) return;
 
@@ -114,6 +231,10 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
         _isFinding = false;
         _hasFound = true;
       });
+
+      if (restaurants.isNotEmpty) {
+        unawaited(_showInstructionsIfNeeded());
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -133,6 +254,7 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
       _isListening = true;
       _errorMessage = null;
       _restaurants = [];
+      _hasDismissedInstructions = false;
     });
   }
 
@@ -142,25 +264,62 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
       backgroundColor: const Color(0xFFFAFAFA),
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
-        middle: const Text('Blind Box', style: TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: CupertinoColors.white.withAlpha(240), // slightly transparent
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () => _showInstructions(manual: true),
+          child: const Icon(
+            CupertinoIcons.info_circle,
+            size: 22,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        middle: const Text(
+          'Blind Box',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        backgroundColor: CupertinoColors.white.withAlpha(
+          240,
+        ), // slightly transparent
         border: null,
-        trailing: _hasFound
-            ? CupertinoButton(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => const BlindBoxSwipeHistoryScreen(),
+                  ),
+                );
+              },
+              child: const Icon(
+                CupertinoIcons.time,
+                size: 22,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            if (_hasFound)
+              CupertinoButton(
                 padding: EdgeInsets.zero,
                 onPressed: reset,
-                child: const Icon(CupertinoIcons.arrow_counterclockwise, size: 22, color: AppColors.textPrimary),
-              )
-            : null,
+                child: const Icon(
+                  CupertinoIcons.arrow_counterclockwise,
+                  size: 22,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+          ],
+        ),
       ),
       child: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 500),
-          child: _hasFound 
-              ? _buildCardStack() 
-              : _isFinding 
-                  ? _buildFindingAnimation() 
-                  : _buildShakePrompt(),
+          child: _hasFound
+              ? _buildCardStack()
+              : _isFinding
+              ? _buildFindingAnimation()
+              : _buildShakePrompt(),
         ),
       ),
     );
@@ -206,7 +365,10 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
               child: Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: CupertinoColors.destructiveRed, fontSize: 14),
+                style: const TextStyle(
+                  color: CupertinoColors.destructiveRed,
+                  fontSize: 14,
+                ),
               ),
             ),
           ],
@@ -216,7 +378,10 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
             borderRadius: BorderRadius.circular(30),
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
             onPressed: _handleShake,
-            child: const Text('Tap to Discover', style: TextStyle(fontWeight: FontWeight.w600)),
+            child: const Text(
+              'Tap to Discover',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
           const SizedBox(height: 12),
           const Text(
@@ -267,7 +432,11 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
               const Text(
                 'No restaurants found yet.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 12),
               const Text(
@@ -301,26 +470,33 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
               onSwipeEnd: (previousIndex, targetIndex, activity) {
                 if (activity is Swipe) {
                   final restaurant = _restaurants[previousIndex];
-                  final userId = SupabaseService.client.auth.currentUser?.id ?? '';
+                  final userId =
+                      SupabaseService.client.auth.currentUser?.id ?? '';
                   if (userId.isEmpty) return; // Silent if no user
 
                   if (activity.direction == AxisDirection.left) {
                     // Skip
-                    BlindBoxRepository.instance.recordSwipe(
-                      userId: userId,
-                      restaurantId: restaurant.restaurantId,
-                    ).catchError((_) {}); 
+                    BlindBoxRepository.instance
+                        .recordSwipe(
+                          userId: userId,
+                          restaurantId: restaurant.restaurantId,
+                        )
+                        .catchError((_) {});
                   } else if (activity.direction == AxisDirection.right) {
                     // Save
-                    BlindBoxRepository.instance.recordSwipe(
-                      userId: userId,
-                      restaurantId: restaurant.restaurantId,
-                    ).catchError((_) {});
-                    
-                    BlindBoxRepository.instance.saveRestaurantToCollection(
-                      userId: userId,
-                      restaurantId: restaurant.restaurantId,
-                    ).catchError((_) {});
+                    BlindBoxRepository.instance
+                        .recordSwipe(
+                          userId: userId,
+                          restaurantId: restaurant.restaurantId,
+                        )
+                        .catchError((_) {});
+
+                    BlindBoxRepository.instance
+                        .saveRestaurantToCollection(
+                          userId: userId,
+                          restaurantId: restaurant.restaurantId,
+                        )
+                        .catchError((_) {});
                   }
                 }
               },
@@ -341,13 +517,42 @@ class BlindBoxScreenState extends State<BlindBoxScreen> with SingleTickerProvide
   }
 }
 
+class _BlindBoxInstructionRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _BlindBoxInstructionRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RestaurantCard extends StatefulWidget {
   final RestaurantModel restaurant;
   final double? userLatitude;
   final double? userLongitude;
 
   const _RestaurantCard({
-    super.key, 
+    super.key,
     required this.restaurant,
     this.userLatitude,
     this.userLongitude,
@@ -393,11 +598,13 @@ class _RestaurantCardState extends State<_RestaurantCard> {
   }
 
   String? _getDistance() {
-    if (widget.userLatitude == null || widget.userLongitude == null || 
-        widget.restaurant.latitude == null || widget.restaurant.longitude == null) {
+    if (widget.userLatitude == null ||
+        widget.userLongitude == null ||
+        widget.restaurant.latitude == null ||
+        widget.restaurant.longitude == null) {
       return null;
     }
-    
+
     const earthRadiusKm = 6371.0;
     double degToRad(double degree) => degree * pi / 180.0;
 
@@ -409,7 +616,8 @@ class _RestaurantCardState extends State<_RestaurantCard> {
     final dLat = degToRad(restLat - userLat);
     final dLng = degToRad(restLng - userLng);
 
-    final a = sin(dLat / 2) * sin(dLat / 2) +
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
         cos(degToRad(userLat)) *
             cos(degToRad(restLat)) *
             sin(dLng / 2) *
@@ -431,7 +639,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
     final rating = widget.restaurant.rating?.toStringAsFixed(1) ?? 'New';
     final cuisine = widget.restaurant.mainCuisineId ?? 'Restaurant';
     final priceRange = widget.restaurant.priceRange ?? '';
-    
+
     return LayoutBuilder(
       builder: (context, constraints) {
         return GestureDetector(
@@ -456,20 +664,22 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                   Positioned.fill(
                     child: images.isNotEmpty
                         ? Hero(
-                            tag: 'restaurant_image_${widget.restaurant.restaurantId}',
+                            tag:
+                                'restaurant_image_${widget.restaurant.restaurantId}',
                             child: Image.network(
                               images[_currentImageIndex],
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => Container(
-                                color: AppColors.surface,
-                                child: const Center(
-                                  child: Icon(
-                                    CupertinoIcons.photo,
-                                    size: 50,
-                                    color: AppColors.textLight,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Container(
+                                    color: AppColors.surface,
+                                    child: const Center(
+                                      child: Icon(
+                                        CupertinoIcons.photo,
+                                        size: 50,
+                                        color: AppColors.textLight,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
                             ),
                           )
                         : Container(
@@ -483,7 +693,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                             ),
                           ),
                   ),
-                  
+
                   // Image Indicators (Bars at the top)
                   if (images.length > 1)
                     Positioned(
@@ -525,7 +735,7 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                       ),
                     ),
                   ),
-                  
+
                   // Info Content
                   Positioned(
                     bottom: 40,
@@ -538,7 +748,10 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                         Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.primary,
                                 borderRadius: BorderRadius.circular(8),
@@ -555,7 +768,10 @@ class _RestaurantCardState extends State<_RestaurantCard> {
                             if (distance != null) ...[
                               const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(8),

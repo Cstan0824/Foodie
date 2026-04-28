@@ -35,9 +35,10 @@ class PostDetailScreen extends StatefulWidget {
 class _PostDetailScreenState extends State<PostDetailScreen> {
   static final RegExp _captionHashtagPattern = RegExp(r'#[a-zA-Z0-9_]+');
   static final RegExp _captionWhitespacePattern = RegExp(r'\s');
-  
+
   late PostModel _currentPost;
   bool _wasEdited = false;
+  bool _allowRoutePop = false;
   bool _isLiked = false;
   bool _isSaved = false;
   bool _isFollowing = false;
@@ -100,13 +101,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  void _popWithResult(Object? result) {
+    if (!mounted) return;
+
+    if (_allowRoutePop) {
+      Navigator.of(context).pop(result);
+      return;
+    }
+
+    setState(() => _allowRoutePop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    });
+  }
+
+  void _popBackToPreviousPage() {
+    _popWithResult(_wasEdited ? _currentPost : null);
+  }
+
   @override
   void initState() {
     super.initState();
     _currentPost = widget.post;
     _isLiked = _currentPost.isLiked;
     _isSaved = _currentPost.isSaved;
-    
+
     if (!_isArchivedView) {
       _loadComments();
       _checkLikeStatus();
@@ -204,7 +225,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .from('collections_item')
           .select('collection_Id')
           .eq('post_id', _currentPost.id);
-      
+
       final savedInIds = (response as List)
           .map((item) => item['collection_Id'] as String)
           .toSet();
@@ -266,10 +287,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     future: collectionRepo.getUserCollections(currentUserId),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CupertinoActivityIndicator());
+                        return const Center(
+                          child: CupertinoActivityIndicator(),
+                        );
                       }
                       if (snapshot.hasError) {
-                        return const Center(child: Text('Error loading collections'));
+                        return const Center(
+                          child: Text('Error loading collections'),
+                        );
                       }
 
                       final collections =
@@ -279,7 +304,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           [];
 
                       if (collections.isEmpty) {
-                        return const Center(child: Text('No collections found.'));
+                        return const Center(
+                          child: Text('No collections found.'),
+                        );
                       }
 
                       return ListView.separated(
@@ -291,65 +318,95 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                         itemBuilder: (context, index) {
                           final collection = collections[index];
-                          final isAlreadyIn = _savedInCollectionIds.contains(collection.collectionId);
+                          final isAlreadyIn = _savedInCollectionIds.contains(
+                            collection.collectionId,
+                          );
 
                           return CupertinoButton(
-                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                            onPressed: _isSaving ? null : () async {
-                              if (isAlreadyIn) {
-                                await _unsaveFromSpecificCollection(collection.collectionId);
-                              } else {
-                                await _saveToSpecificCollection(collection.collectionId);
-                              }
-                              // Ensure modal UI refreshes
-                              setSheetState(() {});
-                            },
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 8,
+                            ),
+                            onPressed: _isSaving
+                                ? null
+                                : () async {
+                                    if (isAlreadyIn) {
+                                      await _unsaveFromSpecificCollection(
+                                        collection.collectionId,
+                                      );
+                                    } else {
+                                      await _saveToSpecificCollection(
+                                        collection.collectionId,
+                                      );
+                                    }
+                                    // Ensure modal UI refreshes
+                                    setSheetState(() {});
+                                  },
                             child: Row(
                               children: [
                                 Container(
                                   width: 44,
                                   height: 44,
                                   decoration: BoxDecoration(
-                                    color: isAlreadyIn ? AppColors.primary.withAlpha(20) : AppColors.surface,
+                                    color: isAlreadyIn
+                                        ? AppColors.primary.withAlpha(20)
+                                        : AppColors.surface,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Icon(
-                                    isAlreadyIn ? CupertinoIcons.checkmark_seal_fill : CupertinoIcons.folder_fill,
-                                    color: isAlreadyIn ? AppColors.primary : AppColors.textLight,
+                                    isAlreadyIn
+                                        ? CupertinoIcons.checkmark_seal_fill
+                                        : CupertinoIcons.folder_fill,
+                                    color: isAlreadyIn
+                                        ? AppColors.primary
+                                        : AppColors.textLight,
                                     size: 24,
                                   ),
                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         collection.name,
                                         style: TextStyle(
                                           color: AppColors.textPrimary,
                                           fontSize: 16,
-                                          fontWeight: isAlreadyIn ? FontWeight.w700 : FontWeight.w500,
+                                          fontWeight: isAlreadyIn
+                                              ? FontWeight.w700
+                                              : FontWeight.w500,
                                         ),
                                       ),
                                       if (collection.isDefault)
                                         const Text(
                                           'Default Collection',
-                                          style: TextStyle(color: AppColors.textLight, fontSize: 12),
+                                          style: TextStyle(
+                                            color: AppColors.textLight,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                     ],
                                   ),
                                 ),
                                 if (isAlreadyIn)
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: AppColors.primary,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: const Text(
                                       'SAVED',
-                                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                      ),
                                     ),
                                   ),
                               ],
@@ -374,7 +431,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       final collectionRepo = CollectionRepository(Supabase.instance.client);
-      await collectionRepo.removePostFromCollection(collectionId, _currentPost.id);
+      await collectionRepo.removePostFromCollection(
+        collectionId,
+        _currentPost.id,
+      );
 
       setState(() {
         _savedInCollectionIds.remove(collectionId);
@@ -479,11 +539,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   void _navigateToProfile(String userId) {
     if (userId.isEmpty) return;
-    Navigator.of(context).push(
-      CupertinoPageRoute(
-        builder: (_) => ProfileScreen(userId: userId),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(CupertinoPageRoute(builder: (_) => ProfileScreen(userId: userId)));
   }
 
   void _openHashtagSearch(String rawTag) {
@@ -642,10 +700,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
 
     return PopScope(
-      canPop: false,
+      canPop: true,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        Navigator.of(context).pop(_wasEdited ? _currentPost : null);
+        _popBackToPreviousPage();
       },
       child: scaffold,
     );
@@ -660,8 +718,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           children: [
             CupertinoButton(
               padding: EdgeInsets.zero,
-              onPressed: () =>
-                  Navigator.of(context).pop(_wasEdited ? _currentPost : null),
+              onPressed: _popBackToPreviousPage,
               child: const Icon(
                 CupertinoIcons.chevron_back,
                 color: AppColors.textPrimary,
@@ -877,9 +934,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
 
       if (match.start > currentIndex) {
-        children.add(
-          TextSpan(text: text.substring(currentIndex, match.start)),
-        );
+        children.add(TextSpan(text: text.substring(currentIndex, match.start)));
       }
 
       children.add(
@@ -891,7 +946,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               behavior: HitTestBehavior.opaque,
               onTap: () => _openHashtagSearch(match.group(0) ?? ''),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFF1F4),
                   borderRadius: BorderRadius.circular(999),
@@ -955,10 +1013,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFFFFF1F4),
                 borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: const Color(0xFFFFD4DD),
-                  width: 0.9,
-                ),
+                border: Border.all(color: const Color(0xFFFFD4DD), width: 0.9),
               ),
               child: Text(
                 formattedTag,
@@ -986,9 +1041,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           if (restaurantId != null && restaurantId.isNotEmpty) {
             Navigator.of(context).push(
               CupertinoPageRoute(
-                builder: (_) => RestaurantDetailScreen(
-                  restaurantId: restaurantId,
-                ),
+                builder: (_) =>
+                    RestaurantDetailScreen(restaurantId: restaurantId),
               ),
             );
           } else {
@@ -1126,7 +1180,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   color: AppColors.primary.withAlpha(30),
                 ),
                 child: ClipOval(
-                  child: (comment.authorAvatar != null && comment.authorAvatar!.isNotEmpty)
+                  child:
+                      (comment.authorAvatar != null &&
+                          comment.authorAvatar!.isNotEmpty)
                       ? Image.network(
                           comment.authorAvatar!,
                           fit: BoxFit.cover,
@@ -1298,7 +1354,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     shape: BoxShape.circle,
                   ),
                   child: ClipOval(
-                    child: (_currentUserAvatar != null && _currentUserAvatar!.isNotEmpty)
+                    child:
+                        (_currentUserAvatar != null &&
+                            _currentUserAvatar!.isNotEmpty)
                         ? Image.network(
                             _currentUserAvatar!,
                             fit: BoxFit.cover,
@@ -1369,7 +1427,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _showMoreOptions(BuildContext context) {
     return showCupertinoModalPopup(
       context: context,
-      builder: (_) => Container(
+      builder: (modalContext) => Container(
         width: double.infinity,
         padding: const EdgeInsets.only(bottom: 30, top: 10),
         decoration: const BoxDecoration(
@@ -1396,22 +1454,49 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_isArchivedView)
-                      ...[
-                        _buildHorizontalOption(
-                          icon: CupertinoIcons.arrow_uturn_up_circle,
-                          label: 'Recover',
-                          onTap: () {
-                            Navigator.pop(context);
-                            _recoverPost();
-                          },
-                        ),
+                    if (_isArchivedView) ...[
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.arrow_uturn_up_circle,
+                        label: 'Recover',
+                        onTap: () {
+                          Navigator.of(modalContext).pop();
+                          Future.microtask(_recoverPost);
+                        },
+                      ),
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.pencil,
+                        label: 'Edit',
+                        onTap: () {
+                          Navigator.of(modalContext).pop();
+                          Future.microtask(_editPost);
+                        },
+                      ),
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.delete,
+                        label: 'Delete',
+                        isDestructive: true,
+                        onTap: () {
+                          Navigator.of(modalContext).pop();
+                          Future.microtask(_hideDeletedPostFromOwner);
+                        },
+                      ),
+                    ] else ...[
+                      if (_isCurrentUserPostOwner) ...[
                         _buildHorizontalOption(
                           icon: CupertinoIcons.pencil,
                           label: 'Edit',
                           onTap: () {
-                            Navigator.pop(context);
-                            _editPost();
+                            Navigator.of(modalContext).pop();
+                            Future.microtask(_editPost);
+                          },
+                        ),
+                        _buildHorizontalOption(
+                          icon: CupertinoIcons.archivebox,
+                          label: 'Archive',
+                          isDestructive: true,
+                          onTap: () {
+                            Navigator.of(modalContext).pop();
+                            Future.microtask(_archivePost);
                           },
                         ),
                         _buildHorizontalOption(
@@ -1419,56 +1504,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           label: 'Delete',
                           isDestructive: true,
                           onTap: () {
-                            Navigator.pop(context);
-                            _hideDeletedPostFromOwner();
+                            Navigator.of(modalContext).pop();
+                            Future.microtask(_hideDeletedPostFromOwner);
                           },
                         ),
-                      ]
-                    else ...[
-                      _buildHorizontalOption(
-                        icon: CupertinoIcons.share,
-                        label: 'Share',
-                        onTap: () => Navigator.pop(context),
-                      ),
-                      _buildHorizontalOption(
-                        icon: CupertinoIcons.link,
-                        label: 'Link',
-                        onTap: () => Navigator.pop(context),
-                      ),
-                      if (_isCurrentUserPostOwner)
-                        ...[
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.pencil,
-                            label: 'Edit',
-                            onTap: () {
-                              Navigator.pop(context);
-                              _editPost();
-                            },
-                          ),
-                          _buildHorizontalOption(
-                            icon: CupertinoIcons.archivebox,
-                            label: 'Archive',
-                            isDestructive: true,
-                            onTap: () {
-                              Navigator.pop(context);
-                              _archivePost();
-                            },
-                          ),
-                        ]
-                      else
+                      ] else
                         _buildHorizontalOption(
                           icon: CupertinoIcons.flag,
                           label: 'Report',
                           isDestructive: true,
                           onTap: () {
-                            Navigator.pop(context);
-                            Navigator.of(context).push(
-                              CupertinoPageRoute(
-                                fullscreenDialog: true,
-                                builder: (_) =>
-                                    ReportFormScreen(post: _currentPost),
-                              ),
-                            );
+                            Navigator.of(modalContext).pop();
+                            Future.microtask(() {
+                              Navigator.of(context).push(
+                                CupertinoPageRoute(
+                                  fullscreenDialog: true,
+                                  builder: (_) =>
+                                      ReportFormScreen(post: _currentPost),
+                                ),
+                              );
+                            });
                           },
                         ),
                     ],
@@ -1514,30 +1569,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (isOwner)
-                      ...[
-                        _buildHorizontalOption(
-                          icon: CupertinoIcons.pencil,
-                          label: 'Edit',
-                          onTap: () {
-                            Navigator.pop(modalContext);
-                            _showCommentSheet(
-                              context,
-                              editingComment: comment,
-                            );
-                          },
-                        ),
-                        _buildHorizontalOption(
-                          icon: CupertinoIcons.delete,
-                          label: 'Delete',
-                          isDestructive: true,
-                          onTap: () {
-                            Navigator.pop(modalContext);
-                            _deleteComment(comment);
-                          },
-                        ),
-                      ]
-                    else
+                    if (isOwner) ...[
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.pencil,
+                        label: 'Edit',
+                        onTap: () {
+                          Navigator.pop(modalContext);
+                          _showCommentSheet(context, editingComment: comment);
+                        },
+                      ),
+                      _buildHorizontalOption(
+                        icon: CupertinoIcons.delete,
+                        label: 'Delete',
+                        isDestructive: true,
+                        onTap: () {
+                          Navigator.pop(modalContext);
+                          _deleteComment(comment);
+                        },
+                      ),
+                    ] else
                       _buildHorizontalOption(
                         icon: CupertinoIcons.flag,
                         label: 'Report',
@@ -1633,15 +1683,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _comments.removeWhere((c) => c.commentId == comment.commentId);
         });
       }
-    } catch (e) {
-    }
+    } catch (e) {}
   }
 
   Future<void> _archivePost() async {
     final bool? confirm = await showCupertinoModalPopup<bool>(
       context: context,
       builder: (ctx) => Container(
-        padding: const EdgeInsets.only(top: 12, bottom: 40, left: 24, right: 24),
+        padding: const EdgeInsets.only(
+          top: 12,
+          bottom: 40,
+          left: 24,
+          right: 24,
+        ),
         decoration: const BoxDecoration(
           color: CupertinoColors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -1650,34 +1704,71 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40, height: 5,
+              width: 40,
+              height: 5,
               margin: const EdgeInsets.only(bottom: 24),
-              decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2.5)),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0E0E0),
+                borderRadius: BorderRadius.circular(2.5),
+              ),
             ),
-            const Icon(CupertinoIcons.archivebox_fill, size: 48, color: AppColors.primary),
+            const Icon(
+              CupertinoIcons.archivebox_fill,
+              size: 48,
+              color: AppColors.primary,
+            ),
             const SizedBox(height: 16),
-            const Text('Archive this post?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Text(
+              'Archive this post?',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 12),
             const Text(
               'This post will be moved to your Archived tab. It won\'t be visible to others but you can recover it later.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4),
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 32),
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: () => Navigator.pop(ctx, true),
               child: Container(
-                height: 54, width: double.infinity,
-                decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(27)),
+                height: 54,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(27),
+                ),
                 alignment: Alignment.center,
-                child: const Text('Archive', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                child: const Text(
+                  'Archive',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
             CupertinoButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
@@ -1691,7 +1782,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _wasEdited = true;
       if (mounted) {
         // Pop the PostDetailScreen and tell the caller to refresh
-        Navigator.of(context).pop(true);
+        _popWithResult(true);
       }
     } catch (e) {
       if (!mounted) return;
@@ -1715,7 +1806,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final bool? confirm = await showCupertinoModalPopup<bool>(
       context: context,
       builder: (ctx) => Container(
-        padding: const EdgeInsets.only(top: 12, bottom: 40, left: 24, right: 24),
+        padding: const EdgeInsets.only(
+          top: 12,
+          bottom: 40,
+          left: 24,
+          right: 24,
+        ),
         decoration: const BoxDecoration(
           color: CupertinoColors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -1724,34 +1820,71 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40, height: 5,
+              width: 40,
+              height: 5,
               margin: const EdgeInsets.only(bottom: 24),
-              decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2.5)),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE0E0E0),
+                borderRadius: BorderRadius.circular(2.5),
+              ),
             ),
-            const Icon(CupertinoIcons.arrow_uturn_up_circle_fill, size: 48, color: Color(0xFF34C759)), // Green for success/recover
+            const Icon(
+              CupertinoIcons.arrow_uturn_up_circle_fill,
+              size: 48,
+              color: Color(0xFF34C759),
+            ), // Green for success/recover
             const SizedBox(height: 16),
-            const Text('Recover this post?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const Text(
+              'Recover this post?',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 12),
             const Text(
               'This post will be moved back to your public profile and will be visible to everyone again.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4),
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 32),
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: () => Navigator.pop(ctx, true),
               child: Container(
-                height: 54, width: double.infinity,
-                decoration: BoxDecoration(color: const Color(0xFF34C759), borderRadius: BorderRadius.circular(27)),
+                height: 54,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF34C759),
+                  borderRadius: BorderRadius.circular(27),
+                ),
                 alignment: Alignment.center,
-                child: const Text('Recover', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                child: const Text(
+                  'Recover',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
             CupertinoButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontSize: 16, fontWeight: FontWeight.w600)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
@@ -1764,7 +1897,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await PostRepository.instance.restorePost(_currentPost.id);
       _wasEdited = true;
       if (mounted) {
-        Navigator.of(context).pop(true);
+        _popWithResult(true);
       }
     } catch (e) {
       if (!mounted) return;
@@ -1786,9 +1919,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _editPost() async {
     final result = await Navigator.of(context).push<PostModel>(
-      CupertinoPageRoute(
-        builder: (_) => EditPostScreen(post: _currentPost),
-      ),
+      CupertinoPageRoute(builder: (_) => EditPostScreen(post: _currentPost)),
     );
 
     if (result == null || !mounted) return;
@@ -1803,9 +1934,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final confirm = await showCupertinoDialog<bool>(
       context: context,
       builder: (ctx) => CupertinoAlertDialog(
-        title: const Text('Delete Permanently?'),
+        title: const Text('Delete this post?'),
         content: const Text(
-          'This will remove the post from your Archived Posts. Admins can still access it if needed.',
+          'This post will be removed from your profile and will no longer be visible to others. Admins can still access it if needed.',
         ),
         actions: [
           CupertinoDialogAction(
@@ -1827,7 +1958,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       await PostRepository.instance.hideDeletedPostFromOwner(_currentPost.id);
       _wasEdited = true;
       if (mounted) {
-        Navigator.of(context).pop(true);
+        _popWithResult(true);
       }
     } catch (e) {
       if (!mounted) return;

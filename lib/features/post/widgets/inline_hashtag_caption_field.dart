@@ -245,7 +245,7 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 5),
         const Text(
           'Type # in your caption or tap the button to insert one.',
           style: TextStyle(
@@ -254,6 +254,7 @@ class _InlineHashtagCaptionFieldState extends State<InlineHashtagCaptionField> {
             height: 1.3,
           ),
         ),
+        const SizedBox(height: 15),
         if (_showSuggestions) ...[
           const SizedBox(height: 10),
           Container(
