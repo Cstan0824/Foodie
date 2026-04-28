@@ -182,7 +182,7 @@ class _FoodiAppState extends State<FoodiApp> {
   Widget build(BuildContext context) {
     return CupertinoApp(
       navigatorKey: navigatorKey,
-      title: 'Taste Spot',
+      title: 'Foodie',
       debugShowCheckedModeBanner: false,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,

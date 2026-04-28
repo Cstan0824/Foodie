@@ -5,6 +5,7 @@ import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/post_repository.dart';
+import 'package:taste_spot/data/repositories/feed_repository.dart';
 import 'package:taste_spot/features/notification/screens/notification_screen.dart';
 import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/search/screens/explore_screen.dart';
@@ -86,7 +87,8 @@ class HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    return PostRepository.instance.fetchDiscoverPosts(
+    return FeedRepository.instance.fetchDiscoverFeed(
+      userId: SupabaseService.currentUserId,
       limit: _pageSize,
       offset: offset,
     );
@@ -424,7 +426,7 @@ class _HomeSkeleton extends StatelessWidget {
       physics: NeverScrollableScrollPhysics(),
       child: Padding(
         padding: EdgeInsets.fromLTRB(8, 12, 8, 0),
-        child: _MasonryGridSkeleton(itemCount: 4),
+        child: _MasonryGridSkeleton(itemCount: 6),
       ),
     );
   }

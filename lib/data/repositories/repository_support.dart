@@ -21,7 +21,7 @@ String getPostSelectWithStatus(String? currentUserId) {
   }
   return '''
     $publicPostSelect,
-    Likes(user_Id).eq(user_Id, $currentUserId),
+    Likes(user_Id).eq(user_Id, '$currentUserId'),
     collections_item(id).limit(1)
   ''';
 }

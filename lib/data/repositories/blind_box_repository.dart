@@ -60,9 +60,10 @@ class BlindBoxRepository {
         .not('longitude', 'is', null)
         .limit(500); // large enough candidate pool for ranking
 
-    final List<Map<String, dynamic>> candidatesData = (response as List<dynamic>)
-        .map((e) => e as Map<String, dynamic>)
-        .toList();
+    final List<Map<String, dynamic>> candidatesData =
+        (response as List<dynamic>)
+            .map((e) => e as Map<String, dynamic>)
+            .toList();
 
     if (candidatesData.isEmpty) return [];
 
@@ -117,7 +118,10 @@ class BlindBoxRepository {
     }
 
     // Pre-fetch extra cuisines for candidates
-    final candidateIds = candidatesData.map((c) => c['restaurant_Id']?.toString()).whereType<String>().toList();
+    final candidateIds = candidatesData
+        .map((c) => c['restaurant_Id']?.toString())
+        .whereType<String>()
+        .toList();
     Map<String, List<String>> candidateExtraCuisines = {};
 
     if (candidateIds.isNotEmpty) {
@@ -147,7 +151,10 @@ class BlindBoxRepository {
       final rId = row['restaurant_Id']?.toString();
 
       // Priority 1: Location (Strongest)
-      if (userLatitude != null && userLongitude != null && lat != null && lng != null) {
+      if (userLatitude != null &&
+          userLongitude != null &&
+          lat != null &&
+          lng != null) {
         double dist = _calculateDistance(userLatitude, userLongitude, lat, lng);
         if (dist <= 5) {
           score += 50; // Very near
@@ -166,7 +173,8 @@ class BlindBoxRepository {
       if (rId != null) {
         final extras = candidateExtraCuisines[rId] ?? [];
         for (var ex in extras) {
-          if (preferredMainCuisines.contains(ex) || preferredExtraCuisines.contains(ex)) {
+          if (preferredMainCuisines.contains(ex) ||
+              preferredExtraCuisines.contains(ex)) {
             score += 5;
           }
         }
@@ -195,10 +203,7 @@ class BlindBoxRepository {
         }
       }
 
-      scoredCandidates.add({
-        'row': row,
-        'score': score,
-      });
+      scoredCandidates.add({'row': row, 'score': score});
     }
 
     // 4. Tier-based output
@@ -222,9 +227,11 @@ class BlindBoxRepository {
     tier2.shuffle(random);
     tier3.shuffle(random);
 
-    final finalData = [...tier1, ...tier2, ...tier3]
-        .take(limit)
-        .map((e) => e['row'] as Map<String, dynamic>);
+    final finalData = [
+      ...tier1,
+      ...tier2,
+      ...tier3,
+    ].take(limit).map((e) => e['row'] as Map<String, dynamic>);
 
     return finalData.map((row) => RestaurantModel.fromJson(row)).toList();
   }
@@ -234,13 +241,21 @@ class BlindBoxRepository {
   // ---------------------------------------------------------------------------
 
   /// Calculates the distance between two coordinate points in kilometers using Haversine.
-  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+  double _calculateDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const double earthRadius = 6371; // km
     double dLat = _degreesToRadians(lat2 - lat1);
     double dLon = _degreesToRadians(lon2 - lon1);
-    double a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_degreesToRadians(lat1)) * cos(_degreesToRadians(lat2)) *
-        sin(dLon / 2) * sin(dLon / 2);
+    double a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degreesToRadians(lat1)) *
+            cos(_degreesToRadians(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
     double c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return earthRadius * c;
   }
@@ -278,9 +293,98 @@ class BlindBoxRepository {
         .range(offset, offset + limit - 1);
 
     return (response as List<dynamic>)
-        .map((row) =>
-            SwipeHistoryModel.fromJson(row as Map<String, dynamic>))
+        .map((row) => SwipeHistoryModel.fromJson(row as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Fetches the user's swipe history as unique restaurants, newest swipe first.
+  ///
+  /// The `swipe_history` table can store multiple swipe events for the same
+  /// restaurant. This method keeps only the latest swipe per restaurant so the
+  /// history screen can show a clean restaurant list with "last swiped".
+  Future<List<BlindBoxSwipeHistoryRestaurantItem>>
+  fetchSwipeHistoryRestaurants({
+    required String userId,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final historyResponse = await SupabaseService.client
+        .from('swipe_history')
+        .select('restaurant_id, swiped_at')
+        .eq('user_id', userId)
+        .order('swiped_at', ascending: false)
+        .limit(300);
+
+    final latestSwipeByRestaurant = <String, DateTime>{};
+    final orderedRestaurantIds = <String>[];
+
+    for (final row in historyResponse as List<dynamic>) {
+      final map = row as Map<String, dynamic>;
+      final restaurantId = map['restaurant_id']?.toString();
+      final swipedAt = _parseSwipeTimestamp(map['swiped_at']?.toString());
+
+      if (restaurantId == null || restaurantId.isEmpty || swipedAt == null) {
+        continue;
+      }
+
+      // Because the query is ordered newest-first, the first time we see a
+      // restaurant is its latest swipe.
+      if (!latestSwipeByRestaurant.containsKey(restaurantId)) {
+        latestSwipeByRestaurant[restaurantId] = swipedAt;
+        orderedRestaurantIds.add(restaurantId);
+      }
+    }
+
+    if (orderedRestaurantIds.isEmpty) return [];
+
+    final pagedRestaurantIds = orderedRestaurantIds
+        .skip(offset)
+        .take(limit)
+        .toList();
+    if (pagedRestaurantIds.isEmpty) return [];
+
+    final restaurantResponse = await SupabaseService.client
+        .from('Restaurant')
+        .select(_cardSelect)
+        .inFilter('restaurant_Id', pagedRestaurantIds);
+
+    final restaurantsById = <String, RestaurantModel>{};
+    for (final row in restaurantResponse as List<dynamic>) {
+      final restaurant = RestaurantModel.fromJson(row as Map<String, dynamic>);
+      restaurantsById[restaurant.restaurantId] = restaurant;
+    }
+
+    final items = <BlindBoxSwipeHistoryRestaurantItem>[];
+    for (final restaurantId in pagedRestaurantIds) {
+      final restaurant = restaurantsById[restaurantId];
+      final lastSwipedAt = latestSwipeByRestaurant[restaurantId];
+
+      if (restaurant == null || lastSwipedAt == null) continue;
+
+      items.add(
+        BlindBoxSwipeHistoryRestaurantItem(
+          restaurant: restaurant,
+          lastSwipedAt: lastSwipedAt,
+        ),
+      );
+    }
+
+    return items;
+  }
+
+  /// Removes all swipe history rows for one restaurant for this user.
+  ///
+  /// The history screen displays unique restaurants, so deleting one row should
+  /// remove all swipe events for that restaurant instead of only one timestamp.
+  Future<void> deleteSwipeHistoryForRestaurant({
+    required String userId,
+    required String restaurantId,
+  }) async {
+    await SupabaseService.client
+        .from('swipe_history')
+        .delete()
+        .eq('user_id', userId)
+        .eq('restaurant_id', restaurantId);
   }
 
   /// Clears the user's swipe history so all restaurants become
@@ -290,6 +394,31 @@ class BlindBoxRepository {
         .from('swipe_history')
         .delete()
         .eq('user_id', userId);
+  }
+
+  DateTime? _parseSwipeTimestamp(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return null;
+
+    final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(raw);
+
+    if (hasTimezone) {
+      return parsed.isUtc ? parsed.toLocal() : parsed;
+    }
+
+    final utc = DateTime.utc(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      parsed.hour,
+      parsed.minute,
+      parsed.second,
+      parsed.millisecond,
+      parsed.microsecond,
+    );
+
+    return utc.toLocal();
   }
 
   // ---------------------------------------------------------------------------
@@ -355,8 +484,7 @@ class BlindBoxRepository {
 
   /// Returns the user's default restaurant collection ID,
   /// creating one if it doesn't exist yet.
-  Future<String> _getOrCreateDefaultRestaurantCollection(
-      String userId) async {
+  Future<String> _getOrCreateDefaultRestaurantCollection(String userId) async {
     // Try to find existing default
     final existing = await SupabaseService.client
         .from('collections')
@@ -385,4 +513,14 @@ class BlindBoxRepository {
 
     return response['collection_Id'] as String;
   }
+}
+
+class BlindBoxSwipeHistoryRestaurantItem {
+  final RestaurantModel restaurant;
+  final DateTime lastSwipedAt;
+
+  const BlindBoxSwipeHistoryRestaurantItem({
+    required this.restaurant,
+    required this.lastSwipedAt,
+  });
 }

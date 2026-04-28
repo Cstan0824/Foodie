@@ -62,11 +62,13 @@ class CollectionRepository {
   List<Collection> _processCollectionResponse(dynamic response) {
     final list = response as List<dynamic>;
     return list.map((json) {
-      // Sort and limit items manually since PostgREST doesn't support 
+      // Sort and limit items manually since PostgREST doesn't support
       // easy limiting of nested joins in this SDK version
       final items = json['collections_item'] as List<dynamic>?;
       if (items != null) {
-        items.sort((a, b) => (b['savedAt'] as String).compareTo(a['savedAt'] as String));
+        items.sort(
+          (a, b) => (b['savedAt'] as String).compareTo(a['savedAt'] as String),
+        );
         json['collections_item'] = items.take(2).toList();
       }
       return Collection.fromJson(json as Map<String, dynamic>);
@@ -103,12 +105,16 @@ class CollectionRepository {
 
     if (items.isNotEmpty) {
       // 3. Insert them into the new collection
-      final newItems = items.map((item) => {
-        'item_Id': const Uuid().v4(),
-        'collection_Id': newCollectionId,
-        'restaurant_id': item['restaurant_id'],
-        'post_id': item['post_id'],
-      }).toList();
+      final newItems = items
+          .map(
+            (item) => {
+              'item_Id': const Uuid().v4(),
+              'collection_Id': newCollectionId,
+              'restaurant_id': item['restaurant_id'],
+              'post_id': item['post_id'],
+            },
+          )
+          .toList();
 
       await _supabase.from('collections_item').insert(newItems);
     }
@@ -251,7 +257,7 @@ class CollectionRepository {
       'collection_Id': collectionId,
       'share_with_id': targetUserId,
     });
-    
+
     // Automatically make collection public when shared with someone
     await _supabase
         .from('collections')
@@ -262,7 +268,10 @@ class CollectionRepository {
     _triggerShareNotification(collectionId, targetUserId);
   }
 
-  Future<void> _triggerShareNotification(String collectionId, String targetUserId) async {
+  Future<void> _triggerShareNotification(
+    String collectionId,
+    String targetUserId,
+  ) async {
     try {
       final currentUserId = _supabase.auth.currentUser?.id;
       if (currentUserId == null) return;
@@ -272,13 +281,13 @@ class CollectionRepository {
           .select('name')
           .eq('collection_Id', collectionId)
           .maybeSingle();
-      
+
       final collectionName = collData?['name'] as String?;
       if (collectionName != null) {
         await _notifRepo.notifyCollectionShare(
-          sharerId: currentUserId, 
-          targetUserId: targetUserId, 
-          collectionId: collectionId, 
+          sharerId: currentUserId,
+          targetUserId: targetUserId,
+          collectionId: collectionId,
           collectionName: collectionName,
         );
       }
@@ -358,7 +367,9 @@ class CollectionRepository {
   // 4. Collection Restaurants Management
   // ==========================================
 
-  Future<List<RestaurantModel>> getRestaurantsInCollection(String collectionId) async {
+  Future<List<RestaurantModel>> getRestaurantsInCollection(
+    String collectionId,
+  ) async {
     final itemsResponse = await _supabase
         .from('collections_item')
         .select('restaurant_id')
@@ -373,12 +384,37 @@ class CollectionRepository {
 
     final response = await _supabase
         .from('Restaurant')
-        .select('restaurant_Id, restaurant_name, description, price_range, address, latitude, longitude, maps_url, created_At, main_cuisine_id, source, info_url, isDisabled, rating, mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption), Restaurant_Image(image_id, image_url, isCover)')
+        .select(
+          'restaurant_Id, restaurant_name, description, price_range, address, latitude, longitude, maps_url, created_At, main_cuisine_id, source, info_url, isDisabled, rating, mainCuisine:Cuisine!restaurant_main_cuisine_fk(type_id, desc, isPrimaryOption), Restaurant_Image(image_id, image_url, isCover)',
+        )
         .inFilter('restaurant_Id', restaurantIds)
         .eq('isDisabled', false);
 
     return (response as List<dynamic>)
         .map((row) => RestaurantModel.fromJson(row as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<void> removeRestaurantFromCollection(
+    String collectionId,
+    String restaurantId,
+  ) async {
+    await _supabase
+        .from('collections_item')
+        .delete()
+        .eq('collection_Id', collectionId)
+        .eq('restaurant_id', restaurantId);
+  }
+
+  Future<void> removeRestaurantsFromCollection(
+    String collectionId,
+    List<String> restaurantIds,
+  ) async {
+    if (restaurantIds.isEmpty) return;
+    await _supabase
+        .from('collections_item')
+        .delete()
+        .eq('collection_Id', collectionId)
+        .inFilter('restaurant_id', restaurantIds);
   }
 }

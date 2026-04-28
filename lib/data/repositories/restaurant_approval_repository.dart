@@ -179,6 +179,30 @@ class RestaurantApprovalRepository {
         .toList();
   }
 
+  /// Counts approvals using the same filters as [fetchApprovals].
+  /// This is used for stable tab counters because paginated loaded rows do not
+  /// represent the full matching result count.
+  Future<int> countApprovals({
+    int? statusFilter,
+    String? searchQuery,
+  }) async {
+    var query = SupabaseService.client
+        .from('RestaurantApproval')
+        .select('approval_Id');
+
+    if (statusFilter != null) {
+      query = query.eq('status', statusFilter);
+    }
+
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      final q = searchQuery.trim();
+      query = query.or('restaurant_name.ilike.%$q%,address.ilike.%$q%');
+    }
+
+    final response = await query;
+    return (response as List<dynamic>).length;
+  }
+
   /// Fetches a single approval item by its ID.
   /// Returns null if not found.
   Future<RestaurantApprovalModel?> fetchApprovalById(String approvalId) async {

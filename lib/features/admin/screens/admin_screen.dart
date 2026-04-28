@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Icons;
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/widgets/skeleton.dart';
+import 'package:taste_spot/data/repositories/dashboard_repository.dart';
 import 'package:taste_spot/features/admin/post_management/screens/post_management_screen.dart';
+import 'package:taste_spot/features/admin/screens/admin_profile.dart';
 import 'package:taste_spot/features/admin/restaurant_management/screens/restaurant_management_screen.dart';
 
 class AdminScreen extends StatefulWidget {
@@ -40,19 +42,19 @@ class _AdminScreenState extends State<AdminScreen> {
   Widget _buildTabContent() {
     switch (_selectedTab) {
       case 0:
-        return const _DashboardTab();
+        return _DashboardTab(
+          onSelectTab: (i) => setState(() => _selectedTab = i),
+        );
       case 1:
         return const PostManagementScreen();
       case 2:
         return const RestaurantManagementScreen();
       case 3:
-        return const _PlaceholderTab(
-          icon: CupertinoIcons.person_fill,
-          title: 'Admin Profile',
-          subtitle: 'Coming soon',
-        );
+        return const AdminProfileScreen();
       default:
-        return const _DashboardTab();
+        return _DashboardTab(
+          onSelectTab: (i) => setState(() => _selectedTab = i),
+        );
     }
   }
 
@@ -108,9 +110,7 @@ class _AdminTabBar extends StatelessWidget {
           top: BorderSide(color: AppColors.tabBarBorder, width: 0.5),
         ),
       ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
       child: SizedBox(
         height: 56,
         child: Row(
@@ -157,8 +157,33 @@ class _AdminTabBar extends StatelessWidget {
 
 // ── Dashboard Tab ─────────────────────────────────────────────────────────────
 
-class _DashboardTab extends StatelessWidget {
-  const _DashboardTab();
+class _DashboardTab extends StatefulWidget {
+  final ValueChanged<int> onSelectTab;
+
+  const _DashboardTab({required this.onSelectTab});
+
+  @override
+  State<_DashboardTab> createState() => _DashboardTabState();
+}
+
+class _DashboardTabState extends State<_DashboardTab> {
+  late Future<DashboardSummary> _summaryFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _summaryFuture = DashboardRepository.instance.fetchDashboardSummary(
+      activityLimit: 8,
+    );
+  }
+
+  Future<void> _refresh() async {
+    final future = DashboardRepository.instance.fetchDashboardSummary(
+      activityLimit: 8,
+    );
+    setState(() => _summaryFuture = future);
+    await future;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -170,68 +195,32 @@ class _DashboardTab extends StatelessWidget {
           border: Border(
             bottom: BorderSide(color: AppColors.tabBarBorder, width: 0.5),
           ),
-          trailing: GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: const Icon(
-              CupertinoIcons.xmark_circle_fill,
-              color: AppColors.textLight,
-              size: 24,
-            ),
-          ),
         ),
+        CupertinoSliverRefreshControl(onRefresh: _refresh),
         SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Greeting ──
-                _GreetingCard(),
-                const SizedBox(height: 20),
+          child: FutureBuilder<DashboardSummary>(
+            future: _summaryFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return const _DashboardLoadingState();
+              }
 
-                // ── Stats Grid ──
-                const Text(
-                  'Overview',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const _StatsGrid(),
-                const SizedBox(height: 20),
+              if (snapshot.hasError && !snapshot.hasData) {
+                return _DashboardErrorState(
+                  message: snapshot.error.toString(),
+                  onRetry: _refresh,
+                );
+              }
 
-                // ── Recent Activity ──
-                const Text(
-                  'Recent Activity',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const _RecentActivityList(),
-                const SizedBox(height: 20),
-
-                // ── Quick Actions ──
-                const Text(
-                  'Quick Actions',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const _QuickActions(),
-                const SizedBox(height: 24),
-              ],
-            ),
+              final summary = snapshot.requireData;
+              return _DashboardContent(
+                summary: summary,
+                isRefreshing:
+                    snapshot.connectionState == ConnectionState.waiting,
+                onSelectTab: widget.onSelectTab,
+              );
+            },
           ),
         ),
       ],
@@ -239,9 +228,426 @@ class _DashboardTab extends StatelessWidget {
   }
 }
 
-class _GreetingCard extends StatelessWidget {
+class _DashboardContent extends StatelessWidget {
+  final DashboardSummary summary;
+  final bool isRefreshing;
+  final ValueChanged<int> onSelectTab;
+
+  const _DashboardContent({
+    required this.summary,
+    required this.isRefreshing,
+    required this.onSelectTab,
+  });
+
   @override
   Widget build(BuildContext context) {
+    final stats = summary.stats;
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _GreetingCard(
+            attentionCount: stats.needsAttentionCount,
+            isRefreshing: isRefreshing,
+          ),
+          const SizedBox(height: 20),
+          const _SectionTitle('Overview'),
+          const SizedBox(height: 12),
+          _StatsGrid(stats: stats),
+          const SizedBox(height: 20),
+          const _SectionTitle('Needs Attention'),
+          const SizedBox(height: 12),
+          _NeedsAttentionList(
+            stats: stats,
+            onReportsTap: () => onSelectTab(1),
+            onRestaurantsTap: () => onSelectTab(2),
+          ),
+          const SizedBox(height: 20),
+          const _SectionTitle('Recent Activity'),
+          const SizedBox(height: 12),
+          _RecentActivityList(activities: summary.recentActivities),
+          const SizedBox(height: 20),
+          const _SectionTitle('Quick Actions'),
+          const SizedBox(height: 12),
+          _QuickActions(
+            onReportsTap: () => onSelectTab(1),
+            onRestaurantApprovalsTap: () => onSelectTab(2),
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+
+  const _SectionTitle(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+}
+
+class _DashboardLoadingState extends StatelessWidget {
+  const _DashboardLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _GreetingSkeleton(),
+          SizedBox(height: 20),
+          _SectionTitle('Overview'),
+          SizedBox(height: 12),
+          _StatsGridSkeleton(),
+          SizedBox(height: 20),
+          _SectionTitle('Needs Attention'),
+          SizedBox(height: 12),
+          _AttentionListSkeleton(),
+          SizedBox(height: 20),
+          _SectionTitle('Recent Activity'),
+          SizedBox(height: 12),
+          _ActivityListSkeleton(),
+          SizedBox(height: 20),
+          _SectionTitle('Quick Actions'),
+          SizedBox(height: 12),
+          _QuickActionsSkeleton(),
+          SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+class _GreetingSkeleton extends StatelessWidget {
+  const _GreetingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: const Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Skeleton(width: 110, height: 13, borderRadius: 4),
+                SizedBox(height: 8),
+                Skeleton(width: 70, height: 22, borderRadius: 5),
+                SizedBox(height: 10),
+                Skeleton(width: 220, height: 13, borderRadius: 4),
+              ],
+            ),
+          ),
+          SkeletonCircle(size: 52),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatsGridSkeleton extends StatelessWidget {
+  const _StatsGridSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 4,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.5,
+      ),
+      itemBuilder: (_, _) => const _StatCardSkeleton(),
+    );
+  }
+}
+
+class _StatCardSkeleton extends StatelessWidget {
+  const _StatCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Skeleton(width: 34, height: 34, borderRadius: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Skeleton(width: 64, height: 20, borderRadius: 5),
+              SizedBox(height: 7),
+              Skeleton(width: 90, height: 11, borderRadius: 4),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttentionListSkeleton extends StatelessWidget {
+  const _AttentionListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Column(
+        children: List.generate(5, (i) {
+          final isLast = i == 4;
+          return Column(
+            children: [
+              const _AttentionRowSkeleton(),
+              if (!isLast)
+                Padding(
+                  padding: const EdgeInsets.only(left: 56),
+                  child: Container(height: 0.5, color: AppColors.divider),
+                ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _AttentionRowSkeleton extends StatelessWidget {
+  const _AttentionRowSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Skeleton(width: 32, height: 32, borderRadius: 8),
+          SizedBox(width: 12),
+          Expanded(child: Skeleton(height: 13, borderRadius: 4)),
+          SizedBox(width: 24),
+          Skeleton(width: 28, height: 16, borderRadius: 4),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityListSkeleton extends StatelessWidget {
+  const _ActivityListSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Column(
+        children: List.generate(4, (i) {
+          final isLast = i == 3;
+          return Column(
+            children: [
+              const _ActivityRowSkeleton(),
+              if (!isLast)
+                Padding(
+                  padding: const EdgeInsets.only(left: 64),
+                  child: Container(height: 0.5, color: AppColors.divider),
+                ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _ActivityRowSkeleton extends StatelessWidget {
+  const _ActivityRowSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Skeleton(width: 36, height: 36, borderRadius: 8),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Skeleton(width: 150, height: 13, borderRadius: 4),
+                SizedBox(height: 7),
+                Skeleton(width: double.infinity, height: 12, borderRadius: 4),
+              ],
+            ),
+          ),
+          SizedBox(width: 16),
+          Skeleton(width: 38, height: 11, borderRadius: 4),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickActionsSkeleton extends StatelessWidget {
+  const _QuickActionsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      children: [
+        Expanded(child: _QuickActionButtonSkeleton()),
+        SizedBox(width: 12),
+        Expanded(child: _QuickActionButtonSkeleton()),
+      ],
+    );
+  }
+}
+
+class _QuickActionButtonSkeleton extends StatelessWidget {
+  const _QuickActionButtonSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: const Column(
+        children: [
+          Skeleton(width: 24, height: 24, borderRadius: 6),
+          SizedBox(height: 8),
+          Skeleton(width: 96, height: 12, borderRadius: 4),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardErrorState extends StatelessWidget {
+  final String message;
+  final Future<void> Function() onRetry;
+
+  const _DashboardErrorState({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.divider, width: 0.5),
+        ),
+        child: Column(
+          children: [
+            const Icon(
+              CupertinoIcons.exclamationmark_triangle_fill,
+              color: Color(0xFFFF9500),
+              size: 30,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Dashboard data could not be loaded',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 14),
+            CupertinoButton(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(10),
+              onPressed: onRetry,
+              child: const Text(
+                'Retry',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GreetingCard extends StatelessWidget {
+  final int attentionCount;
+  final bool isRefreshing;
+
+  const _GreetingCard({
+    required this.attentionCount,
+    required this.isRefreshing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final attentionText = attentionCount == 0
+        ? 'No pending actions right now.'
+        : '$attentionCount item${attentionCount == 1 ? '' : 's'} need attention today.';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -264,8 +670,8 @@ class _GreetingCard extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
+              children: [
+                const Text(
                   'Welcome back,',
                   style: TextStyle(
                     fontSize: 13,
@@ -273,20 +679,19 @@ class _GreetingCard extends StatelessWidget {
                     fontWeight: FontWeight.w400,
                   ),
                 ),
-                SizedBox(height: 4),
-                Text(
+                const SizedBox(height: 4),
+                const Text(
                   'Admin',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
                     color: CupertinoColors.white,
-                    letterSpacing: -0.5,
                   ),
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text(
-                  'Here\'s what\'s happening today.',
-                  style: TextStyle(
+                  isRefreshing ? 'Refreshing dashboard data...' : attentionText,
+                  style: const TextStyle(
                     fontSize: 13,
                     color: CupertinoColors.white,
                   ),
@@ -314,28 +719,51 @@ class _GreetingCard extends StatelessWidget {
 }
 
 class _StatsGrid extends StatelessWidget {
-  const _StatsGrid();
+  final DashboardStats stats;
 
-  static const List<_StatItem> _stats = [
-    _StatItem(label: 'Total Posts', value: '1,284', icon: CupertinoIcons.doc_text_fill, color: Color(0xFF5856D6)),
-    _StatItem(label: 'Restaurants', value: '342', icon: CupertinoIcons.building_2_fill, color: Color(0xFF34C759)),
-    _StatItem(label: 'Users', value: '8,910', icon: CupertinoIcons.person_2_fill, color: Color(0xFF007AFF)),
-    _StatItem(label: 'Reports', value: '17', icon: CupertinoIcons.flag_fill, color: Color(0xFFFF9500)),
-  ];
+  const _StatsGrid({required this.stats});
 
   @override
   Widget build(BuildContext context) {
+    final items = [
+      _StatItem(
+        label: 'Active Posts',
+        value: _formatCount(stats.activePosts),
+        icon: CupertinoIcons.doc_text_fill,
+        color: const Color(0xFF5856D6),
+      ),
+      _StatItem(
+        label: 'Restaurants',
+        value: _formatCount(stats.totalRestaurants),
+        icon: CupertinoIcons.building_2_fill,
+        color: const Color(0xFF34C759),
+      ),
+      _StatItem(
+        label: 'Users',
+        value: _formatCount(stats.totalUsers),
+        icon: CupertinoIcons.person_2_fill,
+        color: const Color(0xFF007AFF),
+      ),
+      _StatItem(
+        label: 'Pending Reports',
+        value: _formatCount(stats.pendingReports),
+        icon: CupertinoIcons.flag_fill,
+        color: const Color(0xFFFF9500),
+      ),
+    ];
+
     return GridView.builder(
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: _stats.length,
+      itemCount: items.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
         childAspectRatio: 1.5,
       ),
-      itemBuilder: (_, i) => _StatCard(item: _stats[i]),
+      itemBuilder: (_, i) => _StatCard(item: items[i]),
     );
   }
 }
@@ -390,7 +818,6 @@ class _StatCard extends StatelessWidget {
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
-                  letterSpacing: -0.5,
                 ),
               ),
               Text(
@@ -408,42 +835,57 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _RecentActivityList extends StatelessWidget {
-  const _RecentActivityList();
+class _NeedsAttentionList extends StatelessWidget {
+  final DashboardStats stats;
+  final VoidCallback onReportsTap;
+  final VoidCallback onRestaurantsTap;
 
-  static const List<_ActivityItem> _activities = [
-    _ActivityItem(
-      icon: CupertinoIcons.doc_text_fill,
-      iconColor: Color(0xFF5856D6),
-      title: 'New post submitted',
-      subtitle: 'Reviewed by @user123',
-      time: '2m ago',
-    ),
-    _ActivityItem(
-      icon: CupertinoIcons.building_2_fill,
-      iconColor: Color(0xFF34C759),
-      title: 'Restaurant added',
-      subtitle: 'Sushi Nori — KL City',
-      time: '15m ago',
-    ),
-    _ActivityItem(
-      icon: CupertinoIcons.flag_fill,
-      iconColor: Color(0xFFFF3B30),
-      title: 'Post reported',
-      subtitle: 'Spam content flagged',
-      time: '1h ago',
-    ),
-    _ActivityItem(
-      icon: CupertinoIcons.person_badge_plus_fill,
-      iconColor: Color(0xFF007AFF),
-      title: 'New user registered',
-      subtitle: '@foodie_adventurer',
-      time: '2h ago',
-    ),
-  ];
+  const _NeedsAttentionList({
+    required this.stats,
+    required this.onReportsTap,
+    required this.onRestaurantsTap,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final items = [
+      _AttentionItem(
+        label: 'Pending Reports',
+        value: stats.pendingReports,
+        icon: CupertinoIcons.flag_fill,
+        color: const Color(0xFFFF3B30),
+        onTap: onReportsTap,
+      ),
+      _AttentionItem(
+        label: 'Restaurant Approvals',
+        value: stats.pendingRestaurantApprovals,
+        icon: CupertinoIcons.checkmark_seal_fill,
+        color: const Color(0xFF34C759),
+        onTap: onRestaurantsTap,
+      ),
+      _AttentionItem(
+        label: 'Pending Posts',
+        value: stats.pendingPosts,
+        icon: CupertinoIcons.doc_text,
+        color: const Color(0xFF5856D6),
+        onTap: onReportsTap,
+      ),
+      _AttentionItem(
+        label: 'Disabled Restaurants',
+        value: stats.disabledRestaurants,
+        icon: CupertinoIcons.building_2_fill,
+        color: const Color(0xFFFF9500),
+        onTap: onRestaurantsTap,
+      ),
+      _AttentionItem(
+        label: 'Blocked Comments',
+        value: stats.blockedComments,
+        icon: CupertinoIcons.chat_bubble_2_fill,
+        color: const Color(0xFFAF52DE),
+        onTap: onReportsTap,
+      ),
+    ];
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
@@ -451,23 +893,148 @@ class _RecentActivityList extends StatelessWidget {
         border: Border.all(color: AppColors.divider, width: 0.5),
       ),
       child: Column(
-        children: List.generate(_activities.length, (i) {
-          final item = _activities[i];
-          final isLast = i == _activities.length - 1;
+        children: List.generate(items.length, (i) {
+          final item = items[i];
+          final isLast = i == items.length - 1;
+          return Column(
+            children: [
+              _AttentionRow(item: item),
+              if (!isLast)
+                Padding(
+                  padding: const EdgeInsets.only(left: 56),
+                  child: Container(height: 0.5, color: AppColors.divider),
+                ),
+            ],
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _AttentionItem {
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _AttentionItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+}
+
+class _AttentionRow extends StatelessWidget {
+  final _AttentionItem item;
+
+  const _AttentionRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: item.onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: item.color.withAlpha(25),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(item.icon, color: item.color, size: 17),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                item.label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ),
+            Text(
+              _formatCount(item.value),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: item.value > 0 ? item.color : AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              CupertinoIcons.chevron_right,
+              color: AppColors.textLight,
+              size: 14,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentActivityList extends StatelessWidget {
+  final List<DashboardActivityItem> activities;
+
+  const _RecentActivityList({required this.activities});
+
+  @override
+  Widget build(BuildContext context) {
+    if (activities.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.divider, width: 0.5),
+        ),
+        child: const Text(
+          'No recent activity yet.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider, width: 0.5),
+      ),
+      child: Column(
+        children: List.generate(activities.length, (i) {
+          final item = activities[i];
+          final visual = _activityVisual(item.type);
+          final isLast = i == activities.length - 1;
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Container(
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: item.iconColor.withAlpha(25),
+                        color: visual.color.withAlpha(25),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(item.icon, color: item.iconColor, size: 18),
+                      child: Icon(visual.icon, color: visual.color, size: 18),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -484,6 +1051,8 @@ class _RecentActivityList extends StatelessWidget {
                           ),
                           Text(
                             item.subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textSecondary,
@@ -493,7 +1062,7 @@ class _RecentActivityList extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      item.time,
+                      _formatTimeAgo(item.createdAt),
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.textLight,
@@ -515,24 +1084,21 @@ class _RecentActivityList extends StatelessWidget {
   }
 }
 
-class _ActivityItem {
+class _ActivityVisual {
   final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final String time;
+  final Color color;
 
-  const _ActivityItem({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.time,
-  });
+  const _ActivityVisual({required this.icon, required this.color});
 }
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions();
+  final VoidCallback onReportsTap;
+  final VoidCallback onRestaurantApprovalsTap;
+
+  const _QuickActions({
+    required this.onReportsTap,
+    required this.onRestaurantApprovalsTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -543,16 +1109,16 @@ class _QuickActions extends StatelessWidget {
             icon: CupertinoIcons.checkmark_shield_fill,
             label: 'Review Reports',
             color: const Color(0xFFFF3B30),
-            onTap: () {},
+            onTap: onReportsTap,
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: _QuickActionButton(
-            icon: Icons.restaurant_menu,
-            label: 'Add Restaurant',
+            icon: CupertinoIcons.checkmark_seal_fill,
+            label: 'Review Approvals',
             color: const Color(0xFF34C759),
-            onTap: () {},
+            onTap: onRestaurantApprovalsTap,
           ),
         ),
       ],
@@ -603,66 +1169,65 @@ class _QuickActionButton extends StatelessWidget {
   }
 }
 
-// ── Placeholder Tab ───────────────────────────────────────────────────────────
-
-class _PlaceholderTab extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const _PlaceholderTab({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        CupertinoSliverNavigationBar(
-          largeTitle: Text(title),
-          backgroundColor: AppColors.cardBackground,
-          border: Border(
-            bottom: BorderSide(color: AppColors.tabBarBorder, width: 0.5),
-          ),
-          trailing: GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
-            child: const Icon(
-              CupertinoIcons.xmark_circle_fill,
-              color: AppColors.textLight,
-              size: 24,
-            ),
-          ),
-        ),
-        SliverFillRemaining(
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 56, color: AppColors.textLight),
-                const SizedBox(height: 16),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
+_ActivityVisual _activityVisual(String type) {
+  switch (type) {
+    case DashboardActivityItem.restaurantType:
+      return const _ActivityVisual(
+        icon: CupertinoIcons.building_2_fill,
+        color: Color(0xFF34C759),
+      );
+    case DashboardActivityItem.restaurantApprovalType:
+      return const _ActivityVisual(
+        icon: CupertinoIcons.checkmark_seal_fill,
+        color: Color(0xFFFF9500),
+      );
+    case DashboardActivityItem.reportType:
+      return const _ActivityVisual(
+        icon: CupertinoIcons.flag_fill,
+        color: Color(0xFFFF3B30),
+      );
+    case DashboardActivityItem.userType:
+      return const _ActivityVisual(
+        icon: CupertinoIcons.person_badge_plus_fill,
+        color: Color(0xFF007AFF),
+      );
+    case DashboardActivityItem.commentType:
+      return const _ActivityVisual(
+        icon: CupertinoIcons.chat_bubble_2_fill,
+        color: Color(0xFFAF52DE),
+      );
+    case DashboardActivityItem.postType:
+    default:
+      return const _ActivityVisual(
+        icon: CupertinoIcons.doc_text_fill,
+        color: Color(0xFF5856D6),
+      );
   }
+}
+
+String _formatTimeAgo(DateTime? createdAt) {
+  if (createdAt == null) return 'Unknown';
+
+  final diff = DateTime.now().difference(createdAt);
+  if (diff.inDays >= 365) return '${diff.inDays ~/ 365}y ago';
+  if (diff.inDays >= 30) return '${diff.inDays ~/ 30}mo ago';
+  if (diff.inDays > 0) return '${diff.inDays}d ago';
+  if (diff.inHours > 0) return '${diff.inHours}h ago';
+  if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+  return 'Just now';
+}
+
+String _formatCount(int value) {
+  final sign = value < 0 ? '-' : '';
+  final digits = value.abs().toString();
+  final buffer = StringBuffer(sign);
+
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) {
+      buffer.write(',');
+    }
+    buffer.write(digits[i]);
+  }
+
+  return buffer.toString();
 }

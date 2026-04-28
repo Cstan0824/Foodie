@@ -13,8 +13,6 @@ import 'package:taste_spot/features/post/screens/post_detail_screen.dart';
 import 'package:taste_spot/features/profile/screens/connections_screen.dart';
 import 'package:taste_spot/features/profile/screens/edit_profile_screen.dart';
 import 'package:taste_spot/features/profile/screens/settings_screen.dart';
-import 'package:taste_spot/features/profile/screens/privacy_screen.dart';
-import 'package:taste_spot/features/profile/screens/help_feedback_screen.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:taste_spot/core/services/account_service.dart';
 import 'package:taste_spot/data/models/restaurant_approval_model.dart';
@@ -278,8 +276,8 @@ class ProfileScreenState extends State<ProfileScreen> {
         'https://wjwfqwvrynyfqbjkqmah.supabase.co/auth/v1/callback?redirect_to=io.supabase.tastespot://profile/$userId';
 
     Share.share(
-      'Check out my food journey on Taste Spot!\n$deepLink',
-      subject: 'Taste Spot Profile',
+      'Check out my food journey on Foodie!\n$deepLink',
+      subject: 'Foodie Profile',
     );
   }
 
@@ -683,11 +681,11 @@ class ProfileScreenState extends State<ProfileScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildMenuAction(
-                  'Privacy',
+                  'Settings',
                   CupertinoIcons.lock_shield,
                   onTap: () => Navigator.of(
                     context,
-                  ).push(CupertinoPageRoute(builder: (_) => PrivacyScreen())),
+                  ).push(CupertinoPageRoute(builder: (_) => SettingScreen())),
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
@@ -1137,7 +1135,7 @@ class ProfileScreenState extends State<ProfileScreen> {
       sliver: SliverToBoxAdapter(
         child: _ProfileMasonryGrid(
           posts: posts,
-          showAuthor: _isCurrentUser && _selectedTab == 0,
+          showAuthor: true,
           onPostTap: (post) async {
             final result = await Navigator.of(context).push(
               CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
