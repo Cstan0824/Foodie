@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
-import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/repositories/blind_box_repository.dart';
 import 'package:taste_spot/features/restaurant/screens/restaurant_detail_screen.dart';
 
@@ -670,8 +670,7 @@ class _BlindBoxSwipeHistoryScreenState
   }
 
   String _formatRelativeTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
+    final difference = AppTime.differenceFromNowGmt8(dateTime);
 
     if (difference.inMinutes < 1) return 'just now';
     if (difference.inMinutes < 60) return '${difference.inMinutes} min ago';
@@ -694,8 +693,9 @@ class _BlindBoxSwipeHistoryScreenState
       'Dec',
     ];
 
-    final month = months[dateTime.month - 1];
-    return '$month ${dateTime.day}, ${dateTime.year}';
+    final gmt8Date = AppTime.toGmt8(dateTime);
+    final month = months[gmt8Date.month - 1];
+    return '$month ${gmt8Date.day}, ${gmt8Date.year}';
   }
 
   Widget _buildSkeletonList() {

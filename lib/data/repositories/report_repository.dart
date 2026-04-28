@@ -1,4 +1,5 @@
 import 'package:taste_spot/core/services/supabase_service.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/features/admin/screens/admin_models.dart';
 
 class ReportRepository {
@@ -10,8 +11,9 @@ class ReportRepository {
 
   String _formatTimeAgo(String isoDate) {
     try {
-      final date = DateTime.parse(isoDate);
-      final diff = DateTime.now().difference(date);
+      final date = AppTime.parseUtc(isoDate);
+      if (date == null) return 'Recently';
+      final diff = AppTime.differenceFromNowGmt8(date);
       if (diff.inDays > 0) return '${diff.inDays}d ago';
       if (diff.inHours > 0) return '${diff.inHours}h ago';
       if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
@@ -67,7 +69,7 @@ class ReportRepository {
       final rUser = r['User'] as Map<String, dynamic>?;
       final pUser = post['User'] as Map<String, dynamic>?;
       final rest = post['Restaurant'] as Map<String, dynamic>?;
-      
+
       final authorName = pUser?['name']?.toString() ?? 'Unknown';
       final reporterName = rUser?['name']?.toString() ?? 'Someone';
 
@@ -77,12 +79,15 @@ class ReportRepository {
         status: _statusFromDbValue(r['status']),
         postTitle: post['title']?.toString() ?? 'Untitled Post',
         authorHandle: authorName,
-        authorInitial: authorName.isNotEmpty ? authorName[0].toUpperCase() : '?',
+        authorInitial: authorName.isNotEmpty
+            ? authorName[0].toUpperCase()
+            : '?',
         reportReason: r['reason']?.toString() ?? 'Reported',
         reportDetails: r['details']?.toString(),
         reportedBy: reporterName,
         timeAgo: _formatTimeAgo(r['created_At']?.toString() ?? ''),
-        restaurantName: rest?['restaurant_name']?.toString() ?? 'Unknown Restaurant',
+        restaurantName:
+            rest?['restaurant_name']?.toString() ?? 'Unknown Restaurant',
         postSnippet: post['caption']?.toString() ?? '',
         postImages: _parsePostImages(post),
       );
@@ -132,19 +137,23 @@ class ReportRepository {
       final commentAuthor = cUser?['name']?.toString() ?? 'Unknown';
       final postAuthor = pUser?['name']?.toString() ?? 'Unknown';
       final reporterName = rUser?['name']?.toString() ?? 'Someone';
-      
+
       final rest = post?['Restaurant'] as Map<String, dynamic>?;
-      
+
       return ReportedComment(
         id: r['id']?.toString() ?? '',
         commentId: comment['comment_Id']?.toString() ?? '',
         status: _statusFromDbValue(r['status']),
         commentText: comment['content']?.toString() ?? '',
         commentAuthor: commentAuthor,
-        commentAuthorInitial: commentAuthor.isNotEmpty ? commentAuthor[0].toUpperCase() : '?',
+        commentAuthorInitial: commentAuthor.isNotEmpty
+            ? commentAuthor[0].toUpperCase()
+            : '?',
         postTitle: post?['title']?.toString() ?? 'Untitled',
         postAuthor: postAuthor,
-        postAuthorInitial: postAuthor.isNotEmpty ? postAuthor[0].toUpperCase() : '?',
+        postAuthorInitial: postAuthor.isNotEmpty
+            ? postAuthor[0].toUpperCase()
+            : '?',
         postSnippet: post?['caption']?.toString() ?? '',
         restaurantName: rest?['restaurant_name']?.toString() ?? '',
         postImages: _parsePostImages(post),

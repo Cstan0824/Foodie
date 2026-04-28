@@ -20,12 +20,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _usernameController;
   late TextEditingController _emailController;
   late TextEditingController _bioController;
-  
+
   final FocusNode _nameFocus = FocusNode();
   final FocusNode _bioFocus = FocusNode();
   String? _nameError;
   String? _bioError;
-  
+
   String? _profileImageUrl;
   bool _isSaving = false;
   bool _isImageUploading = false;
@@ -34,12 +34,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.profile.name);
-    _usernameController = TextEditingController(text: widget.profile.username ?? '');
-    
+    _usernameController = TextEditingController(
+      text: widget.profile.username ?? '',
+    );
+
     // Fetch email from Supabase Auth
     final currentUser = Supabase.instance.client.auth.currentUser;
     _emailController = TextEditingController(text: currentUser?.email ?? '');
-    
+
     _bioController = TextEditingController(text: widget.profile.bio ?? '');
     _loadProfileImage();
 
@@ -75,15 +77,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     try {
       final bytes = await image.readAsBytes();
       final repository = ProfileRepository(Supabase.instance.client);
-      
-      final imageUrl = await repository.uploadProfileImage(widget.profile.userId, bytes);
+
+      final imageUrl = await repository.uploadProfileImage(
+        widget.profile.userId,
+        bytes,
+      );
 
       if (imageUrl != null && mounted) {
         setState(() {
           _profileImageUrl = imageUrl;
           _isImageUploading = false;
         });
-        
+
         // Success: Navigate back to profile page as requested
         Navigator.pop(context);
       } else {
@@ -103,7 +108,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Error'),
         content: Text(message),
-        actions: [CupertinoDialogAction(child: const Text('OK'), onPressed: () => Navigator.pop(ctx))],
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(ctx),
+          ),
+        ],
       ),
     );
   }
@@ -122,7 +132,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _saveProfile() async {
     final name = _nameController.text.trim();
     final bio = _bioController.text.trim();
-    
+
     bool hasError = false;
 
     if (name.isEmpty) {
@@ -136,9 +146,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!hasError) _bioFocus.requestFocus();
       hasError = true;
     }
-    
+
     if (hasError) return;
-    
+
     setState(() => _isSaving = true);
     try {
       final repository = ProfileRepository(Supabase.instance.client);
@@ -177,28 +187,43 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         border: null,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _isSaving || _isImageUploading ? null : () => Navigator.pop(context),
-          child: const Text('Cancel', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500)),
+          onPressed: _isSaving || _isImageUploading
+              ? null
+              : () => Navigator.pop(context),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ),
-        middle: const Text('Edit Profile', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+        middle: const Text(
+          'Edit Profile',
+          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5),
+        ),
       ),
-      child: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildAvatarSection(),
-              const SizedBox(height: 12),
-              _buildSectionTitle('ACCOUNT INFORMATION'),
-              _buildFormSection(),
-              const SizedBox(height: 24),
-              _buildSectionTitle('ABOUT ME'),
-              _buildBioSection(),
-              const SizedBox(height: 40),
-              _buildBottomAction(),
-              const SizedBox(height: 40),
-            ],
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildAvatarSection(),
+                const SizedBox(height: 12),
+                _buildSectionTitle('ACCOUNT INFORMATION'),
+                _buildFormSection(),
+                const SizedBox(height: 24),
+                _buildSectionTitle('ABOUT ME'),
+                _buildBioSection(),
+                const SizedBox(height: 40),
+                _buildBottomAction(),
+                const SizedBox(height: 40),
+              ],
+            ),
           ),
         ),
       ),
@@ -210,7 +235,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Text(
         title,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textLight, letterSpacing: 0.8),
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textLight,
+          letterSpacing: 0.8,
+        ),
       ),
     );
   }
@@ -230,23 +260,38 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.primary.withAlpha(40), width: 1.5),
+                      border: Border.all(
+                        color: AppColors.primary.withAlpha(40),
+                        width: 1.5,
+                      ),
                     ),
                     child: Container(
                       width: 100,
                       height: 100,
-                      decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.surface),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.surface,
+                      ),
                       child: ClipOval(
                         child: _isImageUploading
                             ? const Center(child: CupertinoActivityIndicator())
-                            : (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
-                                ? Image.network(
-                                    _profileImageUrl!,
-                                    fit: BoxFit.cover,
-                                    key: ValueKey(_profileImageUrl), 
-                                    errorBuilder: (_, _, _) => const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
-                                  )
-                                : const Icon(CupertinoIcons.person_fill, size: 50, color: AppColors.textLight),
+                            : (_profileImageUrl != null &&
+                                  _profileImageUrl!.isNotEmpty)
+                            ? Image.network(
+                                _profileImageUrl!,
+                                fit: BoxFit.cover,
+                                key: ValueKey(_profileImageUrl),
+                                errorBuilder: (_, _, _) => const Icon(
+                                  CupertinoIcons.person_fill,
+                                  size: 50,
+                                  color: AppColors.textLight,
+                                ),
+                              )
+                            : const Icon(
+                                CupertinoIcons.person_fill,
+                                size: 50,
+                                color: AppColors.textLight,
+                              ),
                       ),
                     ),
                   ),
@@ -259,12 +304,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         decoration: BoxDecoration(
                           color: AppColors.primary,
                           shape: BoxShape.circle,
-                          border: Border.all(color: CupertinoColors.white, width: 3),
+                          border: Border.all(
+                            color: CupertinoColors.white,
+                            width: 3,
+                          ),
                           boxShadow: [
-                            BoxShadow(color: AppColors.primary.withAlpha(60), blurRadius: 8, offset: const Offset(0, 2)),
+                            BoxShadow(
+                              color: AppColors.primary.withAlpha(60),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
                           ],
                         ),
-                        child: const Icon(CupertinoIcons.camera_fill, color: CupertinoColors.white, size: 16),
+                        child: const Icon(
+                          CupertinoIcons.camera_fill,
+                          color: CupertinoColors.white,
+                          size: 16,
+                        ),
                       ),
                     ),
                 ],
@@ -275,8 +331,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               padding: EdgeInsets.zero,
               onPressed: _isImageUploading ? null : _pickAndUploadImage,
               child: Text(
-                _isImageUploading ? 'Uploading...' : 'Change Photo', 
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary)
+                _isImageUploading ? 'Uploading...' : 'Change Photo',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
               ),
             ),
           ],
@@ -335,9 +395,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: hasError 
-                    ? CupertinoColors.destructiveRed 
-                    : (isFocused ? AppColors.primary : AppColors.divider.withAlpha(0)),
+                color: hasError
+                    ? CupertinoColors.destructiveRed
+                    : (isFocused
+                          ? AppColors.primary
+                          : AppColors.divider.withAlpha(0)),
                 width: hasError || isFocused ? 1.5 : 1,
               ),
             ),
@@ -348,11 +410,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               maxLines: 5,
               padding: EdgeInsets.zero,
               decoration: null,
-              style: const TextStyle(fontSize: 15, color: AppColors.textPrimary, height: 1.5),
-              placeholderStyle: const TextStyle(fontSize: 15, color: AppColors.textLight),
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppColors.textPrimary,
+                height: 1.5,
+              ),
+              placeholderStyle: const TextStyle(
+                fontSize: 15,
+                color: AppColors.textLight,
+              ),
               onChanged: (val) {
                 if (_bioError != null) setState(() => _bioError = null);
-                setState(() {}); 
+                setState(() {});
               },
             ),
           ),
@@ -365,7 +434,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   padding: const EdgeInsets.only(left: 4),
                   child: Text(
                     _bioError!,
-                    style: const TextStyle(color: CupertinoColors.destructiveRed, fontSize: 12, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      color: CupertinoColors.destructiveRed,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 )
               else
@@ -379,7 +452,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: count > 100 ? CupertinoColors.destructiveRed : AppColors.textLight,
+                      color: count > 100
+                          ? CupertinoColors.destructiveRed
+                          : AppColors.textLight,
                     ),
                   );
                 },
@@ -402,7 +477,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           height: 54,
           decoration: BoxDecoration(
             color: AppColors.primary,
-            borderRadius: BorderRadius.circular(6), 
+            borderRadius: BorderRadius.circular(6),
             boxShadow: [
               BoxShadow(
                 color: AppColors.primary.withAlpha(60),
@@ -458,19 +533,30 @@ class _ModernEditField extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
         ),
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           height: 54,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
-            color: readOnly ? AppColors.surface.withAlpha(120) : AppColors.surface,
+            color: readOnly
+                ? AppColors.surface.withAlpha(120)
+                : AppColors.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: hasError
                   ? CupertinoColors.destructiveRed
-                  : (hasFocus ? AppColors.primary : AppColors.divider.withAlpha(0)),
+                  : (hasFocus
+                        ? AppColors.primary
+                        : AppColors.divider.withAlpha(0)),
               width: hasError || hasFocus ? 1.5 : 1,
             ),
           ),
@@ -495,7 +581,11 @@ class _ModernEditField extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6, left: 4),
             child: Text(
               errorText!,
-              style: const TextStyle(color: CupertinoColors.destructiveRed, fontSize: 12, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                color: CupertinoColors.destructiveRed,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
       ],

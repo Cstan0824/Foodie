@@ -1,3 +1,5 @@
+import 'package:taste_spot/core/utils/app_time.dart';
+
 import 'profile_model.dart';
 
 class Collection {
@@ -81,7 +83,7 @@ class Collection {
       collectionType: (json['collection_type'] as String?) ?? 'POST',
       isPublic: json['is_public'] as bool? ?? false,
       isDefault: json['is_default'] as bool? ?? false,
-      createdAt: DateTime.parse(createdAtRaw),
+      createdAt: AppTime.parseUtc(createdAtRaw) ?? AppTime.nowUtc(),
       owner: owner,
       latestItemImages: images,
     );

@@ -1,3 +1,5 @@
+import 'package:taste_spot/core/utils/app_time.dart';
+
 class PostModel {
   final String id;
   final String userId;
@@ -153,7 +155,7 @@ class PostModel {
       restaurantName: restaurantName,
       restaurantLatitude: restaurantLatitude,
       restaurantLongitude: restaurantLongitude,
-      createdAt: createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
+      createdAt: AppTime.parseUtc(createdAtRaw),
       hashtags: hashtags,
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/repositories/dashboard_repository.dart';
 import 'package:taste_spot/features/admin/post_management/screens/post_management_screen.dart';
@@ -1211,7 +1212,7 @@ _ActivityVisual _activityVisual(String type) {
 String _formatTimeAgo(DateTime? createdAt) {
   if (createdAt == null) return 'Unknown';
 
-  final diff = DateTime.now().difference(createdAt);
+  final diff = AppTime.differenceFromNowGmt8(createdAt);
   if (diff.inDays >= 365) return '${diff.inDays ~/ 365}y ago';
   if (diff.inDays >= 30) return '${diff.inDays ~/ 30}mo ago';
   if (diff.inDays > 0) return '${diff.inDays}d ago';

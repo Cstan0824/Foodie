@@ -1,3 +1,5 @@
+import 'package:taste_spot/core/utils/app_time.dart';
+
 class RestaurantApprovalModel {
   final String approvalId;
   final String? currRestaurantId;
@@ -13,6 +15,7 @@ class RestaurantApprovalModel {
   final double? rating;
   final String? description;
   final String? priceRange;
+
   /// this is in the restaurant approval table, not the main restaurant table, so it can be null
   final String? imageUrl;
 
@@ -45,9 +48,7 @@ class RestaurantApprovalModel {
       mapsUrl: json['maps_url'] as String?,
       source: json['source'] as String?,
       status: json['status'] as int? ?? 0,
-      detectedAt: json['detectedAt'] != null 
-          ? DateTime.tryParse(json['detectedAt'] as String) 
-          : null,
+      detectedAt: AppTime.parseUtc(json['detectedAt']),
       mainCuisineId: json['main_cuisine_id'] as String?,
       rating: (json['rating'] as num?)?.toDouble(),
       description: json['description'] as String?,

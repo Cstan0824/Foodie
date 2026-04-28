@@ -1,3 +1,5 @@
+import 'package:taste_spot/core/utils/app_time.dart';
+
 class SwipeHistoryModel {
   final String userId;
   final String restaurantId;
@@ -13,7 +15,7 @@ class SwipeHistoryModel {
     return SwipeHistoryModel(
       userId: json['user_id'] as String,
       restaurantId: json['restaurant_id'] as String,
-      swipedAt: DateTime.parse(json['swiped_at'] as String),
+      swipedAt: AppTime.parseUtc(json['swiped_at']) ?? AppTime.nowUtc(),
     );
   }
 

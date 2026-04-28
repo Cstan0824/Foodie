@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 
@@ -581,10 +582,7 @@ class SearchRepository {
 
             final likeCount = (map['likeCount'] as num?)?.toInt() ?? 0;
             final saveCount = (map['saveCount'] as num?)?.toInt() ?? 0;
-            final createdAtRaw = map['created_At']?.toString();
-            final createdAt = createdAtRaw == null
-                ? null
-                : DateTime.tryParse(createdAtRaw);
+            final createdAt = AppTime.parseUtc(map['created_At']);
 
             return (
               suggestion: SearchSuggestion(

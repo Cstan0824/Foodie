@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/repositories/notification_repository.dart';
@@ -28,7 +29,7 @@ class NotifItem {
 
   factory NotifItem.fromJson(Map<String, dynamic> j) {
     final sender = j['sender'] as Map<String, dynamic>?;
-    
+
     // Parse avatar URL using the project standard: join on UserImage
     String? avatar;
     if (sender != null) {
@@ -46,7 +47,7 @@ class NotifItem {
       id: j['id'] as String,
       content: (j['content'] as String?) ?? '',
       redirectTo: j['redirect_To'] as String?,
-      createdAt: DateTime.parse(j['created_At'] as String),
+      createdAt: AppTime.parseUtc(j['created_At']) ?? AppTime.nowUtc(),
       avatarUrl: avatar,
       isRead: (j['isRead'] as bool?) ?? false,
     );
@@ -69,7 +70,9 @@ class NotificationScreen extends StatefulWidget {
 }
 
 class _NotificationScreenState extends State<NotificationScreen> {
-  final NotificationRepository _notifRepo = NotificationRepository(Supabase.instance.client);
+  final NotificationRepository _notifRepo = NotificationRepository(
+    Supabase.instance.client,
+  );
   List<NotifItem> _notifications = [];
   bool _isLoading = true;
   String? _error;
@@ -100,7 +103,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       if (response.isNotEmpty) {
         print('DEBUG: First notification JSON: ${response.first}');
       }
-      
+
       final items = response.map((e) => NotifItem.fromJson(e)).toList();
 
       if (mounted) {
@@ -148,13 +151,15 @@ class _NotificationScreenState extends State<NotificationScreen> {
       if (type == 'post') {
         final post = await PostRepository.instance.fetchPostById(id);
         if (post != null && mounted) {
-          Navigator.of(context).push(CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)));
+          Navigator.of(context).push(
+            CupertinoPageRoute(builder: (_) => PostDetailScreen(post: post)),
+          );
         }
       } else if (type == 'collection') {
         final collRepo = CollectionRepository(Supabase.instance.client);
         final currentUserId = Supabase.instance.client.auth.currentUser?.id;
         if (currentUserId == null) return;
-        
+
         // Fetch collections to find the matching one
         final collections = await collRepo.getUserCollections(currentUserId);
         Collection? collection;
@@ -170,7 +175,12 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
         final Collection? finalCollection = collection;
         if (finalCollection != null && mounted) {
-          Navigator.of(context).push(CupertinoPageRoute(builder: (_) => CollectionDetailScreen(collection: finalCollection)));
+          Navigator.of(context).push(
+            CupertinoPageRoute(
+              builder: (_) =>
+                  CollectionDetailScreen(collection: finalCollection),
+            ),
+          );
         }
       }
     } catch (e) {
@@ -180,10 +190,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Map<String, List<NotifItem>> _groupNotifications(List<NotifItem> items) {
     final groups = <String, List<NotifItem>>{};
-    final now = DateTime.now();
+    final now = AppTime.nowGmt8();
 
     for (final item in items) {
-      final diff = now.difference(item.createdAt).inDays;
+      final diff = now.difference(AppTime.toGmt8(item.createdAt)).inDays;
       String group;
       if (diff == 0) {
         group = 'Today';
@@ -211,16 +221,19 @@ class _NotificationScreenState extends State<NotificationScreen> {
         border: null,
         middle: const Text(
           'Notifications',
-          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.8, fontSize: 18),
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.8,
+            fontSize: 18,
+          ),
         ),
         leading: CupertinoNavigationBarBackButton(
           color: AppColors.textPrimary,
-          onPressed: () => Navigator.of(context).pop(true), // Return true to trigger refresh
+          onPressed: () =>
+              Navigator.of(context).pop(true), // Return true to trigger refresh
         ),
       ),
-      child: SafeArea(
-        child: _buildBody(),
-      ),
+      child: SafeArea(child: _buildBody()),
     );
   }
 
@@ -232,10 +245,20 @@ class _NotificationScreenState extends State<NotificationScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(CupertinoIcons.wifi_exclamationmark, size: 40, color: AppColors.textLight),
+            const Icon(
+              CupertinoIcons.wifi_exclamationmark,
+              size: 40,
+              color: AppColors.textLight,
+            ),
             const SizedBox(height: 12),
-            const Text('Something went wrong', style: TextStyle(fontWeight: FontWeight.w600)),
-            CupertinoButton(onPressed: _loadNotifications, child: const Text('Retry')),
+            const Text(
+              'Something went wrong',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            CupertinoButton(
+              onPressed: _loadNotifications,
+              child: const Text('Retry'),
+            ),
           ],
         ),
       );
@@ -246,11 +269,18 @@ class _NotificationScreenState extends State<NotificationScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(CupertinoIcons.bell_slash, size: 48, color: AppColors.surface),
+            const Icon(
+              CupertinoIcons.bell_slash,
+              size: 48,
+              color: AppColors.surface,
+            ),
             const SizedBox(height: 16),
             const Text(
               'No notifications yet',
-              style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -258,35 +288,44 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
 
     final groups = _groupNotifications(_notifications);
-    final groupTitles = ['Today', 'Yesterday', 'This Week', 'This Month', 'Earlier'];
+    final groupTitles = [
+      'Today',
+      'Yesterday',
+      'This Week',
+      'This Month',
+      'Earlier',
+    ];
 
     return CustomScrollView(
-      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
       slivers: [
         CupertinoSliverRefreshControl(onRefresh: _loadNotifications),
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, i) {
-              final title = groupTitles[i];
-              final items = groups[title];
-              if (items == null || items.isEmpty) return const SizedBox.shrink();
+          delegate: SliverChildBuilderDelegate((context, i) {
+            final title = groupTitles[i];
+            final items = groups[title];
+            if (items == null || items.isEmpty) return const SizedBox.shrink();
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-                    child: Text(
-                      title,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textSecondary,
                     ),
                   ),
-                  ...items.map((item) => _buildNotifTile(item)),
-                ],
-              );
-            },
-            childCount: groupTitles.length,
-          ),
+                ),
+                ...items.map((item) => _buildNotifTile(item)),
+              ],
+            );
+          }, childCount: groupTitles.length),
         ),
       ],
     );
@@ -299,7 +338,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: notif.isRead ? CupertinoColors.white : AppColors.primary.withAlpha(5),
+          color: notif.isRead
+              ? CupertinoColors.white
+              : AppColors.primary.withAlpha(5),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -312,11 +353,20 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 children: [
                   RichText(
                     text: TextSpan(
-                      style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.4),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                        height: 1.4,
+                      ),
                       children: [
                         TextSpan(
                           text: notif.content,
-                          style: TextStyle(fontWeight: notif.isRead ? FontWeight.w500 : FontWeight.w700, letterSpacing: -0.2),
+                          style: TextStyle(
+                            fontWeight: notif.isRead
+                                ? FontWeight.w500
+                                : FontWeight.w700,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                       ],
                     ),
@@ -324,7 +374,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   const SizedBox(height: 4),
                   Text(
                     _timeAgo(notif.createdAt),
-                    style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textLight,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -334,7 +388,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 width: 7,
                 height: 7,
                 margin: const EdgeInsets.only(top: 6, left: 8),
-                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
               ),
           ],
         ),
@@ -368,15 +425,26 @@ class _NotificationScreenState extends State<NotificationScreen> {
         Container(
           width: 52,
           height: 52,
-          decoration: const BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            shape: BoxShape.circle,
+          ),
           child: ClipOval(
             child: (notif.avatarUrl != null && notif.avatarUrl!.isNotEmpty)
                 ? Image.network(
                     notif.avatarUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => const Icon(CupertinoIcons.person_fill, color: AppColors.textLight, size: 28),
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      CupertinoIcons.person_fill,
+                      color: AppColors.textLight,
+                      size: 28,
+                    ),
                   )
-                : const Icon(CupertinoIcons.person_fill, color: AppColors.textLight, size: 28),
+                : const Icon(
+                    CupertinoIcons.person_fill,
+                    color: AppColors.textLight,
+                    size: 28,
+                  ),
           ),
         ),
         Positioned(
@@ -397,12 +465,12 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   String _timeAgo(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
+    final diff = AppTime.differenceFromNowGmt8(dt);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${dt.day}/${dt.month}';
+    return AppTime.formatNumericDayMonth(dt);
   }
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Colors;
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/core/utils/hashtag_utils.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/comment_model.dart';
@@ -59,7 +60,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   /// Returns a human-readable relative time string from a [DateTime].
   String _timeAgo(DateTime? dt) {
     if (dt == null) return '';
-    final diff = DateTime.now().toUtc().difference(dt.toUtc());
+    final diff = AppTime.differenceFromNowGmt8(dt);
     if (diff.inSeconds < 60) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
@@ -220,14 +221,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       final currentUserId = SupabaseService.currentUserId;
       if (currentUserId == null) return;
 
-      // Get all collections that contain this post
+      // Get only the current user's post collections that contain this post.
+      // Do not check all collections globally, otherwise a post saved by any
+      // other user will incorrectly appear as saved for the current user.
       final response = await Supabase.instance.client
           .from('collections_item')
-          .select('collection_Id')
-          .eq('post_id', _currentPost.id);
+          .select('collection_Id, collections!inner(user_Id, collection_type)')
+          .eq('post_id', _currentPost.id)
+          .eq('collections.user_Id', currentUserId)
+          .eq('collections.collection_type', 'POST');
 
       final savedInIds = (response as List)
-          .map((item) => item['collection_Id'] as String)
+          .map((item) => item['collection_Id']?.toString())
+          .whereType<String>()
           .toSet();
 
       if (mounted) {

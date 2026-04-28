@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:taste_spot/core/services/supabase_service.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 
 class DashboardStats {
   final int totalUsers;
@@ -325,10 +326,10 @@ class DashboardRepository {
 
   DateTime? _toDateTime(dynamic value) {
     if (value is DateTime) {
-      return value;
+      return AppTime.ensureUtc(value);
     }
     if (value is String && value.trim().isNotEmpty) {
-      return DateTime.tryParse(value);
+      return AppTime.parseUtc(value);
     }
     return null;
   }

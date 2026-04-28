@@ -1,118 +1,203 @@
 # Foodie
 
-A **food & beverage community** application built with [Flutter](https://flutter.dev), primarily targeting **iOS** while also supporting Android and other platforms.
+Foodie is a Flutter social food app built around restaurant discovery, post sharing, saved collections, and lightweight admin moderation. The app is designed with a Cupertino-first UI and uses Supabase directly for auth, data, storage, and social interactions.
 
----
+## What’s In The App
 
-## About
-
-Foodie brings food and beverage enthusiasts together in one place. Discover new flavors, share your favorite spots, and connect with a community that shares your passion for great food and drinks.
-
-## Features
-
-- **Community-Driven** — Join a growing community of food and beverage lovers.
-- **User Authentication** — Secure sign-up and login powered by [Supabase](https://supabase.com).
-- **Cross-Platform** — Built with Flutter for iOS, Android, and beyond — with an **iOS-first** design approach.
-- **Environment Configuration** — Managed via `flutter_dotenv` for flexible deployment.
+- Email/password auth, OTP verification, password reset, Google sign-in, and Apple sign-in.
+- A ranked home feed with `Following` and personalized `Discover` tabs.
+- Post creation with multi-image upload, captions, hashtags, restaurant tagging, and pending restaurant approval support.
+- Restaurant search and post search with suggestions, trending queries, and relevance ranking.
+- Collections for posts and restaurants, including sharing and cloning.
+- User profiles with follow/follower relationships, liked posts, archived posts, pending restaurant approvals, and profile image upload.
+- In-app notifications for likes, comments, and collection sharing.
+- A Blind Box recommendation flow for restaurant discovery, plus swipe history.
+- Admin surfaces for dashboard metrics, restaurant approval review, post moderation, and comment moderation.
 
 ## Tech Stack
 
-| Layer            | Technology                |
-| ---------------- | ------------------------- |
-| Framework        | Flutter (Dart ^3.10.7)    |
-| Backend / Auth   | Supabase                  |
-| Primary Platform | iOS                       |
-| Architecture     | MVC (Model-View-Controller) |
+| Layer | Implementation |
+| --- | --- |
+| App framework | Flutter |
+| Language | Dart |
+| UI style | Cupertino-first, iOS-leaning design |
+| Backend | Supabase |
+| Auth | Supabase Auth + OAuth |
+| Database | Supabase Postgres |
+| Storage | Supabase Storage |
+| Local persistence | `shared_preferences` |
+| Maps / location signals | `geolocator`, external map URLs |
+| Deep links | `app_links` |
 
-## Project Structure
+## Architecture
 
-This project uses a feature-based layout to keep code organized by responsibility.
+The app uses a feature-first Flutter structure with a repository-based data layer.
 
-```
+```text
 lib/
-├── main.dart               # App entry point (minimal)
-├── app.dart                # CupertinoApp configuration
-├── assets/                 # Icons & images
-├── core/                   # App-wide utilities and theme
-│   └── theme/              # Color and theme definitions (app_colors.dart)
-├── data/                   # Data layer
-│   ├── models/             # Data models (post_model.dart)
-│   ├── mock/               # Mock data used for development
-│   └── repositories/       # Data access / repositories
-├── controllers/            # Business logic controllers
-├── helpers/                # Small utilities (auth helpers, etc.)
-├── views/                  # UI layer (feature folders)
-│   ├── screens/            # Screen implementations (grouped under views/screens)
-│   └── shared/             # Reusable widgets (post_card.dart)
-└── pubspec.yaml
-
-Purpose:
-- `core/`: shared theme and utility functions used across the app.
-- `data/`: models and repositories abstracting backend or mock data.
-- `controllers/`: application logic and state management entry points.
-- `views/`: feature UI code; `shared/` contains reusable widgets.
+├── main.dart
+├── core/
+│   ├── services/          # Supabase/account service accessors
+│   ├── theme/             # AppColors and app-wide styling
+│   ├── utils/             # Shared utilities like hashtags and time handling
+│   └── widgets/           # Reusable Cupertino widgets and skeleton loaders
+├── data/
+│   ├── models/            # Strongly typed app/domain models
+│   └── repositories/      # Supabase-backed data access and ranking logic
+└── features/
+    ├── admin/             # Admin dashboard and moderation flows
+    ├── auth/              # Login, signup, OTP, reset password
+    ├── collection/        # Saved posts/restaurants and shared collections
+    ├── feed/              # Home feed
+    ├── notification/      # Notifications inbox
+    ├── post/              # Create, edit, detail, report
+    ├── profile/           # Profile, edit profile, followers/following
+    ├── restaurant/        # Blind Box, swipe history, restaurant details
+    └── search/            # Explore and search result flows
 ```
 
-## Prerequisites
+## Main User Flows
 
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) (channel stable)
-- Dart SDK ^3.10.7
-- Xcode (for iOS development)
-- CocoaPods (for iOS dependencies)
-- A [Supabase](https://supabase.com) project with valid credentials
+### App shell
 
-## Getting Started
+After login, regular users land in a 5-tab shell:
 
-1. **Clone the repository**
+1. `Home`
+2. `Collection`
+3. `Add Post`
+4. `Blind Box`
+5. `Profile`
 
-   ```bash
-   git clone https://github.com/Cstan0824/taste_spot.git
-   cd taste_spot
-   ```
+Admins are routed to a separate admin experience from the login flow.
 
-2. **Install dependencies**
+### Feed
 
-   ```bash
-   flutter pub get
-   ```
+- `HomeScreen` supports `Following` and `Discover`.
+- Discover ranking is implemented in `lib/data/repositories/feed_repository.dart`.
+- Ranking uses saved preferences, location, engagement, freshness, interaction penalties, and diversity reranking.
 
-3. **Configure environment variables**
+### Search
 
-   Create a `.env` file in the project root with your Supabase credentials:
+- Search suggestions and results are implemented in `lib/data/repositories/search_repository.dart`.
+- Supports restaurant-first queries, hashtag-aware search, trending searches, and multiple sort modes.
 
-   ```env
-   SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_ANON_KEY=your-anon-key
-   ```
+### Posting
 
-4. **Run on iOS (primary target)**
+- Post creation is handled in `lib/features/post/screens/add_post_screen.dart`.
+- Posts require a title, caption, at least one image, and either an approved restaurant or a pending restaurant approval.
 
-   ```bash
-   flutter run -d ios
-   ```
+### Collections
 
-   Or run on any connected device:
+- Collections support saved posts, saved restaurants, public/private metadata, sharing with followers, and cloning.
+- Core logic lives in `lib/data/repositories/collection_repository.dart`.
 
-   ```bash
-   flutter run
-   ```
+### Admin
 
-## Building for Production
+- Dashboard and moderation entry points live in `lib/features/admin/`.
+- Restaurant approvals are managed through `lib/data/repositories/restaurant_approval_repository.dart`.
+- Report handling is managed through `lib/data/repositories/report_repository.dart`.
+
+## Local Development
+
+### Prerequisites
+
+- Flutter SDK
+- Dart SDK compatible with `pubspec.yaml`
+- Xcode for iOS builds
+- CocoaPods for iOS dependency installation
+- A Supabase project
+
+### Install
 
 ```bash
-# iOS
-flutter build ios
+flutter pub get
+```
 
-# Android
+### Environment
+
+Create `.env` in the project root:
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+```
+
+## Supabase Requirements
+
+The app assumes more than just auth keys. Before running end-to-end, make sure your Supabase project has the following pieces configured.
+
+### Database
+
+The repository uses tables and relations referenced throughout `lib/data/repositories/`. SQL snapshots are included in the repo root:
+
+- `schema.sql`
+- `updated_schema.sql`
+- `seed_data.sql`
+- `schema/`
+- `MOCK/`
+
+The code also expects an RPC named `check_email_exists`, used during signup/email validation in `lib/data/repositories/auth_repository.dart`.
+
+### Storage buckets
+
+The current code uploads files into these Supabase Storage buckets:
+
+- `user_images`
+- `post_images`
+- `restaurant_images`
+- `restaurant_approval_image`
+
+### OAuth / deep links
+
+Google sign-in, Apple sign-in, and auth redirects use:
+
+```text
+io.supabase.tastespot://login-callback/
+```
+
+The app also handles custom deep links for profile navigation through the `io.supabase.tastespot` and `tastespot` schemes.
+
+## Running The App
+
+```bash
+flutter run
+```
+
+iOS-first workflow:
+
+```bash
+flutter run -d ios
+```
+
+## Building
+
+```bash
+flutter build ios
 flutter build apk
 ```
 
-## Resources
+## Useful Project Files
 
-- [Flutter Documentation](https://docs.flutter.dev/)
-- [Supabase Flutter SDK](https://supabase.com/docs/reference/dart/introduction)
-- [Dart Language](https://dart.dev/)
+- `lib/main.dart`: app bootstrap, Supabase init, deep links, tab shell.
+- `lib/core/services/supabase_service.dart`: shared Supabase access.
+- `lib/data/repositories/feed_repository.dart`: discover/following/nearby/cuisine feed logic.
+- `lib/data/repositories/search_repository.dart`: search ranking and trending queries.
+- `lib/data/repositories/post_repository.dart`: post CRUD, image upload, archive/block flows.
+- `lib/data/repositories/profile_repository.dart`: profile reads, avatar upload, follower/following logic.
+- `lib/data/repositories/blind_box_repository.dart`: recommendation and swipe history logic.
 
-## License
+## Quality Checks
 
-This project is private and not published to pub.dev.
+Common local checks:
+
+```bash
+dart format lib
+dart analyze
+flutter test
+```
+
+## Notes
+
+- The UI is heavily Cupertino-oriented even though a small amount of Material API usage appears in isolated widgets/icons.
+- Time-based “ago” formatting is normalized through `lib/core/utils/app_time.dart`.
+- This is a private project and is not intended for publishing to `pub.dev`.
