@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/data/models/restaurant_model.dart';
 import 'package:taste_spot/data/models/swipe_history_model.dart';
 
@@ -192,7 +193,7 @@ class BlindBoxRepository {
       // Priority 3: Newness (Smallest factor)
       final createdAtStr = row['created_At'] as String?;
       if (createdAtStr != null) {
-        final createdAt = DateTime.tryParse(createdAtStr);
+        final createdAt = AppTime.parseUtc(createdAtStr);
         if (createdAt != null) {
           final ageInDays = now.difference(createdAt).inDays;
           if (ageInDays <= 7) {
@@ -397,28 +398,7 @@ class BlindBoxRepository {
   }
 
   DateTime? _parseSwipeTimestamp(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    final parsed = DateTime.tryParse(raw);
-    if (parsed == null) return null;
-
-    final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(raw);
-
-    if (hasTimezone) {
-      return parsed.isUtc ? parsed.toLocal() : parsed;
-    }
-
-    final utc = DateTime.utc(
-      parsed.year,
-      parsed.month,
-      parsed.day,
-      parsed.hour,
-      parsed.minute,
-      parsed.second,
-      parsed.millisecond,
-      parsed.microsecond,
-    );
-
-    return utc.toLocal();
+    return AppTime.parseUtc(raw);
   }
 
   // ---------------------------------------------------------------------------

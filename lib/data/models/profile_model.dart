@@ -1,3 +1,5 @@
+import 'package:taste_spot/core/utils/app_time.dart';
+
 class Profile {
   final String userId;
   final String name;
@@ -32,9 +34,10 @@ class Profile {
         imageUrl = userImages['image_url'] as String?;
       }
     }
-    
+
     // Default avatar if none exists
-    imageUrl ??= 'https://ctaxmblonofmfsyvlbsh.supabase.co/storage/v1/object/public/user_images/avatars/default_avatar.png';
+    imageUrl ??=
+        'https://ctaxmblonofmfsyvlbsh.supabase.co/storage/v1/object/public/user_images/avatars/default_avatar.png';
 
     return Profile(
       userId: (json['user_Id'] ?? json['user_id']) as String,
@@ -44,7 +47,7 @@ class Profile {
           : name.replaceAll(' ', '').toLowerCase(),
       bio: json['bio'] as String?,
       role: json['role'] as String? ?? 'user',
-      createdAt: createdAtRaw != null ? DateTime.parse(createdAtRaw) : DateTime.now(),
+      createdAt: AppTime.parseUtc(createdAtRaw) ?? AppTime.nowUtc(),
       imageUrl: imageUrl,
     );
   }

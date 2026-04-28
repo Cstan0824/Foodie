@@ -8,7 +8,7 @@ The module provides a complete lifecycle for users, from onboarding (sign up/log
 ---
 
 ## 1. Login Page
-The gateway to the Taste Spot experience, focusing on security and ease of access.
+The gateway to the Foodie experience, focusing on security and ease of access.
 
 - **Involved Pages:** `LoginScreen`, `ForgotPasswordScreen`, `VerifyOTPScreen`.
 - **Techniques Used:**

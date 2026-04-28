@@ -1,3 +1,4 @@
+import 'package:taste_spot/core/utils/app_time.dart';
 
 class RestaurantModel {
   final String restaurantId;
@@ -55,9 +56,7 @@ class RestaurantModel {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       mapsUrl: json['maps_url'] as String?,
-      createdAt: json['created_At'] != null
-          ? DateTime.tryParse(json['created_At'] as String)
-          : null,
+      createdAt: AppTime.parseUtc(json['created_At']),
       source: json['source'] as String?,
       infoUrl: json['info_url'] as String?,
       isDisabled: json['isDisabled'] as bool? ?? false,

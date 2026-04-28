@@ -1,3 +1,5 @@
+import 'package:taste_spot/core/utils/app_time.dart';
+
 class CollectionItemModel {
   final String itemId;
   final String collectionId;
@@ -19,7 +21,7 @@ class CollectionItemModel {
       collectionId: json['collection_Id'] as String,
       restaurantId: json['restaurant_id'] as String?,
       postId: json['post_id'] as String?,
-      savedAt: DateTime.parse(json['savedAt'] as String),
+      savedAt: AppTime.parseUtc(json['savedAt']) ?? AppTime.nowUtc(),
     );
   }
 

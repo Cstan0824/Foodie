@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:taste_spot/core/services/supabase_service.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
 
@@ -12,6 +13,7 @@ import 'package:taste_spot/data/repositories/repository_support.dart';
 class FeedRepository {
   FeedRepository._();
   static final FeedRepository instance = FeedRepository._();
+  static const int _discoverCandidatePoolSize = 500;
 
   // ---------------------------------------------------------------------------
   // 1. Discover Feed (Ranked)
@@ -26,8 +28,8 @@ class FeedRepository {
     int offset = 0,
   }) async {
     final normalizedUserId = userId?.trim();
-    // Fetch a larger pool to allow meaningful ranking and diversity reranking.
-    final poolSize = limit * 4;
+    // Fetch a large candidate pool, then paginate after ranking and diversity.
+    final poolSize = max(limit, _discoverCandidatePoolSize);
 
     final response = await SupabaseService.client
         .from('Post')
@@ -36,7 +38,7 @@ class FeedRepository {
         .eq('isBlocked', false)
         .eq('isPending', false)
         .order('created_At', ascending: false)
-        .range(offset, offset + poolSize - 1);
+        .range(0, poolSize - 1);
 
     final rows = (response as List<dynamic>)
         .whereType<Map<String, dynamic>>()
@@ -74,9 +76,10 @@ class FeedRepository {
             .toList()
           ..sort((a, b) => b.score.compareTo(a.score));
 
-    final diversifiedRows = _diversifyRankedRows(rankedRows, limit: limit);
+    final diversifiedRows = _diversifyRankedRows(rankedRows);
+    final pagedRows = diversifiedRows.skip(offset).take(limit).toList();
 
-    final posts = diversifiedRows
+    final posts = pagedRows
         .map((ranked) => PostModel.fromJson(ranked.row))
         .toList();
 
@@ -504,10 +507,7 @@ class FeedRepository {
 
   /// Applies a simple diversity pass so the top feed does not become too
   /// repetitive when a user has strong preferences.
-  List<_RankedPostRow> _diversifyRankedRows(
-    List<_RankedPostRow> rankedRows, {
-    required int limit,
-  }) {
+  List<_RankedPostRow> _diversifyRankedRows(List<_RankedPostRow> rankedRows) {
     final selected = <_RankedPostRow>[];
     final deferred = <_RankedPostRow>[];
     final restaurantCounts = <String, int>{};
@@ -526,7 +526,7 @@ class FeedRepository {
 
       final wouldRepeatTooMuch = restaurantCount >= 2 || cuisineCount >= 4;
 
-      if (wouldRepeatTooMuch && selected.length < limit) {
+      if (wouldRepeatTooMuch) {
         deferred.add(ranked);
         continue;
       }
@@ -538,18 +538,13 @@ class FeedRepository {
       if (cuisineId != null) {
         cuisineCounts[cuisineId] = cuisineCount + 1;
       }
-
-      if (selected.length >= limit) break;
     }
 
-    if (selected.length < limit) {
-      for (final ranked in deferred) {
-        selected.add(ranked);
-        if (selected.length >= limit) break;
-      }
+    if (deferred.isNotEmpty) {
+      selected.addAll(deferred);
     }
 
-    return selected.take(limit).toList();
+    return selected;
   }
 
   String? _readRestaurantId(Map<String, dynamic> row) {
@@ -587,9 +582,7 @@ class FeedRepository {
   }
 
   DateTime? _readDateTime(dynamic value) {
-    if (value is DateTime) return value;
-    if (value == null) return null;
-    return DateTime.tryParse(value.toString());
+    return AppTime.parseUtc(value);
   }
 
   double _calculateDistanceKm(

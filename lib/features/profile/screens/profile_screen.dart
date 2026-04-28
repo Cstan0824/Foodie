@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show Colors;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:convert';
 import 'package:taste_spot/core/theme/app_theme.dart';
+import 'package:taste_spot/core/utils/app_time.dart';
 import 'package:taste_spot/core/widgets/skeleton.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/models/profile_model.dart';
@@ -954,7 +955,6 @@ class ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  
   List<Widget> _buildContentSlivers(BuildContext context) {
     if (_showsArchivedDesign) {
       return [_buildArchivedPostsSliver(context)];
@@ -1013,7 +1013,7 @@ class ProfileScreenState extends State<ProfileScreen> {
                     color: AppColors.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 8)
+                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -1146,7 +1146,9 @@ class ProfileScreenState extends State<ProfileScreen> {
                 final myIdx = _myPosts.indexWhere((p) => p.id == result.id);
                 if (myIdx != -1) _myPosts[myIdx] = result;
 
-                final likedIdx = _likedPosts.indexWhere((p) => p.id == result.id);
+                final likedIdx = _likedPosts.indexWhere(
+                  (p) => p.id == result.id,
+                );
                 if (likedIdx != -1) {
                   if (_isCurrentUser && !result.isLiked) {
                     _likedPosts.removeAt(likedIdx);
@@ -1157,7 +1159,9 @@ class ProfileScreenState extends State<ProfileScreen> {
                   _likedPosts.insert(0, result);
                 }
 
-                final archIdx = _archivedPosts.indexWhere((p) => p.id == result.id);
+                final archIdx = _archivedPosts.indexWhere(
+                  (p) => p.id == result.id,
+                );
                 if (archIdx != -1) _archivedPosts[archIdx] = result;
               });
             } else if (result == true) {
@@ -1379,8 +1383,7 @@ class _PendingApprovalCard extends StatelessWidget {
 
   String _timeAgo(DateTime? date) {
     if (date == null) return 'Recently';
-    final now = DateTime.now().toUtc();
-    final diff = now.difference(date.toUtc());
+    final diff = AppTime.differenceFromNowGmt8(date);
     if (diff.inDays > 0) return '${diff.inDays}d ago';
     if (diff.inHours > 0) return '${diff.inHours}h ago';
     if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
@@ -1390,7 +1393,7 @@ class _PendingApprovalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
-    
+
     return Container(
       decoration: BoxDecoration(
         color: CupertinoColors.white,
@@ -1465,7 +1468,11 @@ class _PendingApprovalCard extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(CupertinoIcons.location_solid, size: 12, color: AppColors.textLight),
+                          const Icon(
+                            CupertinoIcons.location_solid,
+                            size: 12,
+                            color: AppColors.textLight,
+                          ),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
@@ -1513,7 +1520,10 @@ class _PendingApprovalCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFFF9500).withAlpha(20),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFFF9500).withAlpha(40), width: 0.5),
+        border: Border.all(
+          color: const Color(0xFFFF9500).withAlpha(40),
+          width: 0.5,
+        ),
       ),
       child: const Text(
         'PENDING',
