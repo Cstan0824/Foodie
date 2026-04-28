@@ -16,6 +16,8 @@ class PostModel {
   final bool isSaved;
   final String? location;
   final String restaurantName;
+  final double? restaurantLatitude;
+  final double? restaurantLongitude;
   final DateTime? createdAt;
   final List<String> hashtags;
 
@@ -37,6 +39,8 @@ class PostModel {
     this.isSaved = false,
     this.location,
     this.restaurantName = '',
+    this.restaurantLatitude,
+    this.restaurantLongitude,
     this.createdAt,
     this.hashtags = const [],
   });
@@ -68,6 +72,8 @@ class PostModel {
       isSaved: isSaved ?? this.isSaved,
       location: location,
       restaurantName: restaurantName,
+      restaurantLatitude: restaurantLatitude,
+      restaurantLongitude: restaurantLongitude,
       createdAt: createdAt,
       hashtags: hashtags ?? this.hashtags,
     );
@@ -76,7 +82,9 @@ class PostModel {
   /// Maps a Supabase `Post` row with joined `User` + `Restaurant`.
   factory PostModel.fromJson(Map<String, dynamic> json) {
     // Check both possible keys for the joined user
-    final user = (json['User'] ?? json['User!Post_user_Id_fkey']) as Map<String, dynamic>?;
+    final user =
+        (json['User'] ?? json['User!Post_user_Id_fkey'])
+            as Map<String, dynamic>?;
     final authorName = (user?['name'] as String?) ?? 'Unknown';
 
     // Parse avatar URL from UserImage join
@@ -91,6 +99,8 @@ class PostModel {
     final restaurant = json['Restaurant'] as Map<String, dynamic>?;
     final restaurantName = (restaurant?['restaurant_name'] as String?) ?? '';
     final restaurantId = restaurant?['restaurant_Id'] as String?;
+    final restaurantLatitude = (restaurant?['latitude'] as num?)?.toDouble();
+    final restaurantLongitude = (restaurant?['longitude'] as num?)?.toDouble();
 
     final createdAtRaw = json['created_At'] as String?;
     final hashtags = <String>[];
@@ -141,8 +151,9 @@ class PostModel {
       isLiked: isLiked,
       isSaved: isSaved,
       restaurantName: restaurantName,
-      createdAt:
-          createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
+      restaurantLatitude: restaurantLatitude,
+      restaurantLongitude: restaurantLongitude,
+      createdAt: createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null,
       hashtags: hashtags,
     );
   }

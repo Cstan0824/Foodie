@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:taste_spot/data/repositories/search_repository.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
@@ -23,15 +24,21 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
   SearchSortMode _sort = SearchSortMode.top;
 
   bool _isLoading = true;
+  bool _isRefreshing = false;
+  bool _hasLoadedInitialResults = false;
   String? _error;
   List<RestaurantSearchResult> _restaurants = const [];
   List<PostSearchResult> _posts = const [];
+  double? _userLatitude;
+  double? _userLongitude;
+  int _activeRequestId = 0;
 
   @override
   void initState() {
     super.initState();
     _query = widget.initialQuery.trim();
     _loadResults();
+    _loadUserLocation();
   }
 
   SearchScope get _scope {
@@ -45,31 +52,43 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
     }
   }
 
-  Future<void> _loadResults() async {
+  Future<void> _loadResults({bool silent = false}) async {
+    final requestId = ++_activeRequestId;
+    final showBlockingLoader = !silent || !_hasLoadedInitialResults;
+
     setState(() {
-      _isLoading = true;
+      _isLoading = showBlockingLoader;
+      _isRefreshing = silent && _hasLoadedInitialResults;
       _error = null;
     });
+
     try {
       final payload = await SearchRepository.instance.search(
         query: _query,
         scope: _scope,
         sortMode: _sort,
+        userLatitude: _userLatitude,
+        userLongitude: _userLongitude,
         restaurantPreviewLimit: 3,
         restaurantLimit: 30,
         postLimit: 60,
       );
-      if (!mounted) return;
+      if (!mounted || requestId != _activeRequestId) return;
+
       setState(() {
         _restaurants = payload.restaurants;
         _posts = payload.posts;
         _isLoading = false;
+        _isRefreshing = false;
+        _hasLoadedInitialResults = true;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestId != _activeRequestId) return;
+
       setState(() {
         _error = e.toString();
         _isLoading = false;
+        _isRefreshing = false;
       });
     }
   }
@@ -92,6 +111,47 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
       });
     }
     _loadResults();
+  }
+
+  Future<void> _loadUserLocation() async {
+    final position = await _getCurrentLocation();
+    if (!mounted || position == null) return;
+
+    final latitudeChanged = _userLatitude != position.latitude;
+    final longitudeChanged = _userLongitude != position.longitude;
+    if (!latitudeChanged && !longitudeChanged) return;
+
+    setState(() {
+      _userLatitude = position.latitude;
+      _userLongitude = position.longitude;
+    });
+
+    await _loadResults(silent: true);
+  }
+
+  Future<Position?> _getCurrentLocation() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return null;
+    }
+
+    try {
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   double _tabUnderlineWidth(String label) {
@@ -192,6 +252,11 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
           ),
           const SizedBox(height: 8),
           _buildControlTabs(),
+          if (_isRefreshing)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: CupertinoActivityIndicator(radius: 8),
+            ),
         ],
       ),
     );
@@ -423,9 +488,8 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
       onTap: () {
         Navigator.of(context).push(
           CupertinoPageRoute(
-            builder: (_) => RestaurantDetailScreen(
-              restaurantId: restaurant.restaurantId,
-            ),
+            builder: (_) =>
+                RestaurantDetailScreen(restaurantId: restaurant.restaurantId),
           ),
         );
       },
@@ -504,8 +568,7 @@ class _SearchResultScreenState extends State<SearchResultScreen> {
                       borderRadius: BorderRadius.circular(99),
                     ),
                     child: Text(
-                      restaurant.mainCuisineId ??
-                          '-',
+                      restaurant.mainCuisineId ?? '-',
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
