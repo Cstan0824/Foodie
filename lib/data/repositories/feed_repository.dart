@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/data/models/post_model.dart';
 import 'package:taste_spot/data/repositories/repository_support.dart';
@@ -18,6 +20,8 @@ class FeedRepository {
   /// Fetches discover feed posts ranked by engagement + freshness, with optional personalization.
   Future<List<PostModel>> fetchDiscoverFeed({
     String? userId,
+    double? userLatitude,
+    double? userLongitude,
     int limit = 20,
     int offset = 0,
   }) async {
@@ -44,8 +48,12 @@ class FeedRepository {
         ? const _FeedPreferenceProfile.empty()
         : await _buildPreferenceProfile(normalizedUserId);
 
-    final postIds = rows.map((r) => r['post_Id']?.toString()).whereType<String>().toList();
-    final interactionProfile = normalizedUserId == null || normalizedUserId.isEmpty || postIds.isEmpty
+    final postIds = rows
+        .map((r) => r['post_Id']?.toString())
+        .whereType<String>()
+        .toList();
+    final interactionProfile =
+        normalizedUserId == null || normalizedUserId.isEmpty || postIds.isEmpty
         ? const _PostInteractionProfile.empty()
         : await _buildPostInteractionProfile(normalizedUserId, postIds);
 
@@ -54,7 +62,13 @@ class FeedRepository {
             .map(
               (row) => _RankedPostRow(
                 row: row,
-                score: _personalizedRowScore(row, preferences, interactionProfile),
+                score: _personalizedRowScore(
+                  row,
+                  preferences,
+                  interactionProfile,
+                  userLatitude: userLatitude,
+                  userLongitude: userLongitude,
+                ),
               ),
             )
             .toList()
@@ -430,8 +444,10 @@ class FeedRepository {
   double _personalizedRowScore(
     Map<String, dynamic> row,
     _FeedPreferenceProfile preferences,
-    _PostInteractionProfile interactionProfile,
-  ) {
+    _PostInteractionProfile interactionProfile, {
+    double? userLatitude,
+    double? userLongitude,
+  }) {
     final restaurantId = _readRestaurantId(row);
     final cuisineId = _readRestaurantCuisineId(row);
 
@@ -450,6 +466,23 @@ class FeedRepository {
     final saves = _readInt(row['saveCount']);
     final engagementScore = (likes + (saves * 3)).clamp(0, 120).toDouble();
 
+    final restaurantLatitude = _readRestaurantLatitude(row);
+    final restaurantLongitude = _readRestaurantLongitude(row);
+    final locationScore =
+        userLatitude != null &&
+            userLongitude != null &&
+            restaurantLatitude != null &&
+            restaurantLongitude != null
+        ? _locationScoreForHome(
+            _calculateDistanceKm(
+              userLatitude,
+              userLongitude,
+              restaurantLatitude,
+              restaurantLongitude,
+            ),
+          )
+        : 0.0;
+
     final createdAt = _readDateTime(row['created_At']);
     final ageHours = createdAt == null
         ? 720.0
@@ -457,10 +490,13 @@ class FeedRepository {
     final freshnessScore = 100.0 / (1.0 + (ageHours / 6.0));
 
     final postId = row['post_Id']?.toString();
-    final interactionPenalty = postId != null ? _interactionPenalty(postId, interactionProfile) : 0.0;
+    final interactionPenalty = postId != null
+        ? _interactionPenalty(postId, interactionProfile)
+        : 0.0;
 
     return restaurantPreferenceScore +
         cuisinePreferenceScore +
+        locationScore +
         engagementScore +
         freshnessScore -
         interactionPenalty;
@@ -528,6 +564,22 @@ class FeedRepository {
     return row['main_cuisine_id']?.toString();
   }
 
+  double? _readRestaurantLatitude(Map<String, dynamic> row) {
+    final restaurant = row['Restaurant'];
+    if (restaurant is Map<String, dynamic>) {
+      return (restaurant['latitude'] as num?)?.toDouble();
+    }
+    return (row['latitude'] as num?)?.toDouble();
+  }
+
+  double? _readRestaurantLongitude(Map<String, dynamic> row) {
+    final restaurant = row['Restaurant'];
+    if (restaurant is Map<String, dynamic>) {
+      return (restaurant['longitude'] as num?)?.toDouble();
+    }
+    return (row['longitude'] as num?)?.toDouble();
+  }
+
   int _readInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
@@ -538,6 +590,37 @@ class FeedRepository {
     if (value is DateTime) return value;
     if (value == null) return null;
     return DateTime.tryParse(value.toString());
+  }
+
+  double _calculateDistanceKm(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const earthRadiusKm = 6371.0;
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLon = _degreesToRadians(lon2 - lon1);
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degreesToRadians(lat1)) *
+            cos(_degreesToRadians(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  double _locationScoreForHome(double distanceKm) {
+    if (distanceKm <= 3) return 80.0;
+    if (distanceKm <= 8) return 50.0;
+    if (distanceKm <= 15) return 30.0;
+    if (distanceKm <= 30) return 10.0;
+    return 0.0;
+  }
+
+  double _degreesToRadians(double degrees) {
+    return degrees * pi / 180.0;
   }
 
   /// Approximate cosine for longitude scaling in bounding-box calculation.
@@ -574,9 +657,9 @@ class _PostInteractionProfile {
   });
 
   const _PostInteractionProfile.empty()
-      : likedPostIds = const {},
-        savedPostIds = const {},
-        commentedPostIds = const {};
+    : likedPostIds = const {},
+      savedPostIds = const {},
+      commentedPostIds = const {};
 }
 
 class _RankedPostRow {

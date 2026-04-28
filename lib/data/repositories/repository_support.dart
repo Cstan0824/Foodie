@@ -8,7 +8,14 @@ const String publicPostSelect = '''
   saveCount,
   created_At,
   User!Post_user_Id_fkey(user_Id, name, UserImage(image_url)),
-  Restaurant(restaurant_Id, restaurant_name),
+  Restaurant(
+    restaurant_Id,
+    restaurant_name,
+    main_cuisine_id,
+    address,
+    latitude,
+    longitude
+  ),
   Post_Image(image_Id, image_url),
   post_hashtag:post_hashtag!post_hashtag_post_fk(
     hashtag:hashtag!post_hashtag_hashtag_fk(name)

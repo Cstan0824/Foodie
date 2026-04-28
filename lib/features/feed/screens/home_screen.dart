@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:taste_spot/core/services/supabase_service.dart';
 import 'package:taste_spot/core/theme/app_theme.dart';
 import 'package:taste_spot/core/widgets/post_card.dart';
@@ -33,14 +34,19 @@ class HomeScreenState extends State<HomeScreen> {
   String? _error;
   int _offset = 0;
   int _unreadNotifCount = 0;
+  double? _userLatitude;
+  double? _userLongitude;
 
-  late final NotificationRepository _notifRepo = NotificationRepository(SupabaseService.client);
+  late final NotificationRepository _notifRepo = NotificationRepository(
+    SupabaseService.client,
+  );
 
   @override
   void initState() {
     super.initState();
     loadPosts();
     _fetchUnreadCount();
+    _loadUserLocation();
   }
 
   Future<void> _fetchUnreadCount() async {
@@ -89,9 +95,54 @@ class HomeScreenState extends State<HomeScreen> {
 
     return FeedRepository.instance.fetchDiscoverFeed(
       userId: SupabaseService.currentUserId,
+      userLatitude: _userLatitude,
+      userLongitude: _userLongitude,
       limit: _pageSize,
       offset: offset,
     );
+  }
+
+  Future<void> _loadUserLocation() async {
+    final position = await _getCurrentLocation();
+    if (!mounted || position == null) return;
+
+    final latitudeChanged = _userLatitude != position.latitude;
+    final longitudeChanged = _userLongitude != position.longitude;
+    if (!latitudeChanged && !longitudeChanged) return;
+
+    setState(() {
+      _userLatitude = position.latitude;
+      _userLongitude = position.longitude;
+    });
+
+    if (_topNavIndex == 1) {
+      await loadPosts(silent: true);
+    }
+  }
+
+  Future<Position?> _getCurrentLocation() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return null;
+    }
+
+    try {
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   String get _emptyFeedMessage {
@@ -190,9 +241,16 @@ class HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(CupertinoIcons.wifi_exclamationmark, size: 40, color: AppColors.textLight),
+              const Icon(
+                CupertinoIcons.wifi_exclamationmark,
+                size: 40,
+                color: AppColors.textLight,
+              ),
               const SizedBox(height: 12),
-              const Text('Failed to load posts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              const Text(
+                'Failed to load posts',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 16),
               CupertinoButton(
                 onPressed: loadPosts,
@@ -208,7 +266,10 @@ class HomeScreenState extends State<HomeScreen> {
       return Center(
         child: Text(
           _emptyFeedMessage,
-          style: const TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       );
     }
@@ -222,7 +283,9 @@ class HomeScreenState extends State<HomeScreen> {
       },
       child: CustomScrollView(
         controller: _scrollController,
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
         slivers: [
           CupertinoSliverRefreshControl(onRefresh: loadPosts),
           SliverPadding(
@@ -263,7 +326,14 @@ class HomeScreenState extends State<HomeScreen> {
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: 40),
                 child: Center(
-                  child: Text('— End of posts —', style: TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    '— End of posts —',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textLight,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -281,10 +351,10 @@ class _TopNavBar extends StatelessWidget {
   final VoidCallback onNotificationRefresh;
 
   const _TopNavBar({
-    required this.selectedIndex, 
-    required this.items, 
+    required this.selectedIndex,
+    required this.items,
     required this.unreadCount,
-    required this.onTap, 
+    required this.onTap,
     required this.onNotificationRefresh,
   });
 
@@ -299,7 +369,9 @@ class _TopNavBar extends StatelessWidget {
         height: 48,
         decoration: const BoxDecoration(
           color: CupertinoColors.white,
-          border: Border(bottom: BorderSide(color: AppColors.divider, width: 0.5)),
+          border: Border(
+            bottom: BorderSide(color: AppColors.divider, width: 0.5),
+          ),
         ),
         child: Row(
           children: [
@@ -308,14 +380,20 @@ class _TopNavBar extends StatelessWidget {
               minimumSize: Size.zero,
               onPressed: () async {
                 final result = await Navigator.of(context).push(
-                  CupertinoPageRoute(builder: (_) => const NotificationScreen())
+                  CupertinoPageRoute(
+                    builder: (_) => const NotificationScreen(),
+                  ),
                 );
                 if (result == true) onNotificationRefresh();
               },
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  const Icon(CupertinoIcons.bell, color: AppColors.textPrimary, size: 22),
+                  const Icon(
+                    CupertinoIcons.bell,
+                    color: AppColors.textPrimary,
+                    size: 22,
+                  ),
                   if (unreadCount > 0)
                     Positioned(
                       right: -2,
@@ -326,7 +404,10 @@ class _TopNavBar extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: AppColors.primary,
                           shape: BoxShape.circle,
-                          border: Border.all(color: CupertinoColors.white, width: 1.5),
+                          border: Border.all(
+                            color: CupertinoColors.white,
+                            width: 1.5,
+                          ),
                         ),
                       ),
                     ),
@@ -350,15 +431,23 @@ class _TopNavBar extends StatelessWidget {
                             items[i],
                             style: TextStyle(
                               fontSize: isSelected ? 16 : 14,
-                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                              color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
+                              fontWeight: isSelected
+                                  ? FontWeight.w800
+                                  : FontWeight.w500,
+                              color: isSelected
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            height: 3, width: isSelected ? 20 : 0,
-                            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(99)),
+                            height: 3,
+                            width: isSelected ? 20 : 0,
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
                           ),
                         ],
                       ),
@@ -375,7 +464,11 @@ class _TopNavBar extends StatelessWidget {
                   CupertinoPageRoute(builder: (_) => const ExploreScreen()),
                 );
               },
-              child: const Icon(CupertinoIcons.search, color: AppColors.textPrimary, size: 22),
+              child: const Icon(
+                CupertinoIcons.search,
+                color: AppColors.textPrimary,
+                size: 22,
+              ),
             ),
           ],
         ),
@@ -403,13 +496,27 @@ class _MasonryGrid extends StatelessWidget {
       children: [
         Expanded(
           child: Column(
-            children: leftCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 8), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList(),
+            children: leftCol
+                .map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: PostCard(post: p, onTap: () => onPostTap(p)),
+                  ),
+                )
+                .toList(),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
-            children: rightCol.map((p) => Padding(padding: const EdgeInsets.only(bottom: 8), child: PostCard(post: p, onTap: () => onPostTap(p)))).toList(),
+            children: rightCol
+                .map(
+                  (p) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: PostCard(post: p, onTap: () => onPostTap(p)),
+                  ),
+                )
+                .toList(),
           ),
         ),
       ],
@@ -443,13 +550,19 @@ class _MasonryGridSkeleton extends StatelessWidget {
       children: [
         Expanded(
           child: Column(
-            children: List.generate(itemCount ~/ 2, (i) => _buildCardSkeleton(i.isEven ? 240 : 180)),
+            children: List.generate(
+              itemCount ~/ 2,
+              (i) => _buildCardSkeleton(i.isEven ? 240 : 180),
+            ),
           ),
         ),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
-            children: List.generate(itemCount ~/ 2, (i) => _buildCardSkeleton(i.isEven ? 180 : 240)),
+            children: List.generate(
+              itemCount ~/ 2,
+              (i) => _buildCardSkeleton(i.isEven ? 180 : 240),
+            ),
           ),
         ),
       ],
@@ -460,7 +573,10 @@ class _MasonryGridSkeleton extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
-        decoration: BoxDecoration(color: CupertinoColors.white, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+          color: CupertinoColors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

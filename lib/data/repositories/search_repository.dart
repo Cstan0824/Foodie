@@ -34,12 +34,14 @@ class RestaurantSearchResult {
   final RestaurantModel restaurant;
   final RestaurantMatchBucket bucket;
   final double score;
+  final double? distanceKm;
   final bool isStrongEntityMatch;
 
   const RestaurantSearchResult({
     required this.restaurant,
     required this.bucket,
     required this.score,
+    required this.distanceKm,
     required this.isStrongEntityMatch,
   });
 }
@@ -53,6 +55,7 @@ class PostSearchResult {
   final double engagementScore;
   final double freshnessScore;
   final double totalScore;
+  final double? distanceKm;
 
   const PostSearchResult({
     required this.post,
@@ -63,6 +66,7 @@ class PostSearchResult {
     required this.engagementScore,
     required this.freshnessScore,
     required this.totalScore,
+    required this.distanceKm,
   });
 }
 
@@ -112,7 +116,14 @@ class SearchRepository {
 		saveCount,
 		created_At,
 		User!Post_user_Id_fkey(user_Id, name),
-		Restaurant!inner(restaurant_Id, restaurant_name, address, isDisabled),
+		Restaurant!inner(
+      restaurant_Id,
+      restaurant_name,
+      address,
+      latitude,
+      longitude,
+      isDisabled
+    ),
 		Post_Image(image_Id, image_url)
 	''';
   static const int _minimumPostResults = 10;
@@ -121,6 +132,8 @@ class SearchRepository {
     required String query,
     SearchScope scope = SearchScope.all,
     SearchSortMode sortMode = SearchSortMode.top,
+    double? userLatitude,
+    double? userLongitude,
     int restaurantPreviewLimit = 3,
     int restaurantLimit = 30,
     int postLimit = 60,
@@ -132,6 +145,8 @@ class SearchRepository {
         query: query,
         scope: scope,
         sortMode: sortMode,
+        userLatitude: userLatitude,
+        userLongitude: userLongitude,
         postLimit: postLimit,
       );
     }
@@ -161,6 +176,8 @@ class SearchRepository {
         normalizedQuery,
         tokens,
         sortMode: sortMode,
+        userLatitude: userLatitude,
+        userLongitude: userLongitude,
       );
     }
 
@@ -178,9 +195,12 @@ class SearchRepository {
         tokens: tokens,
         boostedRestaurantIds: strongRestaurantIds,
       );
-      
+
       final userId = SupabaseService.currentUserId;
-      final postIds = postCandidates.map((r) => r['post_Id']?.toString()).whereType<String>().toList();
+      final postIds = postCandidates
+          .map((r) => r['post_Id']?.toString())
+          .whereType<String>()
+          .toList();
       final interactionProfile = userId == null || postIds.isEmpty
           ? const _PostInteractionProfile.empty()
           : await _buildPostInteractionProfile(userId, postIds);
@@ -193,6 +213,8 @@ class SearchRepository {
         boostedRestaurantIds: strongRestaurantIds,
         sortMode: sortMode,
         interactionProfile: interactionProfile,
+        userLatitude: userLatitude,
+        userLongitude: userLongitude,
       );
 
       if (rankedPosts.length < _minimumPostResults) {
@@ -201,6 +223,8 @@ class SearchRepository {
           minimumCount: _minimumPostResults,
           sortMode: sortMode,
           existingProfile: interactionProfile,
+          userLatitude: userLatitude,
+          userLongitude: userLongitude,
         );
       }
     }
@@ -253,6 +277,8 @@ class SearchRepository {
     required String query,
     required SearchScope scope,
     required SearchSortMode sortMode,
+    double? userLatitude,
+    double? userLongitude,
     required int postLimit,
   }) async {
     final normalizedRestaurantName = _normalizeText(restaurantName);
@@ -269,6 +295,8 @@ class SearchRepository {
       normalizedRestaurantName,
       restaurantTokens,
       sortMode: sortMode,
+      userLatitude: userLatitude,
+      userLongitude: userLongitude,
     );
 
     final matchedRestaurantId = resultRestaurants.isNotEmpty
@@ -298,9 +326,12 @@ class SearchRepository {
     final mappedRows = (postRows as List<dynamic>)
         .map((r) => r as Map<String, dynamic>)
         .toList();
-        
+
     final userId = SupabaseService.currentUserId;
-    final postIds = mappedRows.map((r) => r['post_Id']?.toString()).whereType<String>().toList();
+    final postIds = mappedRows
+        .map((r) => r['post_Id']?.toString())
+        .whereType<String>()
+        .toList();
     final interactionProfile = userId == null || postIds.isEmpty
         ? const _PostInteractionProfile.empty()
         : await _buildPostInteractionProfile(userId, postIds);
@@ -317,10 +348,22 @@ class SearchRepository {
             )
           : 720.0;
       final freshnessScore = 30.0 / (1 + (ageHours / 24.0));
-      
-      final interactionPenalty = _interactionPenalty(post.id, interactionProfile);
 
-      final totalScore = engagementScore + freshnessScore - interactionPenalty;
+      final interactionPenalty = _interactionPenalty(
+        post.id,
+        interactionProfile,
+      );
+      final distanceKm = _distanceForPost(
+        post,
+        userLatitude: userLatitude,
+        userLongitude: userLongitude,
+      );
+      final locationBoost = sortMode == SearchSortMode.top
+          ? _locationBoostForSearch(distanceKm)
+          : 0.0;
+
+      final totalScore =
+          engagementScore + freshnessScore + locationBoost - interactionPenalty;
 
       return PostSearchResult(
         post: post,
@@ -331,10 +374,16 @@ class SearchRepository {
         engagementScore: engagementScore,
         freshnessScore: freshnessScore,
         totalScore: totalScore,
+        distanceKm: distanceKm,
       );
     }).toList();
 
     ranked.sort((a, b) {
+      if (sortMode == SearchSortMode.nearby) {
+        final distanceCompare = _compareDistanceAsc(a.distanceKm, b.distanceKm);
+        if (distanceCompare != 0) return distanceCompare;
+      }
+
       if (sortMode == SearchSortMode.latest) {
         final createdA = a.post.createdAt;
         final createdB = b.post.createdAt;
@@ -775,6 +824,8 @@ class SearchRepository {
     String normalizedQuery,
     List<String> tokens, {
     required SearchSortMode sortMode,
+    double? userLatitude,
+    double? userLongitude,
   }) {
     final results = <RestaurantSearchResult>[];
 
@@ -822,11 +873,21 @@ class SearchRepository {
 
       if (bucket == RestaurantMatchBucket.none) continue;
 
+      final distanceKm = _distanceForRestaurant(
+        restaurant,
+        userLatitude: userLatitude,
+        userLongitude: userLongitude,
+      );
+      final locationBoost = sortMode == SearchSortMode.top
+          ? _locationBoostForSearch(distanceKm)
+          : 0.0;
+
       results.add(
         RestaurantSearchResult(
           restaurant: restaurant,
           bucket: bucket,
-          score: score,
+          score: score + locationBoost,
+          distanceKm: distanceKm,
           isStrongEntityMatch: bucket != RestaurantMatchBucket.r4,
         ),
       );
@@ -837,6 +898,11 @@ class SearchRepository {
         b.bucket,
       ).compareTo(_restaurantBucketPriority(a.bucket));
       if (bucketCompare != 0) return bucketCompare;
+
+      if (sortMode == SearchSortMode.nearby) {
+        final distanceCompare = _compareDistanceAsc(a.distanceKm, b.distanceKm);
+        if (distanceCompare != 0) return distanceCompare;
+      }
 
       if (sortMode == SearchSortMode.latest) {
         final createdA = a.restaurant.createdAt;
@@ -874,6 +940,8 @@ class SearchRepository {
     required Set<String> boostedRestaurantIds,
     required SearchSortMode sortMode,
     required _PostInteractionProfile interactionProfile,
+    double? userLatitude,
+    double? userLongitude,
   }) {
     final ranked = <PostSearchResult>[];
     final hasStrongEntityRestaurantMatch = boostedRestaurantIds.isNotEmpty;
@@ -975,13 +1043,25 @@ class SearchRepository {
           post.restaurantId != null &&
           boostedRestaurantIds.contains(post.restaurantId);
       final restaurantBoostScore = isBoosted ? 45.0 : 0.0;
+      final distanceKm = _distanceForPost(
+        post,
+        userLatitude: userLatitude,
+        userLongitude: userLongitude,
+      );
+      final locationBoost = sortMode == SearchSortMode.top
+          ? _locationBoostForSearch(distanceKm)
+          : 0.0;
 
-      final interactionPenalty = _interactionPenalty(post.id, interactionProfile);
+      final interactionPenalty = _interactionPenalty(
+        post.id,
+        interactionProfile,
+      );
 
       final totalScore =
           exactScore +
           (relevanceScore * 12.0) +
           restaurantBoostScore +
+          locationBoost +
           engagementScore +
           freshnessScore -
           interactionPenalty;
@@ -996,6 +1076,7 @@ class SearchRepository {
           engagementScore: engagementScore,
           freshnessScore: freshnessScore,
           totalScore: totalScore,
+          distanceKm: distanceKm,
         ),
       );
     }
@@ -1005,6 +1086,11 @@ class SearchRepository {
         b.bucket,
       ).compareTo(_postBucketPriority(a.bucket));
       if (bucketCompare != 0) return bucketCompare;
+
+      if (sortMode == SearchSortMode.nearby) {
+        final distanceCompare = _compareDistanceAsc(a.distanceKm, b.distanceKm);
+        if (distanceCompare != 0) return distanceCompare;
+      }
 
       if (sortMode == SearchSortMode.latest) {
         final createdA = a.post.createdAt;
@@ -1029,6 +1115,8 @@ class SearchRepository {
     required int minimumCount,
     required SearchSortMode sortMode,
     required _PostInteractionProfile existingProfile,
+    double? userLatitude,
+    double? userLongitude,
   }) async {
     if (rankedPosts.length >= minimumCount) return rankedPosts;
 
@@ -1043,7 +1131,10 @@ class SearchRepository {
     if (fallbackRows.isEmpty) return rankedPosts;
 
     final userId = SupabaseService.currentUserId;
-    final fallbackPostIds = fallbackRows.map((r) => r['post_Id']?.toString()).whereType<String>().toList();
+    final fallbackPostIds = fallbackRows
+        .map((r) => r['post_Id']?.toString())
+        .whereType<String>()
+        .toList();
     final fallbackProfile = userId == null || fallbackPostIds.isEmpty
         ? const _PostInteractionProfile.empty()
         : await _buildPostInteractionProfile(userId, fallbackPostIds);
@@ -1052,6 +1143,8 @@ class SearchRepository {
       fallbackRows,
       sortMode: sortMode,
       interactionProfile: fallbackProfile,
+      userLatitude: userLatitude,
+      userLongitude: userLongitude,
     ).where((p) => !existingIds.contains(p.post.id)).take(needed).toList();
 
     if (fallbackRanked.isEmpty) return rankedPosts;
@@ -1091,6 +1184,8 @@ class SearchRepository {
     List<Map<String, dynamic>> rows, {
     required SearchSortMode sortMode,
     required _PostInteractionProfile interactionProfile,
+    double? userLatitude,
+    double? userLongitude,
   }) {
     final ranked = rows.map((row) {
       final post = PostModel.fromJson(row);
@@ -1104,10 +1199,22 @@ class SearchRepository {
             )
           : 720.0;
       final freshnessScore = 30.0 / (1 + (ageHours / 24.0));
-      
-      final interactionPenalty = _interactionPenalty(post.id, interactionProfile);
 
-      final totalScore = engagementScore + freshnessScore - interactionPenalty;
+      final interactionPenalty = _interactionPenalty(
+        post.id,
+        interactionProfile,
+      );
+      final distanceKm = _distanceForPost(
+        post,
+        userLatitude: userLatitude,
+        userLongitude: userLongitude,
+      );
+      final locationBoost = sortMode == SearchSortMode.top
+          ? _locationBoostForSearch(distanceKm)
+          : 0.0;
+
+      final totalScore =
+          engagementScore + freshnessScore + locationBoost - interactionPenalty;
 
       return PostSearchResult(
         post: post,
@@ -1118,10 +1225,16 @@ class SearchRepository {
         engagementScore: engagementScore,
         freshnessScore: freshnessScore,
         totalScore: totalScore,
+        distanceKm: distanceKm,
       );
     }).toList();
 
     ranked.sort((a, b) {
+      if (sortMode == SearchSortMode.nearby) {
+        final distanceCompare = _compareDistanceAsc(a.distanceKm, b.distanceKm);
+        if (distanceCompare != 0) return distanceCompare;
+      }
+
       if (sortMode == SearchSortMode.latest) {
         final createdA = a.post.createdAt;
         final createdB = b.post.createdAt;
@@ -1189,6 +1302,84 @@ class SearchRepository {
       PostMatchBucket.p6 => 1,
       PostMatchBucket.irrelevant => 0,
     };
+  }
+
+  double? _distanceForRestaurant(
+    RestaurantModel restaurant, {
+    double? userLatitude,
+    double? userLongitude,
+  }) {
+    if (userLatitude == null ||
+        userLongitude == null ||
+        restaurant.latitude == null ||
+        restaurant.longitude == null) {
+      return null;
+    }
+
+    return _calculateDistanceKm(
+      userLatitude,
+      userLongitude,
+      restaurant.latitude!,
+      restaurant.longitude!,
+    );
+  }
+
+  double? _distanceForPost(
+    PostModel post, {
+    double? userLatitude,
+    double? userLongitude,
+  }) {
+    if (userLatitude == null ||
+        userLongitude == null ||
+        post.restaurantLatitude == null ||
+        post.restaurantLongitude == null) {
+      return null;
+    }
+
+    return _calculateDistanceKm(
+      userLatitude,
+      userLongitude,
+      post.restaurantLatitude!,
+      post.restaurantLongitude!,
+    );
+  }
+
+  int _compareDistanceAsc(double? a, double? b) {
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    return a.compareTo(b);
+  }
+
+  double _locationBoostForSearch(double? distanceKm) {
+    if (distanceKm == null) return 0.0;
+    if (distanceKm <= 3) return 25.0;
+    if (distanceKm <= 8) return 15.0;
+    if (distanceKm <= 15) return 8.0;
+    return 0.0;
+  }
+
+  double _calculateDistanceKm(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const earthRadiusKm = 6371.0;
+    final dLat = _degreesToRadians(lat2 - lat1);
+    final dLon = _degreesToRadians(lon2 - lon1);
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_degreesToRadians(lat1)) *
+            cos(_degreesToRadians(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return earthRadiusKm * c;
+  }
+
+  double _degreesToRadians(double degrees) {
+    return degrees * pi / 180.0;
   }
 
   double _postTokenRelevance({
@@ -1413,7 +1604,7 @@ class SearchRepository {
 
     return v0[b.length];
   }
-  
+
   Future<_PostInteractionProfile> _buildPostInteractionProfile(
     String userId,
     List<String> postIds,
@@ -1484,7 +1675,7 @@ class _PostInteractionProfile {
   });
 
   const _PostInteractionProfile.empty()
-      : likedPostIds = const {},
-        savedPostIds = const {},
-        commentedPostIds = const {};
+    : likedPostIds = const {},
+      savedPostIds = const {},
+      commentedPostIds = const {};
 }
