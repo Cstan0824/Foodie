@@ -1,0 +1,39 @@
+name: Supabase daily database check
+
+on:
+  schedule:
+    # Daily at 09:17 Malaysia time, away from the busy top of the hour.
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  database-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+    steps:
+      - name: Read one restaurant from the database
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$SUPABASE_URL" || -z "$SUPABASE_ANON_KEY" ]]; then
+            echo '::error::Add SUPABASE_URL and SUPABASE_ANON_KEY as repository Actions secrets.'
+            exit 1
+          fi
+
+          status=$(curl --silent --show-error \
+            --retry 3 --retry-delay 10 --retry-max-time 180 \
+            --connect-timeout 10 --max-time 30 \
+            --output /dev/null --write-out '%{http_code}' \
+            --header "apikey: $SUPABASE_ANON_KEY" \
+            "${SUPABASE_URL%/}/rest/v1/Restaurant?select=restaurant_Id&limit=1")
+
+          if [[ "$status" != '200' ]]; then
+            echo "::error::Supabase database read failed with HTTP $status."
+            exit 1
+          fi
+          echo 'Supabase database read succeeded.'
