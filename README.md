@@ -188,6 +188,29 @@ flutter build apk
 
 ## Quality Checks
 
+### Daily Supabase database check
+
+`.github/workflows/supabase-keep-alive.yml` makes a read-only restaurant query
+every day at 09:17 Malaysia time. It uses the app's anon key and existing database
+permissions, and does not print returned rows or change data.
+
+To activate it:
+
+1. Add repository Actions secrets named `SUPABASE_URL` and `SUPABASE_ANON_KEY`
+   using the corresponding values from your local `.env`. Use the anon key,
+   never a service-role key or database password.
+2. Merge the workflow into the repository's default branch.
+3. Open **Actions → Supabase daily database check → Run workflow** and confirm
+   the first run succeeds. Actions must be enabled for the repository.
+
+This is a best-effort way to provide database activity on the Supabase Free plan,
+not a guarantee against inactivity pausing. Supabase Pro prevents inactivity
+pausing. In public repositories, GitHub disables scheduled workflows after 60
+days without repository activity; check that the schedule remains enabled.
+
+References: [Supabase project pausing](https://supabase.com/docs/guides/platform/free-project-pausing)
+and [GitHub scheduled workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
+
 Common local checks:
 
 ```bash
