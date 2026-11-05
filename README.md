@@ -191,7 +191,7 @@ flutter build apk
 ### Scheduled Supabase database check
 
 `.github/workflows/supabase-keep-alive.yml` makes a read-only restaurant query
-every six hours at 03:17, 09:17, 15:17, and 21:17 Malaysia time. It uses the app's anon key and existing database
+every hour at 17 minutes past the hour. It uses the app's anon key and existing database
 permissions, and does not print returned rows or change data.
 
 To activate it:

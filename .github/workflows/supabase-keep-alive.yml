@@ -2,8 +2,8 @@ name: Supabase database check
 
 on:
   schedule:
-    # Every six hours: 03:17, 09:17, 15:17, and 21:17 Malaysia time.
-    - cron: '17 1,7,13,19 * * *'
+    # Every hour at 17 minutes past the hour.
+    - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions: {}
